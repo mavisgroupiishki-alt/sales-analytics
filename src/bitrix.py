@@ -226,9 +226,11 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     client = Bitrix24Client()
+
+    # Берём звонки за последние 24 часа (с запасом по часовому поясу)
     now = datetime.now()
-    date_from = now - timedelta(hours=2)
-    date_to = now
+    date_from = now - timedelta(hours=24)
+    date_to = now + timedelta(hours=3)
 
     print(f"\nЗагружаем звонки за {date_from:%Y-%m-%d %H:%M} - {date_to:%Y-%m-%d %H:%M}")
     raw_calls = fetch_calls(client, date_from, date_to)
