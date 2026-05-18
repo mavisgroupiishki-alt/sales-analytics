@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Звонок №412550 — AI Sales Analytics</title>
+  <title>Звонок №412550 — Mavis Sales Analytics</title>
   <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -25,11 +25,13 @@ a { color: inherit; text-decoration: none; }
   font-weight: 700; font-size: 14px;
   flex-shrink: 0;
 }
-.logo-dot {
-  width: 28px; height: 28px;
-  background: #F96167; border-radius: 7px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; flex-shrink: 0;
+.logo-img {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+  padding: 2px;
+  flex-shrink: 0;
 }
 .logo .short-name { display: none; }
 .logo span { white-space: nowrap; }
@@ -133,6 +135,13 @@ a { color: inherit; text-decoration: none; }
   background: linear-gradient(135deg, #1C7293, #065A82);
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-weight: 600; font-size: 11px; flex-shrink: 0;
+  overflow: hidden;
+}
+.m-avatar img {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 .m-avatar.b { background: linear-gradient(135deg, #F96167, #F9B248); }
 .m-avatar.c { background: linear-gradient(135deg, #10B981, #1C7293); }
@@ -257,7 +266,7 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 640px) {
   .topbar { padding: 10px 12px; gap: 10px; }
   .logo { font-size: 13px; }
-  .logo-dot { width: 26px; height: 26px; font-size: 13px; }
+  .logo-img { width: 32px; height: 32px; }
   .logo .full-name { display: none; }
   .logo .short-name { display: inline; }
   .timestamp { display: none; }
@@ -279,7 +288,6 @@ a { color: inherit; text-decoration: none; }
   .m-name { font-size: 13px; }
   .m-count { font-size: 16px; }
 
-  /* Карточка звонка — стек вместо двух колонок */
   .call-card-head {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -299,7 +307,6 @@ a { color: inherit; text-decoration: none; }
   }
 }
 
-/* Очень узкие экраны (≤ 380px) */
 @media (max-width: 380px) {
   .kpi-row { grid-template-columns: 1fr; }
   .nav { font-size: 12px; gap: 10px; }
@@ -309,12 +316,12 @@ a { color: inherit; text-decoration: none; }
 <body>
   <div class="topbar">
     <a href="../index.html" class="logo">
-      <div class="logo-dot">📞</div>
-      <span class="full-name">AI Sales Analytics</span>
-      <span class="short-name">AI Sales</span>
+      <img class="logo-img" src="../logo.png" alt="Mavis Group">
+      <span class="full-name">Mavis Sales Analytics</span>
+      <span class="short-name">Mavis Sales</span>
     </a>
     <div class="nav"><a class="" href="index.html">Сводка</a><a class="" href="../managers.html">Менеджеры</a><a class="active" href="../all-calls.html">Все звонки</a><a class="" href="../triggers.html">Триггеры</a></div>
-    <div class="timestamp">2026-05-18 10:04</div>
+    <div class="timestamp">2026-05-18 10:15</div>
   </div>
   <div class="container">
     

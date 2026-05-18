@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Сводка — AI Sales Analytics</title>
+  <title>Сводка — Mavis Sales Analytics</title>
   <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -25,11 +25,13 @@ a { color: inherit; text-decoration: none; }
   font-weight: 700; font-size: 14px;
   flex-shrink: 0;
 }
-.logo-dot {
-  width: 28px; height: 28px;
-  background: #F96167; border-radius: 7px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; flex-shrink: 0;
+.logo-img {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+  padding: 2px;
+  flex-shrink: 0;
 }
 .logo .short-name { display: none; }
 .logo span { white-space: nowrap; }
@@ -133,6 +135,13 @@ a { color: inherit; text-decoration: none; }
   background: linear-gradient(135deg, #1C7293, #065A82);
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-weight: 600; font-size: 11px; flex-shrink: 0;
+  overflow: hidden;
+}
+.m-avatar img {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 .m-avatar.b { background: linear-gradient(135deg, #F96167, #F9B248); }
 .m-avatar.c { background: linear-gradient(135deg, #10B981, #1C7293); }
@@ -257,7 +266,7 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 640px) {
   .topbar { padding: 10px 12px; gap: 10px; }
   .logo { font-size: 13px; }
-  .logo-dot { width: 26px; height: 26px; font-size: 13px; }
+  .logo-img { width: 32px; height: 32px; }
   .logo .full-name { display: none; }
   .logo .short-name { display: inline; }
   .timestamp { display: none; }
@@ -279,7 +288,6 @@ a { color: inherit; text-decoration: none; }
   .m-name { font-size: 13px; }
   .m-count { font-size: 16px; }
 
-  /* Карточка звонка — стек вместо двух колонок */
   .call-card-head {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -299,7 +307,6 @@ a { color: inherit; text-decoration: none; }
   }
 }
 
-/* Очень узкие экраны (≤ 380px) */
 @media (max-width: 380px) {
   .kpi-row { grid-template-columns: 1fr; }
   .nav { font-size: 12px; gap: 10px; }
@@ -309,19 +316,19 @@ a { color: inherit; text-decoration: none; }
 <body>
   <div class="topbar">
     <a href="index.html" class="logo">
-      <div class="logo-dot">📞</div>
-      <span class="full-name">AI Sales Analytics</span>
-      <span class="short-name">AI Sales</span>
+      <img class="logo-img" src="logo.png" alt="Mavis Group">
+      <span class="full-name">Mavis Sales Analytics</span>
+      <span class="short-name">Mavis Sales</span>
     </a>
     <div class="nav"><a class="active" href="index.html">Сводка</a><a class="" href="managers.html">Менеджеры</a><a class="" href="all-calls.html">Все звонки</a><a class="" href="triggers.html">Триггеры</a></div>
-    <div class="timestamp">2026-05-18 10:04</div>
+    <div class="timestamp">2026-05-18 10:15</div>
   </div>
   <div class="container">
     
     <div class="page-head">
       <div>
         <h1>Сводка звонков</h1>
-        <div class="sub">91 звонков · 3 менеджеров</div>
+        <div class="sub">97 звонков · 3 менеджеров</div>
       </div>
       <div class="pill">📅 18 мая 2026</div>
     </div>
@@ -337,17 +344,17 @@ a { color: inherit; text-decoration: none; }
     <div class="kpi-row">
       <div class="kpi">
         <div class="kpi-label">Всего звонков</div>
-        <div class="kpi-value">91</div>
+        <div class="kpi-value">97</div>
         <div class="kpi-hint">за последние сутки</div>
       </div>
       <div class="kpi green">
         <div class="kpi-label">Входящих</div>
-        <div class="kpi-value">7</div>
+        <div class="kpi-value">8</div>
         <div class="kpi-hint">от клиентов</div>
       </div>
       <div class="kpi accent">
         <div class="kpi-label">Исходящих</div>
-        <div class="kpi-value">84</div>
+        <div class="kpi-value">89</div>
         <div class="kpi-hint">к клиентам</div>
       </div>
       <div class="kpi amber">
@@ -368,13 +375,13 @@ a { color: inherit; text-decoration: none; }
           <div class="manager-row">
             <div class="rank gold">1</div>
             <div class="manager-info">
-              <div class="m-avatar b">РА</div>
+              <div class="m-avatar b"><img src="avatars/1286.png" alt="РА"></div>
               <div>
                 <div class="m-name">Роман Авсеенко</div>
-                <div class="m-stats">входящих: <b>2</b> · исходящих: <b>31</b></div>
+                <div class="m-stats">входящих: <b>2</b> · исходящих: <b>33</b></div>
               </div>
             </div>
-            <div class="m-count">33</div>
+            <div class="m-count">35</div>
           </div>
         </a>
         
@@ -399,10 +406,10 @@ a { color: inherit; text-decoration: none; }
               <div class="m-avatar ">ИБ</div>
               <div>
                 <div class="m-name">Ирина Богомольцева</div>
-                <div class="m-stats">входящих: <b>3</b> · исходящих: <b>23</b></div>
+                <div class="m-stats">входящих: <b>4</b> · исходящих: <b>26</b></div>
               </div>
             </div>
-            <div class="m-count">26</div>
+            <div class="m-count">30</div>
           </div>
         </a>
         
@@ -413,12 +420,78 @@ a { color: inherit; text-decoration: none; }
           <a href="all-calls.html" class="hint" style="color:#1C7293;">все →</a>
         </div>
         
+    <a href="calls/412728.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Сергей</div>
+          <div class="call-meta">ООО СтальТехПроект · менеджер: Роман Авсеенко</div>
+        </div>
+        <div class="call-time">13:13</div>
+      </div>
+    </a>
+    
+    <a href="calls/412726.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction in">↓</div>
+        <div class="call-info">
+          <div class="call-client">Андрей</div>
+          <div class="call-meta">ООО Нэвиум · менеджер: Ирина Богомольцева</div>
+        </div>
+        <div class="call-time">13:09</div>
+      </div>
+    </a>
+    
+    <a href="calls/412722.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Сергей</div>
+          <div class="call-meta">Скайпроф · менеджер: Ирина Богомольцева</div>
+        </div>
+        <div class="call-time">13:08</div>
+      </div>
+    </a>
+    
+    <a href="calls/412720.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Руслан КАДИСТРОЙ</div>
+          <div class="call-meta">КАДИСТРОЙ, ООО · менеджер: Ирина Богомольцева</div>
+        </div>
+        <div class="call-time">13:06</div>
+      </div>
+    </a>
+    
+    <a href="calls/412714.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Андрей</div>
+          <div class="call-meta">ООО Нэвиум · менеджер: Ирина Богомольцева</div>
+        </div>
+        <div class="call-time">13:04</div>
+      </div>
+    </a>
+    
     <a href="calls/412706.html" class="row-link">
       <div class="call-row">
         <div class="call-direction out">↑</div>
         <div class="call-info">
           <div class="call-client">Андрей</div>
           <div class="call-meta">ООО Нэвиум · менеджер: Ирина Богомольцева</div>
+        </div>
+        <div class="call-time">13:02</div>
+      </div>
+    </a>
+    
+    <a href="calls/412716.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">алексей</div>
+          <div class="call-meta">Алексей открывает организацию · менеджер: Роман Авсеенко</div>
         </div>
         <div class="call-time">13:02</div>
       </div>
@@ -454,72 +527,6 @@ a { color: inherit; text-decoration: none; }
           <div class="call-meta">Частное предприятие ГинтарасСтрой · менеджер: Ирина Богомольцева</div>
         </div>
         <div class="call-time">12:57</div>
-      </div>
-    </a>
-    
-    <a href="calls/412694.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Сергей Приедет сегодня от ВК</div>
-          <div class="call-meta">Сергей Приедет сегодня от ВК · менеджер: Роман Авсеенко</div>
-        </div>
-        <div class="call-time">12:55</div>
-      </div>
-    </a>
-    
-    <a href="calls/412686.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Сергей Васильевич</div>
-          <div class="call-meta">Минск УП Идея · менеджер: Ирина Богомольцева</div>
-        </div>
-        <div class="call-time">12:53</div>
-      </div>
-    </a>
-    
-    <a href="calls/412688.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Илья Иванович</div>
-          <div class="call-meta">ПрофитЭнерджи, ООО · менеджер: Роман Авсеенко</div>
-        </div>
-        <div class="call-time">12:53</div>
-      </div>
-    </a>
-    
-    <a href="calls/412680.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Олег</div>
-          <div class="call-meta">СК ЭверестСтрой, ООО · менеджер: Ирина Богомольцева</div>
-        </div>
-        <div class="call-time">12:51</div>
-      </div>
-    </a>
-    
-    <a href="calls/412682.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Андрей</div>
-          <div class="call-meta">ЧП «Скульптор-буд»  · менеджер: Роман Авсеенко</div>
-        </div>
-        <div class="call-time">12:51</div>
-      </div>
-    </a>
-    
-    <a href="calls/412692.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Вячеслав Ньюхаусинвест</div>
-          <div class="call-meta">Ньюхаусинвест, ООО · менеджер: Екатерина Халько</div>
-        </div>
-        <div class="call-time">12:50</div>
       </div>
     </a>
     
