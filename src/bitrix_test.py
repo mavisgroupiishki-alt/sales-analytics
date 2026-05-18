@@ -1,6 +1,6 @@
 """
-Глубокая проверка: смотрим Activities-звонки
-и ищем прикреплённые аудиозаписи.
+Финальный тест: скачиваем аудиозапись звонка и проверяем,
+что это реальный аудиофайл.
 """
 
 import os
@@ -25,131 +25,114 @@ def call_bitrix(method: str, params: dict = None) -> dict:
     return response.json()
 
 
-def mask_phone(text: str) -> str:
-    """Маскируем номера в текстах вида '+375 29 666-80-07' """
-    import re
-    if not text:
-        return text
-    return re.sub(r'(\+?\d[\d\s\-]{6,})', lambda m: m.group(0)[:4] + '***' + m.group(0)[-4:], str(text))
-
-
 def main():
     print("=" * 60)
-    print("Глубокая проверка звонков через CRM Activities")
+    print("Финальный тест: скачивание аудиозаписи звонка")
     print("=" * 60)
 
     # ============================================================
-    # 1. Получаем последние 10 звонков-активностей
+    # 1. Берём последний звонок с файлом
     # ============================================================
-    print("\n[1] Последние 10 звонков в CRM Activities...")
+    print("\n[1] Ищем последний звонок с прикреплённым файлом...")
     week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
     activities = call_bitrix(
         "crm.activity.list",
         {
-            "filter": {
-                "TYPE_ID": 2,
-                ">=CREATED": week_ago,
-            },
-            "select": ["*", "COMMUNICATIONS"],
+            "filter": {"TYPE_ID": 2, ">=CREATED": week_ago},
+            "select": ["ID", "CREATED", "FILES", "RESPONSIBLE_ID", "DIRECTION"],
             "order": {"CREATED": "DESC"},
             "start": 0,
         },
     )
 
-    if not activities.get("result"):
-        print("   Активностей-звонков не найдено за неделю")
+    target = None
+    for a in activities.get("result", []):
+        if a.get("FILES"):
+            target = a
+            break
+
+    if not target:
+        print("   Не нашли звонок с файлом")
         return
 
-    acts = activities["result"][:10]
-    print(f"   Получено: {len(acts)} звонков")
+    print(f"   Нашли звонок ID={target['ID']}")
+    print(f"   Создан: {target['CREATED']}")
+    print(f"   Менеджер: {target['RESPONSIBLE_ID']}")
+    print(f"   Направление: {target.get('DIRECTION')} (1=входящий, 2=исходящий)")
+    print(f"   Файлов: {len(target['FILES'])}")
+
+    file_info = target["FILES"][0]
+    file_id = file_info["id"]
+    file_url = file_info["url"]
+    print(f"   File ID: {file_id}")
+    print(f"   File URL: {file_url}")
 
     # ============================================================
-    # 2. Структура первого звонка (полная, со всеми полями)
+    # 2. Пробуем скачать через прямой URL с auth-токеном из webhook
     # ============================================================
-    print("\n[2] Полная структура первого звонка:")
-    print("-" * 60)
-    first = dict(acts[0])
-    if "SUBJECT" in first:
-        first["SUBJECT"] = mask_phone(first["SUBJECT"])
-    if "DESCRIPTION" in first and first["DESCRIPTION"]:
-        first["DESCRIPTION"] = mask_phone(first["DESCRIPTION"])
-    if "COMMUNICATIONS" in first and first["COMMUNICATIONS"]:
-        for c in first["COMMUNICATIONS"]:
-            if "VALUE" in c:
-                c["VALUE"] = mask_phone(c["VALUE"])
-    print(json.dumps(first, indent=2, ensure_ascii=False, default=str))
-    print("-" * 60)
+    print("\n[2] Пробуем способ 1: прямой URL + добавляем токен из webhook...")
+    webhook = get_webhook_url()
+    # извлекаем токен из webhook URL
+    # формат: https://mavisgroup.bitrix24.by/rest/2110/TOKEN/
+    parts = webhook.rstrip("/").split("/")
+    token = parts[-1]
+    user_id = parts[-2]
+
+    auth_url = file_url + token
+    print(f"   Запрос (токен скрыт): {file_url}***")
+
+    try:
+        r = requests.get(auth_url, timeout=60, allow_redirects=True)
+        print(f"   HTTP статус: {r.status_code}")
+        print(f"   Content-Type: {r.headers.get('Content-Type')}")
+        print(f"   Размер ответа: {len(r.content)} байт")
+        if r.status_code == 200:
+            ct = r.headers.get("Content-Type", "")
+            if "audio" in ct or "octet-stream" in ct or "mpeg" in ct:
+                print(f"   ✅ ПОЛУЧИЛИ АУДИО! Тип: {ct}")
+                # Сохраним первые байты, чтобы посмотреть сигнатуру
+                first_bytes = r.content[:16].hex()
+                print(f"   Первые 16 байт (hex): {first_bytes}")
+                # MP3 начинается с ID3 или FFFB
+                # WAV начинается с RIFF
+                if r.content[:3] == b"ID3" or r.content[:2] == b"\xff\xfb" or r.content[:2] == b"\xff\xf3":
+                    print(f"   ✅ Это MP3 файл!")
+                elif r.content[:4] == b"RIFF":
+                    print(f"   ✅ Это WAV файл!")
+                else:
+                    print(f"   ⚠️ Неизвестный формат, но точно бинарный файл")
+                return
+            else:
+                print(f"   ⚠️ Получили не аудио. Первые 300 символов:")
+                print(f"   {r.text[:300]}")
+    except Exception as e:
+        print(f"   Ошибка: {e}")
 
     # ============================================================
-    # 3. Получаем детали через crm.activity.get для первой
+    # 3. Пробуем через disk API
     # ============================================================
-    print("\n[3] Детали первого звонка через crm.activity.get...")
-    activity_id = acts[0].get("ID")
-    if activity_id:
-        details = call_bitrix("crm.activity.get", {"id": activity_id})
-        if details.get("result"):
-            d = dict(details["result"])
-            # Маскируем
-            if "SUBJECT" in d:
-                d["SUBJECT"] = mask_phone(d["SUBJECT"])
-            print(json.dumps(d, indent=2, ensure_ascii=False, default=str)[:3000])
-        else:
-            print(f"   Не удалось: {details}")
+    print("\n[3] Пробуем способ 2: disk.file.get...")
+    try:
+        result = call_bitrix("disk.file.get", {"id": file_id})
+        print(f"   Ответ: {json.dumps(result, ensure_ascii=False, default=str)[:500]}")
+        if result.get("result") and result["result"].get("DOWNLOAD_URL"):
+            dl_url = result["result"]["DOWNLOAD_URL"]
+            print(f"   DOWNLOAD_URL получен")
+            r = requests.get(dl_url, timeout=60)
+            print(f"   Статус скачивания: {r.status_code}, размер: {len(r.content)} байт")
+    except Exception as e:
+        print(f"   Не сработало: {e}")
 
     # ============================================================
-    # 4. Ищем файлы, прикреплённые к звонку
+    # 4. Пробуем через voximplant.url.get
     # ============================================================
-    print("\n[4] Файлы, прикреплённые к звонку...")
-    if activity_id:
-        try:
-            files = call_bitrix("crm.activity.binding.list", {"activityId": activity_id})
-            print(f"   Bindings: {json.dumps(files, ensure_ascii=False)[:500]}")
-        except Exception as e:
-            print(f"   crm.activity.binding не сработал: {e}")
-
-    # ============================================================
-    # 5. Краткая сводка по 10 звонкам
-    # ============================================================
-    print("\n[5] Сводка по 10 последним звонкам:")
-    for i, a in enumerate(acts[:10], 1):
-        created = a.get("CREATED", "?")
-        subject = mask_phone(a.get("SUBJECT", "?"))
-        responsible = a.get("RESPONSIBLE_ID", "?")
-        duration = a.get("END_TIME", "?")
-        files_count = len(a.get("FILES", []) or [])
-        has_settings = "ДА" if a.get("SETTINGS") else "НЕТ"
-        print(f"   {i}. {created} | {subject[:50]}")
-        print(f"      менеджер: {responsible} | файлов: {files_count} | settings: {has_settings}")
-
-    # ============================================================
-    # 6. Если у первого звонка есть FILES — смотрим их
-    # ============================================================
-    print("\n[6] Файлы из поля FILES первого звонка...")
-    first_files = acts[0].get("FILES") or []
-    if first_files:
-        print(f"   Найдено файлов: {len(first_files)}")
-        for f in first_files[:3]:
-            print(f"   {json.dumps(f, ensure_ascii=False, default=str)}")
-    else:
-        print("   Поле FILES пустое")
-
-    # ============================================================
-    # 7. SETTINGS - часто там хранятся данные о звонке/записи
-    # ============================================================
-    print("\n[7] SETTINGS первого звонка...")
-    settings = acts[0].get("SETTINGS")
-    if settings:
-        if isinstance(settings, str):
-            try:
-                settings = json.loads(settings)
-            except:
-                pass
-        print(f"   {json.dumps(settings, indent=2, ensure_ascii=False)[:1500]}")
-    else:
-        print("   SETTINGS пусто")
+    print("\n[4] Пробуем способ 3: voximplant.statistic.get по ORIGIN_ID...")
+    # ORIGIN_ID = VI_externalCall.HASH.TIMESTAMP — извлечём CALL_ID
+    origin = target.get("ORIGIN_ID", "")
+    print(f"   ORIGIN_ID: {origin}")
 
     print("\n" + "=" * 60)
-    print("Передайте вывод Claude — найдём, где записи.")
+    print("Тест завершён. Передайте результат Claude.")
     print("=" * 60)
 
 
