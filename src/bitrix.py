@@ -1,6 +1,6 @@
 """
 Основной модуль работы с Bitrix24.
-Забирает звонки за указанный период, скачивает аудиозаписи,
+Забирает звонки за указанный период, скачивает аудиозаписи (опционально),
 собирает мета-данные (менеджер, клиент, сделка).
 """
 
@@ -22,8 +22,13 @@ logger = logging.getLogger(__name__)
 ACTIVITY_TYPE_CALL = 2
 DIRECTION_INCOMING = 1
 DIRECTION_OUTGOING = 2
-MIN_CALL_DURATION_SEC = 20
 DEFAULT_REQUEST_TIMEOUT = 60
+MIN_AUDIO_SIZE_BYTES = 10_000  # пропускаем "пустые" звонки <10 КБ
+
+# Сколько свежих звонков скачивать (для Claude API).
+# Если 0 — аудио не скачиваем вообще, только метаданные.
+# Можно переопределить переменной окружения DOWNLOAD_AUDIO_COUNT
+DEFAULT_AUDIO_DOWNLOAD_LIMIT = 0
 
 
 # ============================================================
@@ -81,7 +86,6 @@ def fetch_calls(
     client: Bitrix24Client,
     date_from: datetime,
     date_to: datetime,
-    min_duration_sec: int = MIN_CALL_DURATION_SEC,
 ) -> List[Dict[str, Any]]:
     logger.info(f"Загружаем звонки с {date_from} по {date_to}")
     activities = client.call_all(
@@ -117,14 +121,22 @@ def fetch_users(client: Bitrix24Client, user_ids: List[int]) -> Dict[int, Dict]:
         return {}
     unique_ids = list(set(int(uid) for uid in user_ids if uid))
     users = {}
-    data = client.call("user.get", {"ID": unique_ids})
-    for u in data.get("result", []) or []:
-        uid = int(u["ID"])
-        users[uid] = {
-            "id": uid,
-            "name": f"{u.get('NAME', '')} {u.get('LAST_NAME', '')}".strip() or u.get("EMAIL", f"User {uid}"),
-            "email": u.get("EMAIL", ""),
-        }
+    # user.get поддерживает только одиночный ID, поэтому ходим по списку
+    # Используем user.get с фильтром по ID-массиву через ADMIN_MODE
+    for uid in unique_ids:
+        try:
+            data = client.call("user.get", {"ID": uid})
+            result = data.get("result", [])
+            if result:
+                u = result[0]
+                users[uid] = {
+                    "id": uid,
+                    "name": f"{u.get('NAME', '')} {u.get('LAST_NAME', '')}".strip() or u.get("EMAIL", f"User {uid}"),
+                    "email": u.get("EMAIL", ""),
+                }
+        except Exception as e:
+            logger.warning(f"Не удалось получить пользователя {uid}: {e}")
+            users[uid] = {"id": uid, "name": f"User {uid}", "email": ""}
     return users
 
 
@@ -152,7 +164,6 @@ def download_audio(client: Bitrix24Client, file_id: int, save_to: Path) -> Path:
     with open(save_path, "wb") as f:
         for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
-    logger.info(f"Скачано {save_path.stat().st_size} байт в {save_path.name}")
     return save_path
 
 
@@ -220,7 +231,7 @@ def _entity_type_name(type_id) -> str:
 
 
 # ============================================================
-# CLI: тестовый запуск
+# CLI: основной запуск
 # ============================================================
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -238,45 +249,58 @@ def main():
 
     if not raw_calls:
         print("   Звонков нет.")
+        # Создаём пустой JSON, чтобы report_generator не падал
+        Path("calls_data.json").write_text("[]", encoding="utf-8")
         return
 
-    sample = raw_calls[:3]
+    # Собираем уникальных менеджеров со ВСЕХ звонков
     print(f"\nПолучаем информацию о менеджерах...")
-    manager_ids = [int(c.get("RESPONSIBLE_ID") or 0) for c in sample]
+    manager_ids = list(set(int(c.get("RESPONSIBLE_ID") or 0) for c in raw_calls))
     users = fetch_users(client, manager_ids)
     print(f"   Загружено: {len(users)} менеджеров")
     for uid, u in users.items():
         print(f"   - {uid}: {u['name']}")
 
-    audio_dir = Path("audio_temp")
-    audio_dir.mkdir(exist_ok=True)
+    # Нормализуем все звонки (без скачивания аудио)
+    print(f"\nНормализуем данные {len(raw_calls)} звонков...")
+    results = [normalize_call(raw, users) for raw in raw_calls]
 
-    print(f"\nСкачиваем аудиозаписи в {audio_dir}/...")
-    results = []
-    for i, raw in enumerate(sample, 1):
-        normalized = normalize_call(raw, users)
-        print(f"\n   [{i}/{len(sample)}] Звонок {normalized['activity_id']}:")
-        print(f"      Менеджер: {normalized['manager']['name']}")
-        print(f"      Клиент: {normalized['client']['name']} ({normalized['client']['company']})")
-        print(f"      Тип: {normalized['direction']} | время: {normalized['created']}")
-
-        if normalized["audio"] and normalized["audio"]["file_id"]:
+    # Скачиваем аудио — только если задано (для будущего анализа Claude API)
+    audio_limit = int(os.environ.get("DOWNLOAD_AUDIO_COUNT", DEFAULT_AUDIO_DOWNLOAD_LIMIT))
+    if audio_limit > 0:
+        audio_dir = Path("audio_temp")
+        audio_dir.mkdir(exist_ok=True)
+        # Берём самые свежие
+        to_download = sorted(results, key=lambda x: x.get("created", ""), reverse=True)[:audio_limit]
+        print(f"\nСкачиваем {len(to_download)} последних аудиозаписей...")
+        downloaded = 0
+        for i, call in enumerate(to_download, 1):
+            if not call.get("audio") or not call["audio"].get("file_id"):
+                continue
             try:
-                path = download_audio(client, normalized["audio"]["file_id"], audio_dir)
-                normalized["audio"]["local_path"] = str(path)
-                normalized["audio"]["size_bytes"] = path.stat().st_size
-                print(f"      Аудио: {path.name} ({path.stat().st_size:,} байт)")
+                path = download_audio(client, call["audio"]["file_id"], audio_dir)
+                size = path.stat().st_size
+                # Пропускаем "пустышки"
+                if size < MIN_AUDIO_SIZE_BYTES:
+                    path.unlink()
+                    call["audio"]["skipped"] = "too_small"
+                    continue
+                call["audio"]["local_path"] = str(path)
+                call["audio"]["size_bytes"] = size
+                downloaded += 1
+                if i % 10 == 0:
+                    print(f"   Скачано {i}/{len(to_download)}...")
             except Exception as e:
-                print(f"      Не удалось скачать аудио: {e}")
-                normalized["audio"]["error"] = str(e)
+                call["audio"]["error"] = str(e)
+        print(f"   Успешно скачано: {downloaded} файлов")
 
-        results.append(normalized)
-
+    # Сохраняем JSON
     out_file = Path("calls_data.json")
     out_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\nГотово! Данные сохранены в {out_file}")
-    print(f"   Размер JSON: {out_file.stat().st_size} байт")
-    print(f"   Аудиофайлов: {sum(1 for r in results if r.get('audio', {}).get('local_path'))}")
+    print(f"\nГотово!")
+    print(f"   JSON: {out_file} ({out_file.stat().st_size:,} байт)")
+    print(f"   Всего звонков: {len(results)}")
+    print(f"   Менеджеров: {len(users)}")
 
 
 if __name__ == "__main__":
