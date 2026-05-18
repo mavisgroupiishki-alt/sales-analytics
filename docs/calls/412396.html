@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Звонок №412396 — AI Sales Analytics</title>
+  <style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  background: #F4F7FB; color: #1A2940;
+  -webkit-font-smoothing: antialiased; line-height: 1.5;
+}
+a { color: inherit; text-decoration: none; }
+.topbar {
+  background: #0F2A47; color: #fff;
+  padding: 14px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 10;
+  box-shadow: 0 2px 8px rgba(15,42,71,0.1);
+}
+.logo {
+  display: flex; align-items: center; gap: 12px;
+  font-weight: 700; font-size: 16px;
+}
+.logo-dot {
+  width: 32px; height: 32px;
+  background: #F96167; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.nav { display: flex; gap: 18px; font-size: 14px; }
+.nav a { color: #CADCFC; padding: 6px 2px; border-bottom: 2px solid transparent; }
+.nav a.active { color: #fff; border-bottom-color: #F96167; }
+.nav a:hover { color: #fff; }
+.container { max-width: 1280px; margin: 0 auto; padding: 24px; }
+.breadcrumb {
+  font-size: 13px; color: #94A3B8; margin-bottom: 16px;
+}
+.breadcrumb a { color: #1C7293; }
+.breadcrumb a:hover { text-decoration: underline; }
+.page-head {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
+}
+.page-head h1 { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+.page-head .sub { font-size: 14px; color: #475569; }
+.pill {
+  background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;
+  padding: 6px 12px; font-size: 13px; font-weight: 600;
+}
+.notice {
+  background: #FEF3C7; border: 1px solid #FCD34D;
+  border-radius: 10px; padding: 14px 18px;
+  margin-bottom: 20px; font-size: 13px; color: #92400E;
+}
+.notice b { font-weight: 700; }
+.kpi-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px; margin-bottom: 24px;
+}
+.kpi {
+  background: #fff; border-radius: 10px; padding: 18px;
+  border-left: 4px solid #1C7293;
+}
+.kpi.accent { border-left-color: #F96167; }
+.kpi.green { border-left-color: #10B981; }
+.kpi.amber { border-left-color: #F9B248; }
+.kpi-label {
+  font-size: 10px; color: #475569; text-transform: uppercase;
+  letter-spacing: 1px; font-weight: 600; margin-bottom: 6px;
+}
+.kpi-value { font-size: 28px; font-weight: 700; line-height: 1; }
+.kpi-hint { margin-top: 6px; font-size: 11px; color: #94A3B8; }
+.grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-bottom: 20px; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+.panel {
+  background: #fff; border-radius: 12px; border: 1px solid #E2E8F0;
+  overflow: hidden;
+}
+.panel-head {
+  padding: 14px 18px; border-bottom: 1px solid #E2E8F0;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.panel-head h3 { font-size: 15px; font-weight: 700; }
+.panel-head .hint { font-size: 12px; color: #94A3B8; }
+.panel-body { padding: 8px 0; }
+.row-link {
+  display: block; transition: background 0.1s;
+}
+.row-link:hover { background: #F4F7FB; }
+.manager-row {
+  display: grid; grid-template-columns: 28px 1fr auto auto;
+  align-items: center; gap: 12px;
+  padding: 12px 18px; border-bottom: 1px solid #F4F7FB;
+}
+.manager-row:last-child { border-bottom: none; }
+.rank {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: #F4F7FB; color: #475569;
+  font-weight: 700; font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+}
+.rank.gold { background: #F9B248; color: #fff; }
+.rank.silver { background: #CBD5E1; color: #1A2940; }
+.rank.bronze { background: #D4A574; color: #fff; }
+.manager-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.m-avatar {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: linear-gradient(135deg, #1C7293, #065A82);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 12px; flex-shrink: 0;
+}
+.m-avatar.b { background: linear-gradient(135deg, #F96167, #F9B248); }
+.m-avatar.c { background: linear-gradient(135deg, #10B981, #1C7293); }
+.m-avatar.d { background: linear-gradient(135deg, #94A3B8, #475569); }
+.m-avatar.e { background: linear-gradient(135deg, #F9B248, #F96167); }
+.m-name { font-weight: 600; font-size: 14px; }
+.m-stats { font-size: 11px; color: #94A3B8; margin-top: 2px; }
+.m-stats b { color: #1A2940; font-weight: 700; }
+.m-count {
+  font-weight: 700; font-size: 18px; min-width: 36px; text-align: right;
+}
+.call-row {
+  display: grid; grid-template-columns: 28px 1fr auto;
+  align-items: center; gap: 12px;
+  padding: 11px 18px; border-bottom: 1px solid #F4F7FB;
+  font-size: 13px;
+}
+.call-row:last-child { border-bottom: none; }
+.call-direction {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; flex-shrink: 0;
+}
+.call-direction.in { background: #DCFCE7; color: #10B981; }
+.call-direction.out { background: #DBEAFE; color: #1C7293; }
+.call-info { min-width: 0; overflow: hidden; }
+.call-client {
+  font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.call-meta {
+  font-size: 11px; color: #94A3B8;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.call-time {
+  font-size: 12px; color: #475569; white-space: nowrap;
+}
+.empty {
+  padding: 36px 18px; text-align: center; color: #94A3B8; font-size: 14px;
+}
+.footer-note {
+  text-align: center; padding: 24px; font-size: 12px; color: #94A3B8;
+}
+.search-box {
+  width: 100%; padding: 10px 14px;
+  border: 1px solid #E2E8F0; border-radius: 8px;
+  font-size: 14px; background: #fff;
+  margin-bottom: 16px;
+}
+.search-box:focus { outline: 2px solid #1C7293; outline-offset: -1px; }
+.filter-row {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.filter-btn {
+  padding: 8px 14px; border-radius: 20px;
+  background: #fff; border: 1px solid #E2E8F0;
+  font-size: 12px; cursor: pointer;
+  font-weight: 600; color: #475569;
+}
+.filter-btn.active { background: #1C7293; color: #fff; border-color: #1C7293; }
+
+/* Карточка звонка */
+.call-card {
+  background: #fff; border-radius: 12px; border: 1px solid #E2E8F0;
+  overflow: hidden; margin-bottom: 18px;
+}
+.call-card-head {
+  padding: 20px 24px;
+  display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center;
+}
+.call-card-head h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+.call-tags { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+.call-tag {
+  background: #F4F7FB; padding: 4px 10px; border-radius: 12px;
+  color: #475569;
+}
+.call-tag.accent { background: #1C7293; color: #fff; font-weight: 600; }
+.call-tag.warning { background: #FEE2E2; color: #F96167; font-weight: 600; }
+.score-big {
+  background: linear-gradient(135deg, #1C7293, #065A82);
+  color: #fff; border-radius: 12px;
+  padding: 14px 22px; text-align: center; min-width: 140px;
+}
+.score-big.placeholder { background: linear-gradient(135deg, #94A3B8, #64748B); }
+.score-big .num { font-size: 38px; font-weight: 700; line-height: 1; }
+.score-big .num .max { font-size: 16px; opacity: 0.7; }
+.score-big .label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px;
+  margin-top: 4px; opacity: 0.85;
+}
+.detail-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px; padding: 0 24px 24px;
+}
+.detail {
+  background: #F4F7FB; border-radius: 8px; padding: 12px 14px;
+}
+.detail-label {
+  font-size: 10px; color: #94A3B8; text-transform: uppercase;
+  letter-spacing: 1px; margin-bottom: 4px; font-weight: 600;
+}
+.detail-value { font-size: 14px; font-weight: 600; }
+.detail-value a { color: #1C7293; }
+.detail-value a:hover { text-decoration: underline; }
+.placeholder-panel {
+  background: linear-gradient(135deg, #FEF3C7, #FFF7ED);
+  border: 1px dashed #FCD34D;
+  border-radius: 12px; padding: 24px;
+  margin-bottom: 18px;
+}
+.placeholder-panel h3 {
+  font-size: 16px; font-weight: 700; color: #92400E; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.placeholder-panel p { font-size: 13px; color: #92400E; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="../index.html" class="logo">
+      <div class="logo-dot">📞</div>
+      <span>AI Sales Analytics</span>
+    </a>
+    <div class="nav"><a class="" href="index.html">Сводка</a><a class="" href="../managers.html">Менеджеры</a><a class="active" href="../all-calls.html">Все звонки</a><a class="" href="../triggers.html">Триггеры</a></div>
+    <div style="font-size:12px; opacity:0.8;">2026-05-18 09:45</div>
+  </div>
+  <div class="container">
+    
+    <div class="breadcrumb">
+      <a href="../index.html">Главная</a> ›
+      <a href="../all-calls.html">Все звонки</a> ›
+      Звонок №412396
+    </div>
+    <div class="call-card">
+      <div class="call-card-head">
+        <div>
+          <h2>Алексей Новый уровень</h2>
+          <div class="call-tags"><span class="call-tag accent">Исходящий</span><span class="call-tag">CRM: deal</span></div>
+        </div>
+        <div class="score-big placeholder">
+          <div class="num">—<span class="max">/10</span></div>
+          <div class="label">оценка скоро</div>
+        </div>
+      </div>
+      <div class="detail-grid">
+        <div class="detail">
+          <div class="detail-label">Менеджер</div>
+          <div class="detail-value">
+            <a href="../managers/2162.html">Елена</a>
+          </div>
+        </div>
+        <div class="detail">
+          <div class="detail-label">Компания клиента</div>
+          <div class="detail-value">НОВЫЙ УРОВЕНЬ, Частное предприятие</div>
+        </div>
+        <div class="detail">
+          <div class="detail-label">Телефон</div>
+          <div class="detail-value">+375***8942</div>
+        </div>
+        <div class="detail">
+          <div class="detail-label">Время звонка</div>
+          <div class="detail-value">18.05.2026 10:19</div>
+        </div>
+        <div class="detail">
+          <div class="detail-label">Направление</div>
+          <div class="detail-value">Исходящий</div>
+        </div>
+        <div class="detail">
+          <div class="detail-label">Связано в CRM</div>
+          <div class="detail-value"><a href="https://mavisgroup.bitrix24.by/crm/deal/details/3950/" target="_blank">сделка №3950</a></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="placeholder-panel">
+      <h3>📝 Транскрипт звонка</h3>
+      <p>Появится после подключения Claude API. Полный текст разговора с разделением на спикеров и таймкодами.</p>
+    </div>
+
+    <div class="placeholder-panel">
+      <h3>📊 Оценка по 17 критериям</h3>
+      <p>Появится после подключения Claude API. Детальная оценка с цветовой подсветкой, рекомендациями менеджеру и цитатами из разговора.</p>
+    </div>
+
+    <div class="placeholder-panel">
+      <h3>⚠️ Триггеры «Требует внимания»</h3>
+      <p>Появится после подключения Claude API. Не отработанные возражения, упущенные допродажи, незафиксированные следующие шаги.</p>
+    </div>
+    
+    <div class="footer-note">
+      Сгенерировано автоматически · Источник: Bitrix24 · Запуск: GitHub Actions
+    </div>
+  </div>
+</body>
+</html>
