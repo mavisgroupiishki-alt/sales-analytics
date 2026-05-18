@@ -1,10 +1,13 @@
-name: Test Bitrix Connection
+name: Run Analysis
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  test:
+  analyze:
     runs-on: ubuntu-latest
     steps:
       - name: Скачиваем код из репозитория
@@ -18,12 +21,27 @@ jobs:
       - name: Устанавливаем библиотеки
         run: pip install -r requirements.txt
 
-      - name: Запускаем сбор звонков
+      - name: Собираем звонки из Bitrix24
         env:
           BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
         run: python src/bitrix.py
 
-      - name: Сохраняем результат как артефакт
+      - name: Генерируем HTML-отчёт
+        run: python src/report_generator.py
+
+      - name: Публикуем отчёт в docs/
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          if git diff --cached --quiet; then
+            echo "Нет изменений в отчёте"
+          else
+            git commit -m "Auto-update report $(date -u +'%Y-%m-%d %H:%M')"
+            git push
+          fi
+
+      - name: Сохраняем артефакты для отладки
         if: always()
         uses: actions/upload-artifact@v4
         with:
