@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Sales Analytics — Сводка дня</title>
+  <style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  background: #F4F7FB;
+  color: #1A2940;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+.topbar {
+  background: #0F2A47;
+  color: #fff;
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(15,42,71,0.1);
+}
+.logo { display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 17px; }
+.logo-dot {
+  width: 32px; height: 32px;
+  background: #F96167; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.container { max-width: 1280px; margin: 0 auto; padding: 24px; }
+.page-head {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  margin-bottom: 24px; flex-wrap: wrap; gap: 16px;
+}
+.page-head h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+.page-head .sub { font-size: 14px; color: #475569; }
+.date-pill {
+  background: #fff; border: 1px solid #E2E8F0; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 600;
+}
+.kpi-row {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px; margin-bottom: 24px;
+}
+.kpi {
+  background: #fff; border-radius: 10px; padding: 20px;
+  border-left: 4px solid #1C7293;
+}
+.kpi.accent { border-left-color: #F96167; }
+.kpi.green { border-left-color: #10B981; }
+.kpi.amber { border-left-color: #F9B248; }
+.kpi-label {
+  font-size: 11px; color: #475569; text-transform: uppercase;
+  letter-spacing: 1px; font-weight: 600; margin-bottom: 8px;
+}
+.kpi-value { font-size: 30px; font-weight: 700; line-height: 1; }
+.kpi-hint { margin-top: 8px; font-size: 12px; color: #94A3B8; }
+.grid {
+  display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px;
+  margin-bottom: 24px;
+}
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+.panel {
+  background: #fff; border-radius: 12px; border: 1px solid #E2E8F0;
+  overflow: hidden;
+}
+.panel-head {
+  padding: 14px 20px; border-bottom: 1px solid #E2E8F0;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.panel-head h3 { font-size: 15px; font-weight: 700; }
+.panel-head .hint { font-size: 12px; color: #94A3B8; }
+.manager-row {
+  display: grid; grid-template-columns: 32px 1fr auto auto;
+  align-items: center; gap: 14px;
+  padding: 12px 20px; border-bottom: 1px solid #F4F7FB;
+}
+.manager-row:last-child { border-bottom: none; }
+.rank {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #F4F7FB; color: #475569;
+  font-weight: 700; font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+.rank.gold { background: #F9B248; color: #fff; }
+.rank.silver { background: #CBD5E1; color: #1A2940; }
+.rank.bronze { background: #D4A574; color: #fff; }
+.manager-info { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.m-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: linear-gradient(135deg, #1C7293, #065A82);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: 12px; flex-shrink: 0;
+}
+.m-avatar.b { background: linear-gradient(135deg, #F96167, #F9B248); }
+.m-avatar.c { background: linear-gradient(135deg, #10B981, #1C7293); }
+.m-avatar.d { background: linear-gradient(135deg, #94A3B8, #475569); }
+.m-avatar.e { background: linear-gradient(135deg, #F9B248, #F96167); }
+.m-name { font-weight: 600; font-size: 14px; }
+.m-stats { font-size: 11px; color: #94A3B8; }
+.m-count {
+  font-weight: 700; font-size: 16px; min-width: 30px; text-align: right;
+}
+.m-bars { display: flex; gap: 4px; font-size: 11px; color: #94A3B8; }
+.m-bars b { color: #1A2940; font-weight: 700; }
+.call-row {
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: 14px;
+  padding: 12px 20px; border-bottom: 1px solid #F4F7FB;
+  font-size: 13px;
+}
+.call-row:last-child { border-bottom: none; }
+.call-direction {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; flex-shrink: 0;
+}
+.call-direction.in { background: #DCFCE7; color: #10B981; }
+.call-direction.out { background: #DBEAFE; color: #1C7293; }
+.call-info { min-width: 0; }
+.call-client { font-weight: 600; }
+.call-meta { font-size: 11px; color: #94A3B8; }
+.call-time { font-size: 12px; color: #475569; white-space: nowrap; }
+.notice {
+  background: #FEF3C7; border: 1px solid #FCD34D;
+  border-radius: 12px; padding: 16px 20px;
+  margin-bottom: 24px;
+  font-size: 13px; color: #92400E;
+}
+.notice b { font-weight: 700; }
+.footer-note {
+  text-align: center; padding: 24px; font-size: 12px; color: #94A3B8;
+}
+.empty {
+  padding: 40px 20px; text-align: center; color: #94A3B8; font-size: 14px;
+}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-dot">📞</div>
+      <span>AI Sales Analytics</span>
+    </div>
+    <div style="font-size:12px; opacity:0.8;">обновлено 2026-05-18 09:28</div>
+  </div>
+
+  <div class="container">
+    <div class="page-head">
+      <div>
+        <h1>Сводка звонков</h1>
+        <div class="sub">3 звонков · 2 менеджеров</div>
+      </div>
+      <div class="date-pill">📅 18 мая</div>
+    </div>
+
+    
+    <div class="notice">
+      <b>⏳ ИИ-анализ временно недоступен.</b>
+      Сейчас отображается базовая статистика по звонкам.
+      Когда будет подключён Claude API, появятся: оценки качества по 17 критериям,
+      рекомендации менеджерам, триггеры «Требует внимания» и список упущенных возможностей.
+    </div>
+    
+
+    <div class="kpi-row">
+      
+    <div class="kpi">
+      <div class="kpi-label">Всего звонков</div>
+      <div class="kpi-value">3</div>
+      <div class="kpi-hint">за сегодняшний день</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-label">Входящих</div>
+      <div class="kpi-value">1</div>
+      <div class="kpi-hint">от клиентов</div>
+    </div>
+    <div class="kpi accent">
+      <div class="kpi-label">Исходящих</div>
+      <div class="kpi-value">2</div>
+      <div class="kpi-hint">к клиентам</div>
+    </div>
+    <div class="kpi amber">
+      <div class="kpi-label">Менеджеров</div>
+      <div class="kpi-value">2</div>
+      <div class="kpi-hint">говорили сегодня</div>
+    </div>
+    
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Рейтинг менеджеров</h3>
+          <span class="hint">по количеству звонков</span>
+        </div>
+        
+        <div class="manager-row">
+          <div class="rank gold">1</div>
+          <div class="manager-info">
+            <div class="m-avatar b">РА</div>
+            <div>
+              <div class="m-name">Роман Авсеенко</div>
+              <div class="m-stats">
+                <span class="m-bars">входящих: <b>0</b> · исходящих: <b>2</b></span>
+              </div>
+            </div>
+          </div>
+          <div class="m-count">2</div>
+        </div>
+        
+        <div class="manager-row">
+          <div class="rank silver">2</div>
+          <div class="manager-info">
+            <div class="m-avatar c">ЕЛ</div>
+            <div>
+              <div class="m-name">Елена</div>
+              <div class="m-stats">
+                <span class="m-bars">входящих: <b>1</b> · исходящих: <b>0</b></span>
+              </div>
+            </div>
+          </div>
+          <div class="m-count">1</div>
+        </div>
+        
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Последние звонки</h3>
+          <span class="hint">10 свежих</span>
+        </div>
+        
+        <div class="call-row">
+          <div class="call-direction out">↑</div>
+          <div class="call-info">
+            <div class="call-client">Сергей (звонить на 43 на конце) Дубровский</div>
+            <div class="call-meta">Про Будова, ооо · менеджер: Роман Авсеенко</div>
+          </div>
+          <div class="call-time">09:26</div>
+        </div>
+        
+        <div class="call-row">
+          <div class="call-direction out">↑</div>
+          <div class="call-info">
+            <div class="call-client">Сергей (звонить на 43 на конце) Дубровский</div>
+            <div class="call-meta">Про Будова, ооо · менеджер: Роман Авсеенко</div>
+          </div>
+          <div class="call-time">09:26</div>
+        </div>
+        
+        <div class="call-row">
+          <div class="call-direction in">↓</div>
+          <div class="call-info">
+            <div class="call-client">Андрей СК Молоток</div>
+            <div class="call-meta">СК МОЛОТОК, ООО · менеджер: Елена</div>
+          </div>
+          <div class="call-time">09:15</div>
+        </div>
+        
+      </div>
+    </div>
+
+    <div class="footer-note">
+      Сгенерировано автоматически · Источник: Bitrix24 · Запуск: GitHub Actions
+    </div>
+  </div>
+</body>
+</html>
