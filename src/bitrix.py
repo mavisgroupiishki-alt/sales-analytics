@@ -1,7 +1,7 @@
 """
 Основной модуль работы с Bitrix24.
 Забирает звонки за указанный период, скачивает аудиозаписи (опционально),
-собирает мета-данные (менеджер, клиент, сделка).
+собирает мета-данные (менеджер, клиент, сделка) + фото менеджеров.
 """
 
 import os
@@ -121,7 +121,7 @@ def fetch_calls(
 
 
 # ============================================================
-# ИНФОРМАЦИЯ О МЕНЕДЖЕРАХ
+# ИНФОРМАЦИЯ О МЕНЕДЖЕРАХ (включая URL фото)
 # ============================================================
 def fetch_users(client: Bitrix24Client, user_ids: List[int]) -> Dict[int, Dict]:
     if not user_ids:
@@ -134,15 +134,47 @@ def fetch_users(client: Bitrix24Client, user_ids: List[int]) -> Dict[int, Dict]:
             result = data.get("result", [])
             if result:
                 u = result[0]
+                photo_url = u.get("PERSONAL_PHOTO") or ""
                 users[uid] = {
                     "id": uid,
                     "name": f"{u.get('NAME', '')} {u.get('LAST_NAME', '')}".strip() or u.get("EMAIL", f"User {uid}"),
                     "email": u.get("EMAIL", ""),
+                    "photo_url": photo_url,
                 }
         except Exception as e:
             logger.warning(f"Не удалось получить пользователя {uid}: {e}")
-            users[uid] = {"id": uid, "name": f"User {uid}", "email": ""}
+            users[uid] = {"id": uid, "name": f"User {uid}", "email": "", "photo_url": ""}
     return users
+
+
+# ============================================================
+# СКАЧИВАНИЕ ФОТО МЕНЕДЖЕРОВ
+# ============================================================
+def download_user_avatars(users: Dict[int, Dict], avatars_dir: Path) -> None:
+    """Скачивает фото каждого менеджера в docs/avatars/."""
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+    for uid, u in users.items():
+        photo_url = u.get("photo_url")
+        if not photo_url:
+            logger.info(f"   - {uid}: {u['name']} (фото нет в Битриксе)")
+            continue
+        try:
+            r = requests.get(photo_url, timeout=DEFAULT_REQUEST_TIMEOUT)
+            if r.status_code == 200 and len(r.content) > 100:
+                ext = ".jpg"
+                ct = r.headers.get("Content-Type", "").lower()
+                if "png" in ct:
+                    ext = ".png"
+                elif "webp" in ct:
+                    ext = ".webp"
+                avatar_path = avatars_dir / f"{uid}{ext}"
+                avatar_path.write_bytes(r.content)
+                u["avatar_file"] = avatar_path.name
+                logger.info(f"   - {uid}: {u['name']} → {avatar_path.name} ({len(r.content):,} байт)")
+            else:
+                logger.info(f"   - {uid}: {u['name']} (фото не скачалось, статус {r.status_code})")
+        except Exception as e:
+            logger.warning(f"   - {uid}: ошибка скачивания фото: {e}")
 
 
 # ============================================================
@@ -188,7 +220,14 @@ def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str
     company = settings.get("COMPANY_TITLE", "")
 
     manager_id = int(activity.get("RESPONSIBLE_ID") or 0)
-    manager = users.get(manager_id, {"id": manager_id, "name": f"User {manager_id}", "email": ""})
+    manager_data = users.get(manager_id, {"id": manager_id, "name": f"User {manager_id}", "email": ""})
+    # Передаём avatar_file в карточку звонка, если он есть
+    manager = {
+        "id": manager_data["id"],
+        "name": manager_data["name"],
+        "email": manager_data.get("email", ""),
+        "avatar_file": manager_data.get("avatar_file", ""),
+    }
 
     direction_code = int(activity.get("DIRECTION") or 0)
     direction = {1: "incoming", 2: "outgoing"}.get(direction_code, "unknown")
@@ -243,7 +282,6 @@ def main():
 
     client = Bitrix24Client()
 
-    # Берём звонки за последние 24 часа (с запасом по часовому поясу)
     now = datetime.now()
     date_from = now - timedelta(hours=24)
     date_to = now + timedelta(hours=3)
@@ -262,8 +300,11 @@ def main():
     manager_ids = list(set(int(c.get("RESPONSIBLE_ID") or 0) for c in raw_calls))
     users = fetch_users(client, manager_ids)
     print(f"   Загружено: {len(users)} менеджеров")
-    for uid, u in users.items():
-        print(f"   - {uid}: {u['name']}")
+
+    # Скачиваем фото менеджеров в docs/avatars/
+    print(f"\nСкачиваем фото менеджеров...")
+    avatars_dir = Path("docs") / "avatars"
+    download_user_avatars(users, avatars_dir)
 
     # Нормализуем все звонки
     print(f"\nНормализуем данные {len(raw_calls)} звонков...")
