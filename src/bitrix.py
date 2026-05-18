@@ -23,12 +23,19 @@ ACTIVITY_TYPE_CALL = 2
 DIRECTION_INCOMING = 1
 DIRECTION_OUTGOING = 2
 DEFAULT_REQUEST_TIMEOUT = 60
-MIN_AUDIO_SIZE_BYTES = 10_000  # пропускаем "пустые" звонки <10 КБ
+MIN_AUDIO_SIZE_BYTES = 10_000
 
 # Сколько свежих звонков скачивать (для Claude API).
-# Если 0 — аудио не скачиваем вообще, только метаданные.
-# Можно переопределить переменной окружения DOWNLOAD_AUDIO_COUNT
 DEFAULT_AUDIO_DOWNLOAD_LIMIT = 0
+
+# Фамилии менеджеров, чьи звонки попадают в отчёт.
+# Сравнение нечувствительно к регистру.
+# Если список пустой — попадают все менеджеры.
+ALLOWED_MANAGERS = [
+    "Роман Авсеенко",
+    "Екатерина Халько",
+    "Ирина Богомольцева",
+]
 
 
 # ============================================================
@@ -121,8 +128,6 @@ def fetch_users(client: Bitrix24Client, user_ids: List[int]) -> Dict[int, Dict]:
         return {}
     unique_ids = list(set(int(uid) for uid in user_ids if uid))
     users = {}
-    # user.get поддерживает только одиночный ID, поэтому ходим по списку
-    # Используем user.get с фильтром по ID-массиву через ADMIN_MODE
     for uid in unique_ids:
         try:
             data = client.call("user.get", {"ID": uid})
@@ -249,7 +254,6 @@ def main():
 
     if not raw_calls:
         print("   Звонков нет.")
-        # Создаём пустой JSON, чтобы report_generator не падал
         Path("calls_data.json").write_text("[]", encoding="utf-8")
         return
 
@@ -261,16 +265,28 @@ def main():
     for uid, u in users.items():
         print(f"   - {uid}: {u['name']}")
 
-    # Нормализуем все звонки (без скачивания аудио)
+    # Нормализуем все звонки
     print(f"\nНормализуем данные {len(raw_calls)} звонков...")
-    results = [normalize_call(raw, users) for raw in raw_calls]
+    all_results = [normalize_call(raw, users) for raw in raw_calls]
 
-    # Скачиваем аудио — только если задано (для будущего анализа Claude API)
+    # Фильтруем по списку разрешённых менеджеров
+    if ALLOWED_MANAGERS:
+        allowed_lower = [name.lower().strip() for name in ALLOWED_MANAGERS]
+        before = len(all_results)
+        results = [
+            r for r in all_results
+            if r["manager"]["name"].lower().strip() in allowed_lower
+        ]
+        print(f"   Фильтр менеджеров: {before} → {len(results)} звонков")
+        print(f"   Разрешённые: {', '.join(ALLOWED_MANAGERS)}")
+    else:
+        results = all_results
+
+    # Скачиваем аудио (опционально, для будущего Claude API)
     audio_limit = int(os.environ.get("DOWNLOAD_AUDIO_COUNT", DEFAULT_AUDIO_DOWNLOAD_LIMIT))
     if audio_limit > 0:
         audio_dir = Path("audio_temp")
         audio_dir.mkdir(exist_ok=True)
-        # Берём самые свежие
         to_download = sorted(results, key=lambda x: x.get("created", ""), reverse=True)[:audio_limit]
         print(f"\nСкачиваем {len(to_download)} последних аудиозаписей...")
         downloaded = 0
@@ -280,7 +296,6 @@ def main():
             try:
                 path = download_audio(client, call["audio"]["file_id"], audio_dir)
                 size = path.stat().st_size
-                # Пропускаем "пустышки"
                 if size < MIN_AUDIO_SIZE_BYTES:
                     path.unlink()
                     call["audio"]["skipped"] = "too_small"
@@ -300,7 +315,6 @@ def main():
     print(f"\nГотово!")
     print(f"   JSON: {out_file} ({out_file.stat().st_size:,} байт)")
     print(f"   Всего звонков: {len(results)}")
-    print(f"   Менеджеров: {len(users)}")
 
 
 if __name__ == "__main__":
