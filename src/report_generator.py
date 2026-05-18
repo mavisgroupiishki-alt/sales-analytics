@@ -64,6 +64,17 @@ def manager_initials(name: str) -> str:
     return name[:2].upper()
 
 
+def manager_avatar_html(manager: Dict, base_path: str = "") -> str:
+    """Возвращает содержимое аватарки: <img> если есть фото, иначе инициалы."""
+    avatar_file = manager.get("avatar_file") or ""
+    name = manager.get("name", "")
+    initials = manager_initials(name)
+    if avatar_file:
+        src = f"{base_path}avatars/{avatar_file}"
+        return f'<img src="{esc(src)}" alt="{esc(initials)}">'
+    return esc(initials)
+
+
 def manager_color_class(manager_id: int) -> str:
     classes = ["", "b", "c", "d", "e"]
     return classes[manager_id % len(classes)]
@@ -96,12 +107,13 @@ def compute_stats(calls: List[Dict]) -> Dict[str, Any]:
     incoming = sum(1 for c in calls if c.get("direction") == "incoming")
     outgoing = sum(1 for c in calls if c.get("direction") == "outgoing")
 
-    by_manager = defaultdict(lambda: {"count": 0, "in": 0, "out": 0, "name": "", "id": None, "calls": []})
+    by_manager = defaultdict(lambda: {"count": 0, "in": 0, "out": 0, "name": "", "id": None, "calls": [], "avatar_file": ""})
     for c in calls:
         m = c.get("manager", {})
         mid = m.get("id") or 0
         by_manager[mid]["id"] = mid
         by_manager[mid]["name"] = m.get("name", f"User {mid}")
+        by_manager[mid]["avatar_file"] = m.get("avatar_file", "")
         by_manager[mid]["count"] += 1
         by_manager[mid]["calls"].append(c)
         if c.get("direction") == "incoming":
@@ -140,11 +152,13 @@ a { color: inherit; text-decoration: none; }
   font-weight: 700; font-size: 14px;
   flex-shrink: 0;
 }
-.logo-dot {
-  width: 28px; height: 28px;
-  background: #F96167; border-radius: 7px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; flex-shrink: 0;
+.logo-img {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
+  padding: 2px;
+  flex-shrink: 0;
 }
 .logo .short-name { display: none; }
 .logo span { white-space: nowrap; }
@@ -248,6 +262,13 @@ a { color: inherit; text-decoration: none; }
   background: linear-gradient(135deg, #1C7293, #065A82);
   color: #fff; display: flex; align-items: center; justify-content: center;
   font-weight: 600; font-size: 11px; flex-shrink: 0;
+  overflow: hidden;
+}
+.m-avatar img {
+  width: 100%; height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
 }
 .m-avatar.b { background: linear-gradient(135deg, #F96167, #F9B248); }
 .m-avatar.c { background: linear-gradient(135deg, #10B981, #1C7293); }
@@ -372,7 +393,7 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 640px) {
   .topbar { padding: 10px 12px; gap: 10px; }
   .logo { font-size: 13px; }
-  .logo-dot { width: 26px; height: 26px; font-size: 13px; }
+  .logo-img { width: 32px; height: 32px; }
   .logo .full-name { display: none; }
   .logo .short-name { display: inline; }
   .timestamp { display: none; }
@@ -394,7 +415,6 @@ a { color: inherit; text-decoration: none; }
   .m-name { font-size: 13px; }
   .m-count { font-size: 16px; }
 
-  /* Карточка звонка — стек вместо двух колонок */
   .call-card-head {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -414,7 +434,6 @@ a { color: inherit; text-decoration: none; }
   }
 }
 
-/* Очень узкие экраны (≤ 380px) */
 @media (max-width: 380px) {
   .kpi-row { grid-template-columns: 1fr; }
   .nav { font-size: 12px; gap: 10px; }
@@ -440,15 +459,15 @@ def page_template(title: str, body: str, active_nav: str = "dashboard", generate
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{esc(title)} — AI Sales Analytics</title>
+  <title>{esc(title)} — Mavis Sales Analytics</title>
   <style>{CSS}</style>
 </head>
 <body>
   <div class="topbar">
     <a href="index.html" class="logo">
-      <div class="logo-dot">📞</div>
-      <span class="full-name">AI Sales Analytics</span>
-      <span class="short-name">AI Sales</span>
+      <img class="logo-img" src="logo.png" alt="Mavis Group">
+      <span class="full-name">Mavis Sales Analytics</span>
+      <span class="short-name">Mavis Sales</span>
     </a>
     <div class="nav">{nav_html}</div>
     <div class="timestamp">{esc(generated_at[:16].replace('T', ' '))}</div>
@@ -547,7 +566,7 @@ def render_index(calls: List[Dict], stats: Dict, generated_at: str) -> str:
           <div class="manager-row">
             <div class="rank {rank_class}">{i}</div>
             <div class="manager-info">
-              <div class="m-avatar {avatar_class}">{esc(manager_initials(m['name']))}</div>
+              <div class="m-avatar {avatar_class}">{manager_avatar_html(m)}</div>
               <div>
                 <div class="m-name">{esc(m['name'])}</div>
                 <div class="m-stats">входящих: <b>{m['in']}</b> · исходящих: <b>{m['out']}</b></div>
@@ -604,7 +623,7 @@ def render_managers_list(stats: Dict, generated_at: str) -> str:
           <div class="manager-row">
             <div class="rank {rank_class}">{i}</div>
             <div class="manager-info">
-              <div class="m-avatar {avatar_class}">{esc(manager_initials(m['name']))}</div>
+              <div class="m-avatar {avatar_class}">{manager_avatar_html(m)}</div>
               <div>
                 <div class="m-name">{esc(m['name'])}</div>
                 <div class="m-stats">входящих: <b>{m['in']}</b> · исходящих: <b>{m['out']}</b></div>
@@ -654,7 +673,7 @@ def render_manager_page(manager: Dict, generated_at: str) -> str:
     <div class="page-head">
       <div style="display:flex; align-items:center; gap:16px;">
         <div class="m-avatar {avatar_class}" style="width:56px; height:56px; font-size:18px;">
-          {esc(manager_initials(manager['name']))}
+          {manager_avatar_html(manager, base_path="../")}
         </div>
         <div>
           <h1>{esc(manager['name'])}</h1>
@@ -902,6 +921,7 @@ def generate(calls_json_path: str = "calls_data.json", output_dir: str = "docs")
         html_content = html_content.replace('href="managers.html"', 'href="../managers.html"')
         html_content = html_content.replace('href="all-calls.html"', 'href="../all-calls.html"')
         html_content = html_content.replace('href="triggers.html"', 'href="../triggers.html"')
+        html_content = html_content.replace('src="logo.png"', 'src="../logo.png"')
         page_path.write_text(html_content, encoding="utf-8")
     logger.info(f"Создано страниц менеджеров: {len(stats['managers'])}")
 
@@ -918,6 +938,7 @@ def generate(calls_json_path: str = "calls_data.json", output_dir: str = "docs")
         html_content = html_content.replace('href="managers.html"', 'href="../managers.html"')
         html_content = html_content.replace('href="all-calls.html"', 'href="../all-calls.html"')
         html_content = html_content.replace('href="triggers.html"', 'href="../triggers.html"')
+        html_content = html_content.replace('src="logo.png"', 'src="../logo.png"')
         page_path.write_text(html_content, encoding="utf-8")
     logger.info(f"Создано карточек звонков: {len(calls)}")
 
