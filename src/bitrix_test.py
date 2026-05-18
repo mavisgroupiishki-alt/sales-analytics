@@ -1,6 +1,6 @@
 """
-Расширенный тест: смотрим, что вообще есть в Bitrix24
-по звонкам и какая телефония подключена.
+Глубокая проверка: смотрим Activities-звонки
+и ищем прикреплённые аудиозаписи.
 """
 
 import os
@@ -25,136 +25,131 @@ def call_bitrix(method: str, params: dict = None) -> dict:
     return response.json()
 
 
-def mask_phone(phone: str) -> str:
-    if not phone or len(phone) < 6:
-        return "***"
-    return phone[:4] + "*" * (len(phone) - 6) + phone[-2:]
+def mask_phone(text: str) -> str:
+    """Маскируем номера в текстах вида '+375 29 666-80-07' """
+    import re
+    if not text:
+        return text
+    return re.sub(r'(\+?\d[\d\s\-]{6,})', lambda m: m.group(0)[:4] + '***' + m.group(0)[-4:], str(text))
 
 
 def main():
     print("=" * 60)
-    print("Расширенный тест Bitrix24")
+    print("Глубокая проверка звонков через CRM Activities")
     print("=" * 60)
 
     # ============================================================
-    # 1. Сколько всего звонков в системе
+    # 1. Получаем последние 10 звонков-активностей
     # ============================================================
-    print("\n[1] Всего звонков в системе...")
-    total = call_bitrix(
-        "voximplant.statistic.get",
-        {"FILTER": {">CALL_DURATION": 0}, "start": -1, "SELECT": ["ID"]},
-    )
-    if "total" in total:
-        print(f"   Всего звонков: {total['total']}")
-    if total.get("result"):
-        print(f"   Получено в выборке: {len(total['result'])}")
-
-    # ============================================================
-    # 2. Самый свежий звонок
-    # ============================================================
-    print("\n[2] Самый свежий звонок в системе...")
-    latest = call_bitrix(
-        "voximplant.statistic.get",
-        {
-            "ORDER": {"CALL_START_DATE": "DESC"},
-            "FILTER": {">CALL_DURATION": 0},
-            "SELECT": ["ID", "CALL_START_DATE", "CALL_DURATION",
-                       "CALL_RECORD_URL", "RECORD_FILE_ID", "PORTAL_NUMBER"],
-            "start": 0,
-        },
-    )
-    if latest.get("result"):
-        c = latest["result"][0]
-        print(f"   Дата: {c.get('CALL_START_DATE')}")
-        print(f"   Длительность: {c.get('CALL_DURATION')} сек")
-        print(f"   PORTAL_NUMBER: {c.get('PORTAL_NUMBER')}")
-        print(f"   CALL_RECORD_URL: {c.get('CALL_RECORD_URL')}")
-        print(f"   RECORD_FILE_ID: {c.get('RECORD_FILE_ID')}")
-
-    # ============================================================
-    # 3. Звонки за последний месяц
-    # ============================================================
-    print("\n[3] Звонки за последние 30 дней...")
-    month_ago = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
-    recent = call_bitrix(
-        "voximplant.statistic.get",
-        {
-            "ORDER": {"CALL_START_DATE": "DESC"},
-            "FILTER": {">=CALL_START_DATE": month_ago, ">CALL_DURATION": 0},
-            "SELECT": ["ID", "CALL_START_DATE", "CALL_DURATION", "CALL_RECORD_URL"],
-            "start": -1,
-        },
-    )
-    count_30d = recent.get("total", 0)
-    print(f"   Звонков за 30 дней: {count_30d}")
-    if recent.get("result"):
-        with_record = sum(1 for c in recent["result"] if c.get("CALL_RECORD_URL"))
-        print(f"   Из них с CALL_RECORD_URL: {with_record}")
-
-    # ============================================================
-    # 4. Какие приложения телефонии подключены
-    # ============================================================
-    print("\n[4] Подключенные приложения телефонии (REST APPS)...")
-    try:
-        apps = call_bitrix("telephony.externalLine.get", {})
-        if apps.get("result"):
-            for line in apps["result"]:
-                print(f"   - Линия: {line}")
-        else:
-            print(f"   Внешние линии: {json.dumps(apps, ensure_ascii=False)[:200]}")
-    except Exception as e:
-        print(f"   Не удалось получить внешние линии: {e}")
-
-    # ============================================================
-    # 5. Уникальные PORTAL_NUMBER (откуда идут звонки)
-    # ============================================================
-    print("\n[5] Источники звонков (последние 100)...")
-    sample = call_bitrix(
-        "voximplant.statistic.get",
-        {
-            "ORDER": {"CALL_START_DATE": "DESC"},
-            "FILTER": {">CALL_DURATION": 0},
-            "SELECT": ["PORTAL_NUMBER", "CALL_START_DATE"],
-            "start": 0,
-        },
-    )
-    if sample.get("result"):
-        sources = {}
-        for c in sample["result"]:
-            src = c.get("PORTAL_NUMBER", "(unknown)")
-            sources[src] = sources.get(src, 0) + 1
-        for src, cnt in sorted(sources.items(), key=lambda x: -x[1]):
-            print(f"   {cnt:3d} звонков от: {src}")
-
-    # ============================================================
-    # 6. CRM Activities - может звонки логируются как дела CRM
-    # ============================================================
-    print("\n[6] Звонки в CRM Activities (call) за последние 7 дней...")
+    print("\n[1] Последние 10 звонков в CRM Activities...")
     week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
-    try:
-        activities = call_bitrix(
-            "crm.activity.list",
-            {
-                "filter": {
-                    "TYPE_ID": 2,  # 2 = звонок
-                    ">=CREATED": week_ago,
-                },
-                "select": ["ID", "SUBJECT", "CREATED", "RESPONSIBLE_ID", "SETTINGS"],
-                "order": {"CREATED": "DESC"},
-                "start": 0,
+    activities = call_bitrix(
+        "crm.activity.list",
+        {
+            "filter": {
+                "TYPE_ID": 2,
+                ">=CREATED": week_ago,
             },
-        )
-        if activities.get("result"):
-            print(f"   Найдено активностей-звонков: {len(activities['result'])}")
-            for a in activities["result"][:3]:
-                print(f"   - {a.get('CREATED')} | {a.get('SUBJECT')} | менеджер: {a.get('RESPONSIBLE_ID')}")
+            "select": ["*", "COMMUNICATIONS"],
+            "order": {"CREATED": "DESC"},
+            "start": 0,
+        },
+    )
+
+    if not activities.get("result"):
+        print("   Активностей-звонков не найдено за неделю")
+        return
+
+    acts = activities["result"][:10]
+    print(f"   Получено: {len(acts)} звонков")
+
+    # ============================================================
+    # 2. Структура первого звонка (полная, со всеми полями)
+    # ============================================================
+    print("\n[2] Полная структура первого звонка:")
+    print("-" * 60)
+    first = dict(acts[0])
+    if "SUBJECT" in first:
+        first["SUBJECT"] = mask_phone(first["SUBJECT"])
+    if "DESCRIPTION" in first and first["DESCRIPTION"]:
+        first["DESCRIPTION"] = mask_phone(first["DESCRIPTION"])
+    if "COMMUNICATIONS" in first and first["COMMUNICATIONS"]:
+        for c in first["COMMUNICATIONS"]:
+            if "VALUE" in c:
+                c["VALUE"] = mask_phone(c["VALUE"])
+    print(json.dumps(first, indent=2, ensure_ascii=False, default=str))
+    print("-" * 60)
+
+    # ============================================================
+    # 3. Получаем детали через crm.activity.get для первой
+    # ============================================================
+    print("\n[3] Детали первого звонка через crm.activity.get...")
+    activity_id = acts[0].get("ID")
+    if activity_id:
+        details = call_bitrix("crm.activity.get", {"id": activity_id})
+        if details.get("result"):
+            d = dict(details["result"])
+            # Маскируем
+            if "SUBJECT" in d:
+                d["SUBJECT"] = mask_phone(d["SUBJECT"])
+            print(json.dumps(d, indent=2, ensure_ascii=False, default=str)[:3000])
         else:
-            print(f"   Активностей-звонков нет за неделю")
-    except Exception as e:
-        print(f"   Ошибка: {e}")
+            print(f"   Не удалось: {details}")
+
+    # ============================================================
+    # 4. Ищем файлы, прикреплённые к звонку
+    # ============================================================
+    print("\n[4] Файлы, прикреплённые к звонку...")
+    if activity_id:
+        try:
+            files = call_bitrix("crm.activity.binding.list", {"activityId": activity_id})
+            print(f"   Bindings: {json.dumps(files, ensure_ascii=False)[:500]}")
+        except Exception as e:
+            print(f"   crm.activity.binding не сработал: {e}")
+
+    # ============================================================
+    # 5. Краткая сводка по 10 звонкам
+    # ============================================================
+    print("\n[5] Сводка по 10 последним звонкам:")
+    for i, a in enumerate(acts[:10], 1):
+        created = a.get("CREATED", "?")
+        subject = mask_phone(a.get("SUBJECT", "?"))
+        responsible = a.get("RESPONSIBLE_ID", "?")
+        duration = a.get("END_TIME", "?")
+        files_count = len(a.get("FILES", []) or [])
+        has_settings = "ДА" if a.get("SETTINGS") else "НЕТ"
+        print(f"   {i}. {created} | {subject[:50]}")
+        print(f"      менеджер: {responsible} | файлов: {files_count} | settings: {has_settings}")
+
+    # ============================================================
+    # 6. Если у первого звонка есть FILES — смотрим их
+    # ============================================================
+    print("\n[6] Файлы из поля FILES первого звонка...")
+    first_files = acts[0].get("FILES") or []
+    if first_files:
+        print(f"   Найдено файлов: {len(first_files)}")
+        for f in first_files[:3]:
+            print(f"   {json.dumps(f, ensure_ascii=False, default=str)}")
+    else:
+        print("   Поле FILES пустое")
+
+    # ============================================================
+    # 7. SETTINGS - часто там хранятся данные о звонке/записи
+    # ============================================================
+    print("\n[7] SETTINGS первого звонка...")
+    settings = acts[0].get("SETTINGS")
+    if settings:
+        if isinstance(settings, str):
+            try:
+                settings = json.loads(settings)
+            except:
+                pass
+        print(f"   {json.dumps(settings, indent=2, ensure_ascii=False)[:1500]}")
+    else:
+        print("   SETTINGS пусто")
 
     print("\n" + "=" * 60)
-    print("Тест завершён. Передайте этот вывод Claude.")
+    print("Передайте вывод Claude — найдём, где записи.")
     print("=" * 60)
 
 
