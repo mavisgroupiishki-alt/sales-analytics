@@ -1,0 +1,34 @@
+name: Test Bitrix Connection
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Скачиваем код из репозитория
+        uses: actions/checkout@v4
+
+      - name: Устанавливаем Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Устанавливаем библиотеки
+        run: pip install -r requirements.txt
+
+      - name: Запускаем сбор звонков
+        env:
+          BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
+        run: python src/bitrix.py
+
+      - name: Сохраняем результат как артефакт
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calls-data
+          path: |
+            calls_data.json
+            audio_temp/
+          retention-days: 3
