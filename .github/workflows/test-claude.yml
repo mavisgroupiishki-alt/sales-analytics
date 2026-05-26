@@ -1,0 +1,41 @@
+name: Test Claude Analysis
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Скачиваем код
+        uses: actions/checkout@v4
+
+      - name: Устанавливаем Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Устанавливаем библиотеки
+        run: pip install -r requirements.txt
+
+      - name: Собираем 1 свежий звонок с аудио
+        env:
+          BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
+          DOWNLOAD_AUDIO_COUNT: 1
+        run: python src/bitrix.py
+
+      - name: Анализируем звонок через Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python src/claude_analyzer.py
+
+      - name: Сохраняем результаты
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-test
+          path: |
+            calls_data.json
+            analysis_result.json
+            audio_temp/
+          retention-days: 3
