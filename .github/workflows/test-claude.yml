@@ -1,7 +1,10 @@
-name: Test Claude Analysis v4
+name: Demo Analysis 5 calls
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   analyze:
@@ -23,30 +26,45 @@ jobs:
           python -m pip install --upgrade pip
           pip install "setuptools<81" wheel
 
-      - name: Устанавливаем Python-библиотеки (без Whisper)
+      - name: Устанавливаем библиотеки
         run: pip install -r requirements.txt
 
-      - name: Ставим Whisper отдельно без изоляции сборки
+      - name: Ставим Whisper
         run: pip install --no-build-isolation openai-whisper==20240930
 
-      - name: Собираем 1 свежий звонок с аудио
+      - name: Собираем 5 свежих звонков от разных менеджеров
         env:
           BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
-          DOWNLOAD_AUDIO_COUNT: 1
+          DOWNLOAD_AUDIO_COUNT: 5
         run: python src/bitrix.py
 
-      - name: Транскрибация (Whisper) + Анализ (Claude)
+      - name: Транскрибация + Анализ через Claude
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python src/claude_analyzer.py
 
-      - name: Сохраняем результаты
+      - name: Генерируем HTML-отчёт с ИИ-данными
+        run: python src/report_generator.py
+
+      - name: Публикуем отчёт в docs/
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/ analyses.json
+          if git diff --cached --quiet; then
+            echo "Нет изменений"
+          else
+            git commit -m "Demo analysis update $(date -u +'%Y-%m-%d %H:%M')"
+            git push
+          fi
+
+      - name: Сохраняем артефакты
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: claude-test
+          name: demo-analysis
           path: |
             calls_data.json
-            analysis_result.json
+            analyses.json
             audio_temp/
-          retention-days: 3
+          retention-days: 7
