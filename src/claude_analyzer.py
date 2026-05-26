@@ -14,7 +14,7 @@ from anthropic import Anthropic
 
 logger = logging.getLogger(__name__)
 
-MODEL_CLAUDE = "claude-sonnet-4-5"
+MODEL_CLAUDE = "claude-haiku-4-5-20251001"
 MODEL_WHISPER = "base"
 
 CRITERIA = [
@@ -142,9 +142,9 @@ def analyze_transcript(transcript: str, call_meta: Dict[str, Any], claude_client
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
         "approx_cost_usd": round(
-            response.usage.input_tokens * 0.003 / 1000 +
-            response.usage.output_tokens * 0.015 / 1000, 4
-        ),
+    response.usage.input_tokens * 0.001 / 1000 +
+    response.usage.output_tokens * 0.005 / 1000, 4
+),
     }
     return result
 
