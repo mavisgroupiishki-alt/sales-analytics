@@ -1,7 +1,12 @@
-name: Demo Analysis 5 calls
+name: Full Analysis (Haiku)
 
 on:
   workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Сколько звонков обработать (макс) — 0 значит все'
+        required: true
+        default: '106'
 
 permissions:
   contents: write
@@ -9,6 +14,7 @@ permissions:
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    timeout-minutes: 240
     steps:
       - name: Скачиваем код
         uses: actions/checkout@v4
@@ -32,21 +38,21 @@ jobs:
       - name: Ставим Whisper
         run: pip install --no-build-isolation openai-whisper==20240930
 
-      - name: Собираем 5 свежих звонков от разных менеджеров
+      - name: Скачиваем звонки ≥ 40 сек
         env:
           BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
-          DOWNLOAD_AUDIO_COUNT: 5
+          DOWNLOAD_AUDIO_COUNT: ${{ github.event.inputs.limit }}
         run: python src/bitrix.py
 
-      - name: Транскрибация + Анализ через Claude
+      - name: Транскрибация + Анализ через Claude Haiku
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python src/claude_analyzer.py
 
-      - name: Генерируем HTML-отчёт с ИИ-данными
+      - name: Генерируем HTML-отчёт
         run: python src/report_generator.py
 
-      - name: Публикуем отчёт в docs/
+      - name: Публикуем отчёт
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -54,7 +60,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "Нет изменений"
           else
-            git commit -m "Demo analysis update $(date -u +'%Y-%m-%d %H:%M')"
+            git commit -m "Full analysis update $(date -u +'%Y-%m-%d %H:%M')"
             git push
           fi
 
@@ -62,7 +68,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: demo-analysis
+          name: full-analysis
           path: |
             calls_data.json
             analyses.json
