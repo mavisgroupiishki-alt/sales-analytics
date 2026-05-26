@@ -1,16 +1,18 @@
 """
-Основной модуль работы с Bitrix24.
-Забирает звонки за сутки, скачивает аудио,
-вычисляет длительность из START_TIME / END_TIME / DURATION.
+Bitrix24 модуль.
+- Забирает звонки за сутки
+- Скачивает аудио в audio_temp/ (для анализа) и docs/audio/ (для плеера на 3 дня)
+- Автоматически чистит аудио старше 3 дней из docs/audio/
 """
 
 import os
 import re
 import json
 import logging
+import shutil
 import requests
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,8 @@ ACTIVITY_TYPE_CALL = 2
 DEFAULT_REQUEST_TIMEOUT = 60
 MIN_AUDIO_SIZE_BYTES = 10_000
 DEFAULT_AUDIO_DOWNLOAD_LIMIT = 0
-MIN_DURATION_SEC = 40  # ТЗ: анализируем только звонки ≥ 40 секунд
+MIN_DURATION_SEC = 40
+AUDIO_KEEP_DAYS = 3  # сколько дней храним MP3 для плеера
 
 ALLOWED_MANAGERS = [
     "Роман Авсеенко",
@@ -151,9 +154,23 @@ def download_audio(client: Bitrix24Client, file_id: int, save_to: Path) -> Path:
     return save_path
 
 
+def cleanup_old_audio(audio_dir: Path, keep_days: int = AUDIO_KEEP_DAYS) -> int:
+    """Удаляет MP3 файлы старше keep_days дней. Возвращает количество удалённых."""
+    if not audio_dir.exists():
+        return 0
+    cutoff = datetime.now(timezone.utc).timestamp() - keep_days * 86400
+    deleted = 0
+    for f in audio_dir.glob("*.mp3"):
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                deleted += 1
+        except Exception as e:
+            logger.warning(f"Не удалось удалить {f.name}: {e}")
+    return deleted
+
+
 def compute_duration_sec(activity: Dict[str, Any]) -> Optional[int]:
-    """Считает длительность звонка из доступных полей."""
-    # Способ 1: явное поле DURATION (от телефонии)
     duration = activity.get("DURATION")
     if duration:
         try:
@@ -162,8 +179,6 @@ def compute_duration_sec(activity: Dict[str, Any]) -> Optional[int]:
                 return d
         except (TypeError, ValueError):
             pass
-
-    # Способ 2: START_TIME + END_TIME
     start = activity.get("START_TIME")
     end = activity.get("END_TIME")
     if start and end:
@@ -175,7 +190,6 @@ def compute_duration_sec(activity: Dict[str, Any]) -> Optional[int]:
                 return d
         except Exception:
             pass
-
     return None
 
 
@@ -239,6 +253,11 @@ def _mask_phone(phone: str) -> str:
     return phone[:4] + "***" + phone[-4:]
 
 
+def get_bitrix_call_url(activity_id: str) -> str:
+    """Ссылка на звонок в Bitrix24 интерфейсе."""
+    return f"https://mavisgroup.bitrix24.by/crm/timeline/?activityId={activity_id}"
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -274,22 +293,35 @@ def main():
     else:
         results = all_results
 
-    # Статистика по длительности
+    # Добавляем ссылку на Bitrix24 для каждого звонка
+    for r in results:
+        r["bitrix_url"] = get_bitrix_call_url(r["activity_id"])
+
+    # Статистика
     with_duration = [r for r in results if r.get("duration_sec") is not None]
     long_enough = [r for r in results if r.get("duration_sec") and r["duration_sec"] >= MIN_DURATION_SEC]
     print(f"\nДлительность:")
     print(f"   С известной длительностью: {len(with_duration)}/{len(results)}")
     print(f"   ≥ {MIN_DURATION_SEC} сек: {len(long_enough)}")
 
-    # Скачивание аудио
+    # ============================================================
+    # СКАЧИВАНИЕ АУДИО
+    # ============================================================
     audio_limit = int(os.environ.get("DOWNLOAD_AUDIO_COUNT", DEFAULT_AUDIO_DOWNLOAD_LIMIT))
     print(f"\nDOWNLOAD_AUDIO_COUNT = {audio_limit}")
 
-    if audio_limit > 0:
-        audio_dir = Path("audio_temp")
-        audio_dir.mkdir(exist_ok=True)
+    if audio_limit != 0:
+        # 1) Очистка старых файлов из docs/audio/
+        docs_audio = Path("docs") / "audio"
+        deleted = cleanup_old_audio(docs_audio, AUDIO_KEEP_DAYS)
+        if deleted:
+            print(f"\nУдалено старых MP3 (>{AUDIO_KEEP_DAYS} дней): {deleted}")
 
-        # Кандидаты: длинные (≥ 40 сек) + неизвестной длительности (пусть Whisper определит)
+        # 2) Скачивание новых
+        audio_temp = Path("audio_temp")
+        audio_temp.mkdir(exist_ok=True)
+        docs_audio.mkdir(parents=True, exist_ok=True)
+
         candidates = [
             r for r in results
             if r.get("audio") and r["audio"].get("file_id")
@@ -297,32 +329,46 @@ def main():
         ]
         candidates.sort(key=lambda x: x.get("created", ""), reverse=True)
 
-        # Если 0 (special meaning) — скачиваем все
+        # -1 = все, иначе ограничение
         to_download = candidates if audio_limit == -1 else candidates[:audio_limit]
         print(f"\nКандидатов: {len(candidates)}, скачиваем: {len(to_download)}")
 
         downloaded = 0
         for i, call in enumerate(to_download, 1):
             file_id = call["audio"]["file_id"]
+            activity_id = call["activity_id"]
             dur = call.get("duration_sec")
             dur_str = f"{dur} сек" if dur else "неизв."
-            print(f"\n[{i}/{len(to_download)}] {call['activity_id']} ({call['manager']['name']}, {dur_str}):")
+            print(f"\n[{i}/{len(to_download)}] {activity_id} ({call['manager']['name']}, {dur_str}):")
             try:
-                path = download_audio(client, file_id, audio_dir)
-                size = path.stat().st_size
+                # Скачиваем в audio_temp для анализа
+                temp_path = download_audio(client, file_id, audio_temp)
+                size = temp_path.stat().st_size
                 if size < MIN_AUDIO_SIZE_BYTES:
                     print(f"   ⚠ Слишком маленький ({size} б), пропускаем")
-                    path.unlink()
+                    temp_path.unlink()
                     continue
-                call["audio"]["local_path"] = str(path)
+
+                # Также копируем в docs/audio/ для плеера (имя по activity_id для простоты)
+                public_path = docs_audio / f"{activity_id}.mp3"
+                shutil.copy2(temp_path, public_path)
+
+                call["audio"]["local_path"] = str(temp_path)
+                call["audio"]["public_path"] = f"audio/{activity_id}.mp3"
                 call["audio"]["size_bytes"] = size
                 downloaded += 1
-                print(f"   ✅ {path.name} ({size:,} б)")
+                print(f"   ✅ {temp_path.name} → {public_path.name} ({size:,} б)")
             except Exception as e:
                 print(f"   ❌ {e}")
                 call["audio"]["error"] = str(e)
 
         print(f"\nИтого скачано: {downloaded}/{len(to_download)}")
+
+        # Размер папки docs/audio
+        if docs_audio.exists():
+            total_size = sum(f.stat().st_size for f in docs_audio.glob("*.mp3"))
+            file_count = len(list(docs_audio.glob("*.mp3")))
+            print(f"\nВсего в docs/audio/: {file_count} файлов, {total_size / 1024 / 1024:.1f} МБ")
 
     out_file = Path("calls_data.json")
     out_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
