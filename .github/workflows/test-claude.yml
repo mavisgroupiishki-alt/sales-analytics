@@ -1,4 +1,4 @@
-name: Test Claude Analysis v2
+name: Test Claude Analysis v3
 
 on:
   workflow_dispatch:
@@ -15,7 +15,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Устанавливаем библиотеки
+      - name: Устанавливаем ffmpeg (нужен для Whisper)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Устанавливаем библиотеки Python
         run: pip install -r requirements.txt
 
       - name: Собираем 1 свежий звонок с аудио
@@ -24,7 +27,7 @@ jobs:
           DOWNLOAD_AUDIO_COUNT: 1
         run: python src/bitrix.py
 
-      - name: Анализируем звонок через Claude
+      - name: Транскрибация (Whisper) + Анализ (Claude)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python src/claude_analyzer.py
