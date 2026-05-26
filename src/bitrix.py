@@ -189,4 +189,182 @@ def download_audio(client: Bitrix24Client, file_id: int, save_to: Path) -> Path:
         for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
     logger.info(f"   → Сохранено {save_path.stat().st_size:,} байт")
-    return
+    return save_path
+
+
+# ============================================================
+# НОРМАЛИЗАЦИЯ ЗВОНКА
+# ============================================================
+def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str, Any]:
+    files = activity.get("FILES") or []
+    file_info = files[0] if files else None
+
+    comm = (activity.get("COMMUNICATIONS") or [{}])[0]
+    settings = comm.get("ENTITY_SETTINGS") or {}
+    client_name = " ".join(
+        x for x in [settings.get("HONORIFIC"), settings.get("NAME"),
+                    settings.get("SECOND_NAME"), settings.get("LAST_NAME")] if x
+    ).strip() or settings.get("COMPANY_TITLE", "Неизвестный клиент")
+    company = settings.get("COMPANY_TITLE", "")
+
+    manager_id = int(activity.get("RESPONSIBLE_ID") or 0)
+    manager_data = users.get(manager_id, {"id": manager_id, "name": f"User {manager_id}", "email": ""})
+    manager = {
+        "id": manager_data["id"],
+        "name": manager_data["name"],
+        "email": manager_data.get("email", ""),
+        "avatar_file": manager_data.get("avatar_file", ""),
+    }
+
+    direction_code = int(activity.get("DIRECTION") or 0)
+    direction = {1: "incoming", 2: "outgoing"}.get(direction_code, "unknown")
+
+    owner_type_id = int(activity.get("OWNER_TYPE_ID") or 0)
+    owner_type = {1: "lead", 2: "deal", 3: "contact", 4: "company"}.get(owner_type_id, "unknown")
+
+    result = {
+        "activity_id": str(activity["ID"]),
+        "created": activity.get("CREATED"),
+        "start_time": activity.get("START_TIME"),
+        "end_time": activity.get("END_TIME"),
+        "direction": direction,
+        "subject": activity.get("SUBJECT", ""),
+        "manager": manager,
+        "client": {
+            "name": client_name,
+            "company": company,
+            "phone_masked": _mask_phone(comm.get("VALUE", "")),
+            "entity_id": comm.get("ENTITY_ID"),
+            "entity_type": _entity_type_name(comm.get("ENTITY_TYPE_ID")),
+        },
+        "crm": {
+            "owner_type": owner_type,
+            "owner_id": str(activity.get("OWNER_ID") or ""),
+        },
+        "audio": None,
+    }
+    if file_info:
+        result["audio"] = {
+            "file_id": file_info["id"],
+            "url": file_info.get("url"),
+        }
+    return result
+
+
+def _mask_phone(phone: str) -> str:
+    if not phone or len(phone) < 6:
+        return "***"
+    return phone[:4] + "***" + phone[-4:]
+
+
+def _entity_type_name(type_id) -> str:
+    return {"1": "lead", "3": "contact", "4": "company", "2": "deal"}.get(str(type_id or ""), "unknown")
+
+
+# ============================================================
+# CLI
+# ============================================================
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    client = Bitrix24Client()
+
+    now = datetime.now()
+    date_from = now - timedelta(hours=24)
+    date_to = now + timedelta(hours=3)
+
+    print(f"\nЗагружаем звонки за {date_from:%Y-%m-%d %H:%M} - {date_to:%Y-%m-%d %H:%M}")
+    raw_calls = fetch_calls(client, date_from, date_to)
+    print(f"   Найдено: {len(raw_calls)} звонков с аудио")
+
+    if not raw_calls:
+        print("   Звонков нет.")
+        Path("calls_data.json").write_text("[]", encoding="utf-8")
+        return
+
+    print(f"\nПолучаем информацию о менеджерах...")
+    manager_ids = list(set(int(c.get("RESPONSIBLE_ID") or 0) for c in raw_calls))
+    users = fetch_users(client, manager_ids)
+    print(f"   Загружено: {len(users)} менеджеров")
+
+    print(f"\nСкачиваем фото менеджеров...")
+    avatars_dir = Path("docs") / "avatars"
+    download_user_avatars(users, avatars_dir)
+
+    print(f"\nНормализуем данные {len(raw_calls)} звонков...")
+    all_results = [normalize_call(raw, users) for raw in raw_calls]
+
+    if ALLOWED_MANAGERS:
+        allowed_lower = [name.lower().strip() for name in ALLOWED_MANAGERS]
+        before = len(all_results)
+        results = [
+            r for r in all_results
+            if r["manager"]["name"].lower().strip() in allowed_lower
+        ]
+        print(f"   Фильтр менеджеров: {before} → {len(results)} звонков")
+        print(f"   Разрешённые: {', '.join(ALLOWED_MANAGERS)}")
+    else:
+        results = all_results
+
+    # ============================================================
+    # СКАЧИВАНИЕ АУДИО (с подробным логированием)
+    # ============================================================
+    audio_limit = int(os.environ.get("DOWNLOAD_AUDIO_COUNT", DEFAULT_AUDIO_DOWNLOAD_LIMIT))
+    print(f"\nDOWNLOAD_AUDIO_COUNT = {audio_limit}")
+
+    if audio_limit > 0:
+        audio_dir = Path("audio_temp")
+        audio_dir.mkdir(exist_ok=True)
+
+        # Кандидаты — звонки с аудио, отсортированные по свежести
+        candidates = [r for r in results if r.get("audio") and r["audio"].get("file_id")]
+        candidates.sort(key=lambda x: x.get("created", ""), reverse=True)
+        print(f"\nКандидатов с аудио: {len(candidates)}")
+
+        downloaded = 0
+        attempted = 0
+
+        # Перебираем кандидатов, пока не наберём нужное количество
+        # ИЛИ пока не закончатся
+        for call in candidates:
+            if downloaded >= audio_limit:
+                break
+            attempted += 1
+            file_id = call["audio"]["file_id"]
+            print(f"\n[{attempted}] Звонок {call['activity_id']}:")
+            print(f"   Менеджер: {call['manager']['name']}")
+            print(f"   Клиент: {call['client']['name']}")
+            print(f"   Время: {call['created']}")
+            print(f"   File ID: {file_id}")
+
+            try:
+                path = download_audio(client, file_id, audio_dir)
+                size = path.stat().st_size
+
+                if size < MIN_AUDIO_SIZE_BYTES:
+                    print(f"   ⚠ Файл слишком маленький ({size} байт < {MIN_AUDIO_SIZE_BYTES}) — пропускаем")
+                    path.unlink()
+                    call["audio"]["skipped"] = "too_small"
+                    continue
+
+                call["audio"]["local_path"] = str(path)
+                call["audio"]["size_bytes"] = size
+                downloaded += 1
+                print(f"   ✅ Успешно: {path.name} ({size:,} байт)")
+
+            except Exception as e:
+                print(f"   ❌ Ошибка: {type(e).__name__}: {e}")
+                call["audio"]["error"] = str(e)
+
+        print(f"\nИтого: попыток {attempted}, успешно скачано {downloaded} из {audio_limit}")
+
+    # Сохраняем JSON
+    out_file = Path("calls_data.json")
+    out_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"\nГотово!")
+    print(f"   JSON: {out_file} ({out_file.stat().st_size:,} байт)")
+    print(f"   Всего звонков: {len(results)}")
+
+
+if __name__ == "__main__":
+    main()
