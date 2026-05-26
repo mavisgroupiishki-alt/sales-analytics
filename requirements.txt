@@ -1,4 +1,5 @@
 requests==2.31.0
 anthropic>=0.69.0
-setuptools>=68.0.0
-openai-whisper==20240930
+setuptools<81
+wheel
+openai-whisper @ git+https://github.com/openai/whisper.git@v20240930
