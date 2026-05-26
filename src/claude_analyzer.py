@@ -1,26 +1,21 @@
 """
-Анализ одного звонка:
-1. Whisper транскрибирует аудио → текст
-2. Claude анализирует текст → структурированный разбор
+Whisper + Claude: транскрибируем и анализируем ВСЕ аудиофайлы в audio_temp/.
+Результаты сохраняются в analyses.json — словарь activity_id → анализ.
 """
 
 import os
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 import whisper
 from anthropic import Anthropic
 
 logger = logging.getLogger(__name__)
 
-
-# ============================================================
-# КОНСТАНТЫ
-# ============================================================
 MODEL_CLAUDE = "claude-sonnet-4-5"
-MODEL_WHISPER = "base"  # tiny / base / small / medium / large
+MODEL_WHISPER = "base"
 
 CRITERIA = [
     "Приветствие и представление",
@@ -44,21 +39,20 @@ CRITERIA = [
 
 ANALYSIS_PROMPT_TEMPLATE = """Ты — эксперт по качеству продаж в отделе строительных материалов компании Mavis Group в Беларуси.
 
-Тебе нужно проанализировать транскрипт телефонного разговора менеджера с клиентом и дать структурированный разбор.
+Тебе нужно проанализировать транскрипт телефонного разговора менеджера с клиентом.
 
 КОНТЕКСТ:
 - Компания: Mavis Group, Беларусь, строительные материалы и услуги
 - Клиенты: ООО, ИП, частные подрядчики
 - Менеджеры работают по скриптам отдела продаж
 
-ВАЖНО: Транскрипт получен через автоматическое распознавание речи (Whisper). 
-В нём могут быть искажения слов, особенно технических терминов и имён. 
-Старайся понять смысл, даже если есть мелкие ошибки в словах.
+ВАЖНО: Транскрипт получен через автоматическое распознавание речи (Whisper).
+В нём могут быть искажения слов. Старайся понять смысл, даже если есть ошибки.
 
 ИНФОРМАЦИЯ О ЗВОНКЕ:
 {call_info}
 
-ТРАНСКРИПТ (одним потоком, без разделения на спикеров):
+ТРАНСКРИПТ:
 ---
 {transcript}
 ---
@@ -66,37 +60,13 @@ ANALYSIS_PROMPT_TEMPLATE = """Ты — эксперт по качеству пр
 ТВОЯ ЗАДАЧА:
 
 1. Раздели транскрипт на реплики менеджера и клиента (по смыслу/тону).
-
-2. Классифицируй:
-   - Тип звонка (холодный/тёплый/дожим/входящий запрос/презентация КП/отработка возражений/закрытие)
-   - Цель звонка
-   - Этап воронки
-
+2. Классифицируй: тип звонка / цель / этап воронки.
 3. Резюме разговора (2-3 предложения).
-
 4. Ключевая цитата клиента (если есть).
-
 5. Оценка по 17 критериям (0-10):
 {criteria_list}
-
 6. Итоговая взвешенная оценка (0-10).
-
-7. Триггеры «Требует внимания» — конкретные ошибки:
-   - Не отработано возражение «дорого»
-   - Не зафиксирован следующий шаг
-   - Упущена допродажа
-   - Не выявлены потребности
-   - Скидка дана без переговоров
-   - Не предложена встреча
-   - Прерывал клиента
-   - Не использовал имя клиента
-   - Не уточнил сроки
-   - Не уточнил бюджет
-   - Не задал уточняющие вопросы
-   - Не предложил альтернативу
-   - Грубость/непрофессионализм
-   - Не закрыл звонок резюме
-
+7. Триггеры «Требует внимания» — конкретные ошибки.
 8. Рекомендация менеджеру (1-2 предложения).
 
 ОТВЕТ СТРОГО В JSON, БЕЗ ОБЁРТКИ ```json:
@@ -105,70 +75,40 @@ ANALYSIS_PROMPT_TEMPLATE = """Ты — эксперт по качеству пр
   "transcript_split": [
     {{"speaker": "manager|client", "text": "..."}}
   ],
-  "classification": {{
-    "type": "...",
-    "goal": "...",
-    "funnel_stage": "..."
-  }},
+  "classification": {{"type": "...", "goal": "...", "funnel_stage": "..."}},
   "summary": "...",
   "key_quote": {{"speaker": "client", "text": "..."}},
   "scores": {{
 {scores_template}
   }},
   "overall_score": 7.0,
-  "triggers": [
-    {{"name": "...", "description": "..."}}
-  ],
+  "triggers": [{{"name": "...", "description": "..."}}],
   "recommendation": "..."
 }}
 """
 
 
-# ============================================================
-# ТРАНСКРИБАЦИЯ (Whisper)
-# ============================================================
-def transcribe_audio(audio_path: Path) -> Dict[str, Any]:
-    """Транскрибирует аудио через локальную модель Whisper."""
-    logger.info(f"Загружаем модель Whisper '{MODEL_WHISPER}'...")
-    model = whisper.load_model(MODEL_WHISPER)
-
+def transcribe_audio(audio_path: Path, model) -> Dict[str, Any]:
     logger.info(f"Транскрибируем {audio_path.name}...")
-    result = model.transcribe(
-        str(audio_path),
-        language="ru",
-        verbose=False,
-        fp16=False,
-    )
-
+    result = model.transcribe(str(audio_path), language="ru", verbose=False, fp16=False)
     full_text = result["text"].strip()
     duration_sec = 0
     if result.get("segments"):
         duration_sec = result["segments"][-1].get("end", 0)
-
-    logger.info(f"Получено {len(full_text)} символов, {len(result.get('segments', []))} сегментов")
-
     return {
         "text": full_text,
-        "segments": result.get("segments", []),
         "duration_sec": round(duration_sec, 1),
-        "language": result.get("language", "ru"),
     }
 
 
-# ============================================================
-# АНАЛИЗ (Claude)
-# ============================================================
 def get_claude_client() -> Anthropic:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY не задан в окружении")
+        raise RuntimeError("ANTHROPIC_API_KEY не задан")
     return Anthropic(api_key=api_key)
 
 
-def analyze_transcript(transcript: str, call_meta: Dict[str, Any]) -> Dict[str, Any]:
-    """Анализирует транскрипт через Claude."""
-    client = get_claude_client()
-
+def analyze_transcript(transcript: str, call_meta: Dict[str, Any], claude_client: Anthropic) -> Dict[str, Any]:
     call_info = (
         f"- Менеджер: {call_meta.get('manager', {}).get('name', 'неизвестно')}\n"
         f"- Клиент: {call_meta.get('client', {}).get('name', 'неизвестно')}\n"
@@ -176,178 +116,139 @@ def analyze_transcript(transcript: str, call_meta: Dict[str, Any]) -> Dict[str, 
         f"- Направление: {'входящий' if call_meta.get('direction') == 'incoming' else 'исходящий'}\n"
         f"- Время: {call_meta.get('created', '')}\n"
     )
-
     criteria_list = "\n".join(f"   - {c}" for c in CRITERIA)
     scores_template = ",\n".join(f'    "{c}": 0.0' for c in CRITERIA)
-
     prompt = ANALYSIS_PROMPT_TEMPLATE.format(
-        call_info=call_info,
-        transcript=transcript,
-        criteria_list=criteria_list,
-        scores_template=scores_template,
+        call_info=call_info, transcript=transcript,
+        criteria_list=criteria_list, scores_template=scores_template,
     )
 
-    logger.info("Отправляем в Claude API...")
-    response = client.messages.create(
+    response = claude_client.messages.create(
         model=MODEL_CLAUDE,
         max_tokens=8000,
         messages=[{"role": "user", "content": prompt}],
     )
 
     text = response.content[0].text.strip()
-    # Убираем обёртку ```json если есть
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
             text = text[4:]
         text = text.strip()
 
-    try:
-        result = json.loads(text)
-    except json.JSONDecodeError as e:
-        logger.error(f"Не удалось распарсить JSON Claude: {e}")
-        logger.error(f"Ответ модели:\n{text[:1000]}...")
-        raise
-
+    result = json.loads(text)
     result["_meta"] = {
         "model": MODEL_CLAUDE,
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
         "approx_cost_usd": round(
             response.usage.input_tokens * 0.003 / 1000 +
-            response.usage.output_tokens * 0.015 / 1000,
-            4
+            response.usage.output_tokens * 0.015 / 1000, 4
         ),
     }
     return result
 
 
-# ============================================================
-# CLI
-# ============================================================
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     print("=" * 60)
-    print("Тест: Whisper + Claude на одном звонке")
+    print("Анализ всех аудио в audio_temp/")
     print("=" * 60)
 
-    # Берём первый mp3 из audio_temp
     audio_dir = Path("audio_temp")
-    if not audio_dir.exists() or not list(audio_dir.glob("*.mp3")):
-        print("Ошибка: нет аудиофайлов в audio_temp/")
+    if not audio_dir.exists():
+        print("audio_temp/ не существует")
         return
 
     audio_files = sorted(audio_dir.glob("*.mp3"))
-    audio_path = audio_files[0]
-    print(f"\nФайл: {audio_path.name}")
-    print(f"Размер: {audio_path.stat().st_size:,} байт")
+    if not audio_files:
+        print("Нет аудиофайлов")
+        return
+
+    print(f"\nНайдено файлов: {len(audio_files)}")
+    for f in audio_files:
+        print(f"   • {f.name} ({f.stat().st_size:,} байт)")
 
     # Метаданные
     calls = json.loads(Path("calls_data.json").read_text(encoding="utf-8"))
-    file_id_str = audio_path.name.split("_")[0]
-    call_meta = next((c for c in calls if c.get("audio") and str(c["audio"].get("file_id")) == file_id_str), None)
 
-    if not call_meta:
-        print(f"Не нашли мета-данные для {audio_path.name}")
-        return
+    # Загружаем модели один раз
+    print(f"\nЗагружаем модель Whisper '{MODEL_WHISPER}'...")
+    whisper_model = whisper.load_model(MODEL_WHISPER)
+    claude_client = get_claude_client()
 
-    print(f"\nМенеджер: {call_meta['manager']['name']}")
-    print(f"Клиент: {call_meta['client']['name']}")
-    print(f"Компания: {call_meta['client']['company']}")
-    print(f"Направление: {call_meta['direction']}")
-
-    # ============================================================
-    # ЭТАП 1: ТРАНСКРИБАЦИЯ
-    # ============================================================
-    print("\n" + "=" * 60)
-    print(f"ЭТАП 1: ТРАНСКРИБАЦИЯ (Whisper-{MODEL_WHISPER})")
-    print("=" * 60)
-    print("(загрузка модели ~150MB + распознавание...)")
-
-    transcription = transcribe_audio(audio_path)
-
-    print(f"\nДлительность: {transcription['duration_sec']} сек")
-    print(f"\nТранскрипт:")
-    print("-" * 60)
-    print(transcription["text"])
-    print("-" * 60)
-
-    if not transcription["text"] or len(transcription["text"]) < 20:
-        print("\n⚠️ Слишком короткий или пустой транскрипт — анализ нецелесообразен")
-        return
-
-    # ============================================================
-    # ЭТАП 2: АНАЛИЗ
-    # ============================================================
-    print("\n" + "=" * 60)
-    print(f"ЭТАП 2: АНАЛИЗ ({MODEL_CLAUDE})")
-    print("=" * 60)
-
-    result = analyze_transcript(transcription["text"], call_meta)
-
-    # ============================================================
-    # ВЫВОД
-    # ============================================================
-    print("\n" + "=" * 60)
-    print("РЕЗУЛЬТАТ АНАЛИЗА")
-    print("=" * 60)
-
-    cls = result.get("classification", {})
-    print(f"\n📋 Классификация:")
-    print(f"   Тип: {cls.get('type', '—')}")
-    print(f"   Цель: {cls.get('goal', '—')}")
-    print(f"   Этап воронки: {cls.get('funnel_stage', '—')}")
-
-    print(f"\n📝 Резюме:")
-    print(f"   {result.get('summary', '—')}")
-
-    kq = result.get("key_quote")
-    if kq:
-        print(f"\n💬 Ключевая цитата клиента:")
-        print(f"   «{kq.get('text', '')}»")
-
-    print(f"\n📊 Оценки по критериям:")
-    for criterion, score in (result.get("scores") or {}).items():
-        try:
-            score_int = int(round(float(score)))
-        except (TypeError, ValueError):
-            score_int = 0
-        bar = "█" * score_int + "░" * (10 - score_int)
-        print(f"   {criterion:35} {bar} {score}")
-
-    print(f"\n⭐ ИТОГОВАЯ ОЦЕНКА: {result.get('overall_score', '—')}/10")
-
-    triggers = result.get("triggers") or []
-    if triggers:
-        print(f"\n⚠️  Триггеры «Требует внимания» ({len(triggers)}):")
-        for t in triggers:
-            print(f"   • {t.get('name', '—')}")
-            if t.get("description"):
-                print(f"     {t['description']}")
+    # Существующие анализы
+    analyses_path = Path("analyses.json")
+    if analyses_path.exists():
+        analyses = json.loads(analyses_path.read_text(encoding="utf-8"))
     else:
-        print("\n✅ Триггеры не сработали — звонок без критичных ошибок")
+        analyses = {}
 
-    print(f"\n💡 Рекомендация менеджеру:")
-    print(f"   {result.get('recommendation', '—')}")
+    total_cost = 0.0
+    success = 0
+    failed = 0
 
-    print(f"\n💰 Стоимость анализа:")
-    m = result.get("_meta", {})
-    print(f"   Входные токены Claude: {m.get('input_tokens', 0):,}")
-    print(f"   Выходные токены Claude: {m.get('output_tokens', 0):,}")
-    print(f"   Whisper (локально): $0.0000")
-    print(f"   ИТОГО: ${m.get('approx_cost_usd', 0):.4f}")
+    for i, audio_path in enumerate(audio_files, 1):
+        print(f"\n{'='*60}")
+        print(f"[{i}/{len(audio_files)}] {audio_path.name}")
+        print(f"{'='*60}")
+
+        file_id_str = audio_path.name.split("_")[0]
+        call_meta = next(
+            (c for c in calls if c.get("audio") and str(c["audio"].get("file_id")) == file_id_str),
+            None
+        )
+        if not call_meta:
+            print(f"   ⚠ Метаданные не найдены, пропускаем")
+            failed += 1
+            continue
+
+        activity_id = call_meta["activity_id"]
+        print(f"   Менеджер: {call_meta['manager']['name']}")
+        print(f"   Клиент: {call_meta['client']['name']}")
+
+        try:
+            # Транскрибация
+            transcription = transcribe_audio(audio_path, whisper_model)
+            print(f"   Транскрипт: {len(transcription['text'])} символов, {transcription['duration_sec']} сек")
+
+            if len(transcription["text"]) < 50:
+                print(f"   ⚠ Слишком короткий транскрипт, пропускаем")
+                failed += 1
+                continue
+
+            # Анализ
+            print(f"   Анализ через Claude...")
+            analysis = analyze_transcript(transcription["text"], call_meta, claude_client)
+            cost = analysis["_meta"]["approx_cost_usd"]
+            total_cost += cost
+            score = analysis.get("overall_score", 0)
+            print(f"   ✅ Оценка: {score}/10, стоимость: ${cost:.4f}")
+
+            analyses[activity_id] = {
+                "call_meta": call_meta,
+                "transcription": transcription,
+                "analysis": analysis,
+                "analyzed_at": __import__("datetime").datetime.now().isoformat(),
+            }
+            success += 1
+
+        except Exception as e:
+            print(f"   ❌ Ошибка: {type(e).__name__}: {e}")
+            failed += 1
 
     # Сохраняем
-    out_data = {
-        "call_meta": call_meta,
-        "transcription": transcription,
-        "analysis": result,
-    }
-    Path("analysis_result.json").write_text(
-        json.dumps(out_data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    print(f"\n✅ Полный результат сохранён в analysis_result.json")
+    analyses_path.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    print(f"\n{'='*60}")
+    print(f"ИТОГИ")
+    print(f"{'='*60}")
+    print(f"   ✅ Успешно: {success}")
+    print(f"   ❌ Ошибок: {failed}")
+    print(f"   💰 Общая стоимость: ${total_cost:.4f}")
+    print(f"   📊 Анализов в базе: {len(analyses)}")
+    print(f"   💾 Сохранено в: {analyses_path}")
 
 
 if __name__ == "__main__":
