@@ -696,7 +696,8 @@ def render_rop_report(calls: List[Dict], stats: Dict, analyses: Dict, generated_
   <div class="call-time">{format_time(c.get('created', ''))}</div>
   <div class="mini-score crit">{score}</div>
 </div></a>"""
-    crit_html = f'<div class="panel"><div class="panel-head"><h3>🔴 Критичные звонки</h3><span class="hint">{len(critical_calls)} шт</span></div>{crit_rows or "<div class=\"empty\">Нет</div>"}</div>'
+    crit_rows_or_empty = crit_rows or '<div class="empty">Нет</div>'
+    crit_html = f'<div class="panel"><div class="panel-head"><h3>🔴 Критичные звонки</h3><span class="hint">{len(critical_calls)} шт</span></div>{crit_rows_or_empty}</div>'
 
     # Общий вывод
     conclusion = ""
