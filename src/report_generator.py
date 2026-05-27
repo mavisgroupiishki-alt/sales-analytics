@@ -1,18 +1,31 @@
 """
-Генератор HTML-отчёта по звонкам Mavis Group — версия по ТЗ.
+Генератор HTML-отчёта по звонкам Mavis Group.
+Реализует требования ТЗ:
+- 17 критериев с весами
+- Двухосевая классификация
+- Сильные/слабые стороны, основная проблема
+- Низкие баллы с цитатами и рекомендациями
+- 20 триггеров
+- Дата следующего контакта
+- Сопоставление со скриптами по этапам
+- Сводный отчёт РОПа + дневной отчёт менеджера
+- Ручная правка через manual_corrections.json
 """
 
 import json
 import html
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict, Counter
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple, Optional
 
 logger = logging.getLogger(__name__)
 COMPANY_NAME = "Mavis Group"
 
+# ============================================================
+# УТИЛИТЫ
+# ============================================================
 
 def esc(text: Any) -> str:
     if text is None:
@@ -119,11 +132,40 @@ def score_color(score) -> str:
     return "low"
 
 
+# ============================================================
+# РУЧНАЯ ПРАВКА ОЦЕНОК
+# ============================================================
+
+def apply_manual_corrections(analyses: Dict, corrections: Dict) -> Dict:
+    """Применяет ручные правки к анализам по activity_id."""
+    if not corrections:
+        return analyses
+    for activity_id, correction in corrections.items():
+        if activity_id in analyses:
+            ad = analyses[activity_id].get("analysis", {})
+            if "overall_score" in correction:
+                ad["overall_score"] = correction["overall_score"]
+                ad["score_corrected"] = True
+                ad["original_score"] = ad.get("original_score", ad.get("overall_score"))
+            if "comment" in correction:
+                ad["correction_comment"] = correction["comment"]
+            if "is_critical" in correction:
+                ad["is_critical"] = correction["is_critical"]
+    return analyses
+
+
+# ============================================================
+# СТАТИСТИКА
+# ============================================================
+
 def compute_stats(calls: List[Dict], analyses: Dict) -> Dict[str, Any]:
     total = len(calls)
     incoming = sum(1 for c in calls if c.get("direction") == "incoming")
     outgoing = sum(1 for c in calls if c.get("direction") == "outgoing")
-    critical = sum(1 for a in analyses.values() if a.get("analysis", {}).get("is_critical"))
+    critical = sum(
+        1 for a in analyses.values()
+        if a.get("analysis", {}).get("is_critical")
+    )
 
     by_manager = defaultdict(lambda: {
         "count": 0, "in": 0, "out": 0, "name": "", "id": None,
@@ -165,113 +207,68 @@ def compute_stats(calls: List[Dict], analyses: Dict) -> Dict[str, Any]:
         by_manager.values(),
         key=lambda x: (-(x["avg_score"] or 0), -x["count"])
     )
-
-    # Топ ошибок по критериям и триггерам по отделу
-    all_low_criteria = []
-    all_triggers = []
-    for a in analyses.values():
-        an = a.get("analysis", {})
-        for crit, val in (an.get("scores") or {}).items():
-            try:
-                if float(val) < 6:
-                    all_low_criteria.append(crit)
-            except (TypeError, ValueError):
-                pass
-        for t in (an.get("triggers") or []):
-            all_triggers.append(t.get("name", ""))
-
     return {
         "total": total, "incoming": incoming, "outgoing": outgoing,
         "managers_count": len(by_manager),
         "managers": managers_by_quality,
         "critical_count": critical,
-        "top_low_criteria": Counter(all_low_criteria).most_common(5),
-        "top_triggers": Counter(all_triggers).most_common(5),
-        "avg_dept_score": (
-            round(sum(s for m in by_manager.values() for s in m["scores"]) /
-                  sum(1 for m in by_manager.values() for _ in m["scores"]), 1)
-            if any(m["scores"] for m in by_manager.values()) else None
-        ),
     }
 
 
-def compute_manager_daily_report(manager: Dict, analyses: Dict) -> Dict[str, Any]:
-    """Дневной отчёт по менеджеру согласно разделу 12 ТЗ."""
-    calls = manager["calls"]
-    analyses_for = [analyses[c["activity_id"]] for c in calls if c["activity_id"] in analyses]
-    
-    if not analyses_for:
-        return {
-            "analyzed_count": 0, "avg_score": None,
-            "crm_contexts": {}, "goals": {},
-            "low_score_calls": [], "critical_calls": [],
-            "strengths_top": [], "weaknesses_top": [],
-            "main_problem_day": None, "advice": None,
-            "criteria_avgs": {},
-        }
-    
-    # Подсчёты
-    scores = [a["analysis"].get("overall_score", 0) for a in analyses_for]
-    crm_contexts = Counter()
-    goals_counter = Counter()
-    low_criteria = []
-    all_strengths = []
-    all_weaknesses = []
-    criteria_scores = defaultdict(list)
-    
-    low_score_calls = []
-    critical_calls = []
-    
-    for a in analyses_for:
-        an = a["analysis"]
-        ctx = an.get("classification", {}).get("crm_context", "")
-        if ctx:
-            crm_contexts[ctx] += 1
-        for g in an.get("classification", {}).get("goals", []) or []:
-            goals_counter[g] += 1
-        for crit, val in (an.get("scores") or {}).items():
+def compute_manager_daily_report(manager: Dict, analyses: Dict) -> Dict:
+    """Дневной отчёт по менеджеру: лучший/худший звонок, слабые критерии, частые триггеры."""
+    manager_analyses = []
+    for c in manager["calls"]:
+        a = analyses.get(c["activity_id"])
+        if a:
+            manager_analyses.append((c, a))
+
+    if not manager_analyses:
+        return {"has_data": False}
+
+    # Лучший и худший звонок
+    sorted_by_score = sorted(
+        manager_analyses,
+        key=lambda x: x[1].get("analysis", {}).get("overall_score") or 0
+    )
+    worst = sorted_by_score[0] if sorted_by_score else None
+    best = sorted_by_score[-1] if sorted_by_score else None
+
+    # Слабые критерии (средняя оценка по критериям)
+    criterion_scores = defaultdict(list)
+    for _, a in manager_analyses:
+        scores = a.get("analysis", {}).get("scores", {}) or {}
+        for crit, val in scores.items():
             try:
-                vf = float(val)
-                criteria_scores[crit].append(vf)
-                if vf < 6:
-                    low_criteria.append(crit)
+                criterion_scores[crit].append(float(val))
             except (TypeError, ValueError):
                 pass
-        for s in (an.get("strengths") or []):
-            all_strengths.append(s)
-        for w in (an.get("weaknesses") or []):
-            all_weaknesses.append(w)
-        # Низкобалльные
-        if an.get("overall_score", 10) < 6:
-            low_score_calls.append((a["call_meta"], an))
-        if an.get("is_critical"):
-            critical_calls.append((a["call_meta"], an))
-    
-    # Средние по критериям
-    criteria_avgs = {c: round(sum(v) / len(v), 1) for c, v in criteria_scores.items()}
-    
-    # Главная проблема дня — наиболее частый низкий критерий
-    main_problem = None
-    if low_criteria:
-        most_common = Counter(low_criteria).most_common(1)[0]
-        main_problem = f"В {most_common[1]} из {len(analyses_for)} звонков проблемы с критерием «{most_common[0]}»"
-    
+    weak_criteria = []
+    for crit, vals in criterion_scores.items():
+        avg = sum(vals) / len(vals)
+        if avg < 6.0:
+            weak_criteria.append((crit, round(avg, 1)))
+    weak_criteria.sort(key=lambda x: x[1])
+
+    # Частые триггеры
+    trigger_counter = Counter()
+    for _, a in manager_analyses:
+        for t in a.get("analysis", {}).get("triggers", []) or []:
+            trigger_counter[t.get("name", "")] += 1
+    top_triggers = trigger_counter.most_common(5)
+
     return {
-        "analyzed_count": len(analyses_for),
-        "avg_score": round(sum(scores) / len(scores), 1) if scores else None,
-        "crm_contexts": dict(crm_contexts),
-        "goals": dict(goals_counter),
-        "low_score_calls": sorted(low_score_calls, key=lambda x: x[1].get("overall_score", 0))[:5],
-        "critical_calls": critical_calls,
-        "strengths_top": Counter(all_strengths).most_common(3),
-        "weaknesses_top": Counter(all_weaknesses).most_common(3),
-        "main_problem_day": main_problem,
-        "criteria_avgs": criteria_avgs,
+        "has_data": True,
+        "analyzed": len(manager_analyses),
+        "best": best,
+        "worst": worst,
+        "weak_criteria": weak_criteria[:5],
+        "top_triggers": top_triggers,
     }
 
 
 # ============================================================
-# CSS (полный)
+# CSS
 # ============================================================
 CSS = """
 :root {
@@ -281,17 +278,34 @@ CSS = """
   --text-primary: #2A1F15; --text-secondary: #6B5544; --text-muted: #A39686;
   --border: #E8DFD0; --border-soft: #F0E8DA;
   --red: #A0432B; --red-soft: #FFE5DC;
+  --blue: #4A6B8A; --blue-soft: #DCE8F4;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: "Georgia", -apple-system, "Segoe UI", system-ui, serif; background: var(--brand-cream); color: var(--text-primary); -webkit-font-smoothing: antialiased; line-height: 1.55; }
+body {
+  font-family: "Georgia", "Garamond", -apple-system, "Segoe UI", system-ui, serif;
+  background: var(--brand-cream); color: var(--text-primary);
+  -webkit-font-smoothing: antialiased; line-height: 1.55;
+}
 a { color: inherit; text-decoration: none; }
-.topbar { background: var(--brand-dark); color: #fff; padding: 10px 24px; display: flex; align-items: center; gap: 20px; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 12px rgba(61,46,31,0.25); border-bottom: 3px solid var(--brand-gold); overflow: hidden; }
+.topbar {
+  background: var(--brand-dark); color: #fff;
+  padding: 10px 24px;
+  display: flex; align-items: center; gap: 20px;
+  position: sticky; top: 0; z-index: 10;
+  box-shadow: 0 2px 12px rgba(61,46,31,0.25);
+  border-bottom: 3px solid var(--brand-gold);
+  overflow: hidden;
+}
 .logo { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
 .logo-img { height: 48px; width: auto; display: block; flex-shrink: 0; }
 .logo-text { display: flex; flex-direction: column; line-height: 1.1; }
 .logo-text .brand { font-size: 17px; font-weight: 700; letter-spacing: 1px; color: #fff; }
 .logo-text .sub { font-size: 10px; letter-spacing: 3px; color: var(--brand-gold); text-transform: uppercase; margin-top: 2px; }
-.nav { display: flex; gap: 22px; font-size: 13px; flex: 1; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; font-family: -apple-system, sans-serif; }
+.nav {
+  display: flex; gap: 22px; font-size: 13px; flex: 1;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  font-family: -apple-system, sans-serif;
+}
 .nav::-webkit-scrollbar { display: none; }
 .nav a { color: rgba(255,255,255,0.75); padding: 4px 2px; border-bottom: 2px solid transparent; white-space: nowrap; flex-shrink: 0; }
 .nav a.active { color: #fff; border-bottom-color: var(--brand-gold); }
@@ -302,6 +316,7 @@ a { color: inherit; text-decoration: none; }
 .container { max-width: 1280px; margin: 0 auto; padding: 24px 24px 40px; }
 .breadcrumb { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; font-family: -apple-system, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .breadcrumb a { color: var(--brand-medium); border-bottom: 1px dotted var(--border); }
+.breadcrumb a:hover { color: var(--brand-dark); border-bottom-style: solid; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap; gap: 14px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
 .page-head h1 { font-size: 28px; font-weight: 400; margin-bottom: 6px; color: var(--brand-dark); }
 .page-head .sub { font-size: 13px; color: var(--text-secondary); font-family: -apple-system, sans-serif; }
@@ -316,27 +331,28 @@ a { color: inherit; text-decoration: none; }
 .kpi.green { border-top-color: var(--brand-olive); }
 .kpi.amber { border-top-color: var(--brand-gold); }
 .kpi.red { border-top-color: var(--red); }
+.kpi.blue { border-top-color: var(--blue); }
 .kpi-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; margin-bottom: 8px; font-family: -apple-system, sans-serif; }
 .kpi-value { font-size: 30px; font-weight: 400; line-height: 1; color: var(--brand-dark); }
 .kpi-hint { margin-top: 6px; font-size: 11px; color: var(--text-muted); font-family: -apple-system, sans-serif; }
 .grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-bottom: 22px; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-.panel { background: #fff; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 16px; }
+.panel { background: #fff; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 18px; }
 .panel-head { padding: 14px 18px; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between; align-items: center; background: linear-gradient(180deg, #FFFCF7, #fff); }
 .panel-head h3 { font-size: 16px; font-weight: 600; color: var(--brand-dark); }
 .panel-head .hint { font-size: 12px; color: var(--text-muted); font-family: -apple-system, sans-serif; }
-.panel-body { padding: 16px 20px; font-family: -apple-system, sans-serif; font-size: 14px; color: var(--brand-dark); }
 .row-link { display: block; transition: background 0.15s; font-family: -apple-system, sans-serif; }
 .row-link:hover { background: var(--brand-paper); }
 .row-link.critical { background: linear-gradient(90deg, var(--red-soft), transparent 60%); }
 .manager-row { display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+.manager-row:last-child { border-bottom: none; }
 .rank { width: 22px; height: 22px; border-radius: 50%; background: var(--brand-paper); color: var(--text-secondary); font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center; }
 .rank.gold { background: var(--brand-gold); color: #fff; }
 .rank.silver { background: #BFB5A8; color: #fff; }
 .rank.bronze { background: var(--brand-terracotta); color: #fff; }
 .manager-info { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .m-avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-medium), var(--brand-dark)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; flex-shrink: 0; overflow: hidden; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border); }
-.m-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.m-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
 .m-avatar.b { background: linear-gradient(135deg, var(--brand-terracotta), var(--brand-light)); }
 .m-avatar.c { background: linear-gradient(135deg, var(--brand-olive), var(--brand-medium)); }
 .m-avatar.d { background: linear-gradient(135deg, #8B7E6F, var(--brand-medium)); }
@@ -348,10 +364,11 @@ a { color: inherit; text-decoration: none; }
 .m-avg.high { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
 .m-avg.mid { background: rgba(201,169,97,0.18); color: var(--brand-gold); }
 .m-avg.low { background: rgba(184,107,79,0.15); color: var(--brand-terracotta); }
-.m-avg.empty { background: var(--brand-paper); color: var(--text-muted); font-size: 11px; }
+.m-avg.empty { background: var(--brand-paper); color: var(--text-muted); font-size: 11px; font-weight: 600; }
 .m-count { font-weight: 600; font-size: 18px; min-width: 36px; text-align: right; color: var(--text-secondary); font-family: "Georgia", serif; }
 .call-row { display: grid; grid-template-columns: 28px 1fr auto auto auto; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
-.call-direction { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; }
+.call-row:last-child { border-bottom: none; }
+.call-direction { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
 .call-direction.in { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
 .call-direction.out { background: rgba(184,107,79,0.15); color: var(--brand-terracotta); }
 .call-info { min-width: 0; overflow: hidden; }
@@ -373,17 +390,16 @@ a { color: inherit; text-decoration: none; }
 .filter-btn { padding: 7px 14px; border-radius: 20px; background: #fff; border: 1px solid var(--border); font-size: 12px; cursor: pointer; font-weight: 600; color: var(--text-secondary); font-family: -apple-system, sans-serif; }
 .filter-btn.active { background: var(--brand-dark); color: #fff; border-color: var(--brand-dark); }
 .call-card { background: #fff; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 18px; }
-.call-card.critical { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+.call-card.critical { border-color: var(--red); box-shadow: 0 0 0 1px var(--red), 0 4px 12px rgba(160,67,43,0.1); }
 .call-card-head { padding: 22px 24px; display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; background: linear-gradient(180deg, #FFFCF7, #fff); border-bottom: 1px solid var(--border-soft); }
 .call-card.critical .call-card-head { background: linear-gradient(180deg, var(--red-soft), #fff); }
 .call-card-head h2 { font-size: 22px; font-weight: 400; margin-bottom: 10px; color: var(--brand-dark); }
-.critical-badge { display: inline-block; background: var(--red); color: #fff; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-bottom: 10px; font-family: -apple-system, sans-serif; }
-.corrected-badge { display: inline-block; background: var(--brand-olive); color: #fff; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-bottom: 10px; font-family: -apple-system, sans-serif; margin-left: 6px; }
+.critical-badge { display: inline-block; background: var(--red); color: #fff; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-bottom: 10px; font-family: -apple-system, sans-serif; letter-spacing: 0.5px; }
 .call-tags { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; font-family: -apple-system, sans-serif; }
 .call-tag { background: var(--brand-paper); padding: 4px 10px; border-radius: 12px; color: var(--brand-medium); border: 1px solid var(--border); }
-.call-tag.accent { background: var(--brand-dark); color: #fff; font-weight: 600; }
-.call-tag.warning { background: var(--brand-terracotta); color: #fff; font-weight: 600; }
-.call-tag.green { background: var(--brand-olive); color: #fff; font-weight: 600; }
+.call-tag.accent { background: var(--brand-dark); color: #fff; font-weight: 600; border-color: var(--brand-dark); }
+.call-tag.goal { background: var(--blue-soft); color: var(--blue); border-color: var(--blue); }
+.call-tag.warning { background: var(--brand-terracotta); color: #fff; font-weight: 600; border-color: var(--brand-terracotta); }
 .score-big { border-radius: 6px; padding: 14px 22px; text-align: center; min-width: 130px; color: #fff; position: relative; }
 .score-big.high { background: linear-gradient(135deg, var(--brand-olive), #6B7B5F); }
 .score-big.mid { background: linear-gradient(135deg, var(--brand-gold), #B89A55); }
@@ -393,8 +409,9 @@ a { color: inherit; text-decoration: none; }
 .score-big .num { font-family: "Georgia", serif; font-size: 36px; font-weight: 400; line-height: 1; }
 .score-big .num .max { font-size: 16px; opacity: 0.7; }
 .score-big .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 4px; opacity: 0.85; font-family: -apple-system, sans-serif; }
-.edit-score-btn { display: inline-block; margin-top: 8px; padding: 4px 10px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 4px; font-size: 11px; font-family: -apple-system, sans-serif; cursor: pointer; }
-.edit-score-btn:hover { background: rgba(255,255,255,0.3); }
+.score-big .edit-btn { display: block; margin: 8px auto 0; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 3px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: -apple-system, sans-serif; }
+.score-big .edit-btn:hover { background: rgba(255,255,255,0.3); }
+.score-corrected-mark { position: absolute; top: 4px; right: 6px; font-size: 10px; background: rgba(255,255,255,0.3); padding: 1px 5px; border-radius: 3px; }
 .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; padding: 20px 24px 24px; }
 .detail { background: var(--brand-cream); border: 1px solid var(--border-soft); border-radius: 4px; padding: 11px 14px; }
 .detail-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; font-weight: 600; font-family: -apple-system, sans-serif; }
@@ -407,35 +424,43 @@ a { color: inherit; text-decoration: none; }
 .ai-summary { background: linear-gradient(135deg, #FFF8E8, #FFF4DC); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
 .ai-summary .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 8px; }
 .ai-summary .text { font-size: 14px; color: var(--brand-dark); line-height: 1.6; }
+.main-problem { background: linear-gradient(135deg, var(--red-soft), #FFEEE5); border: 1px solid var(--red); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.main-problem .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--red); font-weight: 700; margin-bottom: 8px; }
+.main-problem .text { font-size: 14px; color: var(--red); line-height: 1.6; font-weight: 600; }
+.next-contact { background: linear-gradient(135deg, var(--blue-soft), #EAF2FA); border: 1px solid var(--blue); border-radius: 6px; padding: 14px 20px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.next-contact .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--blue); font-weight: 700; margin-bottom: 6px; }
+.next-contact .text { font-size: 14px; color: var(--blue); font-weight: 600; }
+.strengths-weaknesses { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+@media (max-width: 700px) { .strengths-weaknesses { grid-template-columns: 1fr; } }
+.sw-box { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px; font-family: -apple-system, sans-serif; }
+.sw-box.strong { border-left: 3px solid var(--brand-olive); }
+.sw-box.weak { border-left: 3px solid var(--brand-terracotta); }
+.sw-box .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin-bottom: 8px; }
+.sw-box.strong .label { color: var(--brand-olive); }
+.sw-box.weak .label { color: var(--brand-terracotta); }
+.sw-box ul { list-style: none; padding: 0; }
+.sw-box li { font-size: 13px; color: var(--brand-dark); padding: 4px 0; border-bottom: 1px solid var(--border-soft); }
+.sw-box li:last-child { border-bottom: none; }
+.sw-box li::before { content: "•  "; color: var(--brand-light); font-weight: 700; }
 .ai-key-quote { background: var(--brand-paper); border-left: 3px solid var(--brand-medium); padding: 12px 16px; margin-top: 12px; font-style: italic; font-size: 14px; color: var(--brand-dark); }
 .ai-key-quote::before { content: "« "; color: var(--brand-medium); }
 .ai-key-quote::after { content: " »"; color: var(--brand-medium); }
 .ai-key-quote .meta { display: block; font-style: normal; font-size: 11px; color: var(--text-muted); margin-top: 6px; font-family: -apple-system, sans-serif; }
-.sw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-@media (max-width: 700px) { .sw-grid { grid-template-columns: 1fr; } }
-.sw-card { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 16px 20px; font-family: -apple-system, sans-serif; }
-.sw-card.strengths { border-left: 4px solid var(--brand-olive); }
-.sw-card.weaknesses { border-left: 4px solid var(--brand-terracotta); }
-.sw-card h4 { font-size: 13px; color: var(--brand-dark); margin-bottom: 10px; }
-.sw-card ul { list-style: none; padding: 0; }
-.sw-card li { padding: 4px 0; font-size: 13px; color: var(--brand-dark); display: flex; gap: 8px; }
-.sw-card li::before { content: "▸"; color: var(--brand-medium); flex-shrink: 0; }
-.main-problem { background: linear-gradient(135deg, var(--red-soft), #FFEEE5); border: 1px solid var(--red); border-radius: 6px; padding: 16px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
-.main-problem .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--red); font-weight: 700; margin-bottom: 6px; }
-.main-problem .text { font-size: 14px; color: var(--brand-dark); font-weight: 600; }
 .transcript-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
 .transcript-head { padding: 14px 20px; border-bottom: 1px solid var(--border-soft); background: linear-gradient(180deg, #FFFCF7, #fff); display: flex; justify-content: space-between; align-items: center; }
 .transcript-head h3 { font-size: 16px; font-weight: 600; color: var(--brand-dark); }
 .transcript-body { padding: 6px 0; max-height: 500px; overflow-y: auto; font-family: -apple-system, sans-serif; }
 .msg { padding: 10px 20px; border-bottom: 1px solid var(--border-soft); display: grid; grid-template-columns: 60px 1fr; gap: 12px; }
-.msg-time { font-size: 11px; color: var(--text-muted); font-weight: 600; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.msg:last-child { border-bottom: none; }
+.msg-time { font-size: 11px; color: var(--text-muted); font-weight: 600; padding-top: 2px; }
 .msg-body { min-width: 0; }
 .msg-who { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
 .msg-who.client { color: var(--brand-olive); }
 .msg-who.manager { color: var(--brand-terracotta); }
 .msg-text { font-size: 13px; color: var(--brand-dark); line-height: 1.55; }
 .scores-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
-.score-row { display: grid; grid-template-columns: 1fr 110px 50px; align-items: center; gap: 14px; padding: 9px 20px; border-bottom: 1px solid var(--border-soft); font-family: -apple-system, sans-serif; font-size: 13px; }
+.score-row { display: grid; grid-template-columns: 1fr 110px 50px 32px; align-items: center; gap: 14px; padding: 9px 20px; border-bottom: 1px solid var(--border-soft); font-family: -apple-system, sans-serif; font-size: 13px; }
+.score-row:last-child { border-bottom: none; }
 .score-name { color: var(--brand-dark); }
 .score-bar { height: 6px; background: var(--brand-paper); border-radius: 3px; overflow: hidden; }
 .score-fill { height: 100%; }
@@ -446,49 +471,68 @@ a { color: inherit; text-decoration: none; }
 .score-val.high { color: var(--brand-olive); }
 .score-val.mid { color: var(--brand-gold); }
 .score-val.low { color: var(--brand-terracotta); }
-.low-score-detail { background: #FFF5F0; border: 1px solid var(--brand-terracotta); border-radius: 6px; padding: 14px 18px; margin-bottom: 10px; font-family: -apple-system, sans-serif; font-size: 13px; }
-.low-score-detail .crit-name { font-weight: 700; color: var(--brand-terracotta); margin-bottom: 4px; font-size: 13px; }
-.low-score-detail .crit-quote { background: #fff; border-left: 2px solid var(--brand-terracotta); padding: 8px 12px; margin: 6px 0; font-style: italic; color: var(--brand-dark); }
-.low-score-detail .crit-time { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-.low-score-detail .crit-reco { color: var(--brand-dark); margin-top: 6px; }
+.score-weight { font-size: 10px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.low-score-block { background: var(--red-soft); border: 1px solid var(--red); border-radius: 6px; padding: 14px 18px; margin-bottom: 12px; font-family: -apple-system, sans-serif; }
+.low-score-block .lsh { font-weight: 700; color: var(--red); margin-bottom: 6px; font-size: 13px; }
+.low-score-block .lsq { font-style: italic; padding: 8px 12px; background: #fff; border-left: 2px solid var(--red); margin: 8px 0; font-size: 13px; }
+.low-score-block .lsr { font-size: 13px; color: var(--brand-dark); margin-top: 6px; }
+.low-score-block .lsr b { color: var(--red); }
 .trigger-list { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
 .trigger-row { padding: 12px 20px; display: flex; gap: 12px; align-items: flex-start; border-bottom: 1px solid var(--border-soft); }
+.trigger-row:last-child { border-bottom: none; }
 .trigger-marker { width: 6px; height: 6px; border-radius: 50%; background: var(--brand-terracotta); margin-top: 7px; flex-shrink: 0; }
 .trigger-text { font-family: -apple-system, sans-serif; font-size: 13px; color: var(--brand-dark); flex: 1; }
 .trigger-text .sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
-.trigger-text .timecode { display: inline-block; font-size: 10px; color: var(--brand-medium); background: var(--brand-paper); padding: 1px 6px; border-radius: 3px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+.trigger-text .timecode { display: inline-block; font-size: 10px; color: var(--brand-medium); background: var(--brand-paper); padding: 1px 6px; border-radius: 3px; margin-left: 6px; }
 .recommendation { background: linear-gradient(135deg, #FFF8E8, #FFF4DC); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
 .recommendation .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 8px; }
 .recommendation .text { font-size: 14px; color: var(--brand-dark); line-height: 1.6; }
+.scripts-alignment { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 16px 20px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.scripts-alignment .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 10px; }
+.sa-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; align-items: center; }
+.sa-row:last-child { border-bottom: none; }
+.sa-stage { color: var(--brand-dark); }
+.sa-status { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 10px; }
+.sa-status.full { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
+.sa-status.partial { background: rgba(201,169,97,0.18); color: var(--brand-gold); }
+.sa-status.miss { background: rgba(184,107,79,0.15); color: var(--brand-terracotta); }
 .scripts-used { background: var(--brand-paper); border: 1px solid var(--border); border-radius: 6px; padding: 12px 18px; margin-bottom: 16px; font-family: -apple-system, sans-serif; font-size: 12px; color: var(--text-secondary); }
 .scripts-used b { color: var(--brand-dark); }
 .scripts-used .tag { display: inline-block; background: #fff; border: 1px solid var(--border); padding: 2px 8px; margin: 3px 4px 0 0; border-radius: 10px; font-size: 11px; }
-.scripts-alignment { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
-.alignment-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 11px 20px; border-bottom: 1px solid var(--border-soft); font-family: -apple-system, sans-serif; font-size: 13px; }
-.alignment-stage { color: var(--brand-dark); font-weight: 600; }
-.alignment-evidence { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
-.alignment-status { font-size: 11px; padding: 3px 8px; border-radius: 10px; font-weight: 600; white-space: nowrap; }
-.alignment-status.full { background: rgba(124,139,111,0.18); color: var(--brand-olive); }
-.alignment-status.partial { background: rgba(201,169,97,0.18); color: var(--brand-gold); }
-.alignment-status.missing { background: rgba(184,107,79,0.18); color: var(--brand-terracotta); }
-.next-contact { background: linear-gradient(135deg, #E8F0FE, #F0F4FF); border: 1px solid #5B7AC4; border-radius: 6px; padding: 16px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
-.next-contact .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: #5B7AC4; font-weight: 700; margin-bottom: 6px; }
-.next-contact .text { font-size: 14px; color: var(--brand-dark); font-weight: 600; }
-.next-contact .sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 .placeholder-panel { background: linear-gradient(135deg, var(--brand-paper), #F8F1E3); border: 1px dashed var(--brand-gold); border-radius: 6px; padding: 20px 22px; margin-bottom: 16px; }
-.dist-bar { display: flex; gap: 4px; margin: 8px 0; }
-.dist-slice { flex: 1; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; font-weight: 700; padding: 0 8px; border-radius: 3px; font-family: -apple-system, sans-serif; }
-.modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
-.modal-overlay.show { display: flex; }
-.modal { background: #fff; border-radius: 8px; padding: 24px; max-width: 500px; width: 100%; font-family: -apple-system, sans-serif; }
-.modal h3 { color: var(--brand-dark); margin-bottom: 12px; }
-.modal p { font-size: 13px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.5; }
-.modal input, .modal textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; margin-bottom: 12px; }
-.modal textarea { resize: vertical; min-height: 70px; }
-.modal-buttons { display: flex; gap: 10px; justify-content: flex-end; }
-.btn { padding: 9px 16px; border-radius: 4px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; font-family: inherit; }
-.btn.primary { background: var(--brand-dark); color: #fff; }
-.btn.secondary { background: var(--brand-paper); color: var(--brand-dark); border: 1px solid var(--border); }
+.placeholder-panel h3 { font-size: 16px; font-weight: 600; color: var(--brand-dark); margin-bottom: 8px; }
+.placeholder-panel p { font-size: 13px; color: var(--brand-medium); font-family: -apple-system, sans-serif; }
+.correction-note { background: var(--blue-soft); border: 1px solid var(--blue); border-radius: 6px; padding: 12px 18px; margin-bottom: 14px; font-family: -apple-system, sans-serif; font-size: 13px; color: var(--blue); }
+.correction-note b { font-weight: 700; }
+.modal-backdrop { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(61,46,31,0.6); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+.modal-backdrop.active { display: flex; }
+.modal { background: #fff; border-radius: 8px; padding: 24px; max-width: 540px; width: 100%; box-shadow: 0 8px 32px rgba(61,46,31,0.3); font-family: -apple-system, sans-serif; max-height: 90vh; overflow-y: auto; }
+.modal h3 { font-size: 18px; margin-bottom: 14px; color: var(--brand-dark); }
+.modal label { display: block; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; font-weight: 600; margin-top: 12px; }
+.modal input, .modal textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; }
+.modal textarea { min-height: 80px; resize: vertical; }
+.modal .actions { display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; }
+.modal button { padding: 9px 18px; border-radius: 4px; font-size: 13px; cursor: pointer; font-weight: 600; border: none; font-family: inherit; }
+.modal .btn-cancel { background: var(--brand-paper); color: var(--brand-dark); }
+.modal .btn-save { background: var(--brand-dark); color: #fff; }
+.modal .instruction { background: var(--brand-paper); border: 1px solid var(--brand-gold); border-radius: 4px; padding: 10px 14px; font-size: 12px; color: var(--brand-dark); margin-top: 12px; line-height: 1.5; }
+.modal .instruction code { background: #fff; padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 11px; word-break: break-all; }
+.daily-report { background: linear-gradient(135deg, #FFFBF0, #FFF6E0); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 20px 22px; margin-bottom: 18px; font-family: -apple-system, sans-serif; }
+.daily-report h3 { font-size: 18px; color: var(--brand-dark); margin-bottom: 12px; font-family: "Georgia", serif; font-weight: 400; }
+.dr-block { margin-bottom: 14px; }
+.dr-block .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; }
+.dr-list { font-size: 13px; color: var(--brand-dark); }
+.dr-list-item { padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.dr-list-item:last-child { border-bottom: none; }
+.dr-callref { padding: 8px 12px; background: #fff; border-radius: 4px; font-size: 13px; margin-top: 4px; }
+.dr-callref a { color: var(--brand-medium); border-bottom: 1px dotted var(--border); }
+.dr-callref .sc { display: inline-block; font-family: "Georgia", serif; font-weight: 700; padding: 1px 7px; border-radius: 3px; margin-right: 6px; font-size: 12px; }
+.rop-section { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.rop-section h3 { font-size: 16px; color: var(--brand-dark); margin-bottom: 12px; }
+.rop-section .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px; }
+.rop-list-item { padding: 6px 0; font-size: 13px; color: var(--brand-dark); border-bottom: 1px solid var(--border-soft); display: grid; grid-template-columns: 1fr auto; gap: 12px; }
+.rop-list-item:last-child { border-bottom: none; }
+.rop-list-item .count { font-weight: 700; color: var(--brand-terracotta); }
 @media (max-width: 640px) {
   .topbar { padding: 10px 14px; gap: 12px; }
   .logo-img { height: 40px; }
@@ -502,7 +546,7 @@ a { color: inherit; text-decoration: none; }
   .score-big { justify-self: start; min-width: auto; padding: 12px 18px; }
   .score-big .num { font-size: 28px; }
   .detail-grid { grid-template-columns: 1fr; padding: 16px 18px 18px; gap: 10px; }
-  .score-row { grid-template-columns: 1fr 80px 40px; padding: 9px 14px; }
+  .score-row { grid-template-columns: 1fr 80px 40px 28px; padding: 9px 14px; }
   .call-row { grid-template-columns: 28px 1fr auto auto; }
   .call-row .call-time { display: none; }
   .manager-row { grid-template-columns: 26px 1fr auto; }
@@ -513,60 +557,87 @@ a { color: inherit; text-decoration: none; }
 """
 
 
-def page_template(title: str, body: str, active_nav: str, generated_at: str, critical_count: int = 0) -> str:
+# ============================================================
+# ШАБЛОН СТРАНИЦЫ
+# ============================================================
+
+def page_template(title: str, body: str, active_nav: str, generated_at: str,
+                  critical_count: int = 0, base_path: str = "") -> str:
     nav_items = [
         ("dashboard", "index.html", "Сводка"),
-        ("rop_report", "rop-report.html", "Отчёт РОПа"),
+        ("rop", "rop-report.html", "Отчёт РОПа"),
         ("managers", "managers.html", "Менеджеры"),
         ("calls", "all-calls.html", "Все звонки"),
-        ("critical", "critical.html", f"Срочно{f' ({critical_count})' if critical_count else ''}"),
+        ("critical", "critical.html", f"Срочно{' (' + str(critical_count) + ')' if critical_count else ''}"),
         ("triggers", "triggers.html", "Триггеры"),
     ]
     nav_html = ""
     for key, href, label in nav_items:
         classes = []
-        if key == active_nav: classes.append("active")
-        if key == "critical" and critical_count > 0: classes.append("critical-link")
-        cls = f' class="{" ".join(classes)}"' if classes else ""
-        nav_html += f'<a{cls} href="{href}">{label}</a>'
+        if key == active_nav:
+            classes.append("active")
+        if key == "critical" and critical_count > 0:
+            classes.append("critical-link")
+        cls = ' class="' + ' '.join(classes) + '"' if classes else ""
+        nav_html += '<a' + cls + ' href="' + base_path + href + '">' + esc(label) + '</a>'
     year = datetime.now().year
+    safe_ts = esc(generated_at[:16].replace('T', ' '))
     return f"""<!DOCTYPE html>
-<html lang="ru"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{esc(title)} — {esc(COMPANY_NAME)}</title><style>{CSS}</style></head>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{esc(title)} — {esc(COMPANY_NAME)} Sales Analytics</title>
+  <style>{CSS}</style>
+</head>
 <body>
-<div class="topbar">
-  <a href="index.html" class="logo">
-    <img class="logo-img" src="logo.png" alt="{esc(COMPANY_NAME)}">
-    <div class="logo-text"><span class="brand">{esc(COMPANY_NAME)}</span><span class="sub">Sales Analytics</span></div>
-  </a>
-  <div class="nav">{nav_html}</div>
-  <div class="timestamp">обновлено {esc(generated_at[:16].replace('T', ' '))}</div>
-</div>
-<div class="container">{body}</div>
-<div class="footer-note">
-  <div class="footer-brand">{esc(COMPANY_NAME).upper()}</div>
-  <div class="footer-divider"></div>
-  <div>Sales Analytics · Анализ звонков отдела продаж</div>
-  <div style="margin-top:6px; font-size:11px;">Bitrix24 · GitHub Actions · Claude Haiku · © {year}</div>
-</div>
-</body></html>"""
+  <div class="topbar">
+    <a href="{base_path}index.html" class="logo">
+      <img class="logo-img" src="{base_path}logo.png" alt="{esc(COMPANY_NAME)}" onerror="this.style.display='none'">
+      <div class="logo-text">
+        <span class="brand">{esc(COMPANY_NAME)}</span>
+        <span class="sub">Sales Analytics</span>
+      </div>
+    </a>
+    <div class="nav">{nav_html}</div>
+    <div class="timestamp">обновлено {safe_ts}</div>
+  </div>
+  <div class="container">{body}</div>
+  <div class="footer-note">
+    <div class="footer-brand">{esc(COMPANY_NAME).upper()}</div>
+    <div class="footer-divider"></div>
+    <div>Sales Analytics · Автоматический анализ звонков отдела продаж</div>
+    <div style="margin-top:6px; font-size:11px;">Bitrix24 · GitHub Actions · Claude Haiku · © {year}</div>
+  </div>
+</body>
+</html>"""
 
 
-def render_call_row(c: Dict, show_manager: bool = True, analysis: Dict = None, base_calls_path: str = "calls/") -> str:
+# ============================================================
+# СТРОКА ЗВОНКА
+# ============================================================
+
+def render_call_row(c: Dict, show_manager: bool = True, analysis: Dict = None,
+                    base_path: str = "") -> str:
     direction = c.get("direction", "")
     dir_icon = "↓" if direction == "incoming" else "↑"
     dir_class = "in" if direction == "incoming" else "out"
     client_name = c.get("client", {}).get("name", "Неизвестно")
     company = c.get("client", {}).get("company", "")
     manager = c.get("manager", {}).get("name", "") if show_manager else ""
+
     meta_parts = []
-    if company: meta_parts.append(esc(company))
-    if manager: meta_parts.append(f"менеджер: {esc(manager)}")
+    if company:
+        meta_parts.append(esc(company))
+    if manager:
+        meta_parts.append("менеджер: " + esc(manager))
     meta = " · ".join(meta_parts)
+
     duration_html = ""
     dur = c.get("duration_sec")
     if dur:
-        duration_html = f'<div class="call-duration">{format_duration(dur)}</div>'
+        duration_html = '<div class="call-duration">' + format_duration(dur) + '</div>'
+
     score_html = ""
     row_classes = ["row-link"]
     if analysis:
@@ -574,157 +645,205 @@ def render_call_row(c: Dict, show_manager: bool = True, analysis: Dict = None, b
         score = an.get("overall_score")
         if score is not None:
             cls = "crit" if an.get("is_critical") else score_color(score)
-            score_html = f'<div class="mini-score {cls}">{score}</div>'
+            score_html = '<div class="mini-score ' + cls + '">' + esc(score) + '</div>'
         if an.get("is_critical"):
             row_classes.append("critical")
-    return f"""<a href="{base_calls_path}{esc(c['activity_id'])}.html" class="{' '.join(row_classes)}">
-<div class="call-row">
-  <div class="call-direction {dir_class}">{dir_icon}</div>
-  <div class="call-info"><div class="call-client">{esc(client_name)}</div><div class="call-meta">{meta}</div></div>
-  {duration_html}
-  <div class="call-time">{format_time(c.get('created', ''))}</div>
-  {score_html}
-</div></a>"""
 
+    activity_id = esc(c['activity_id'])
+    return ('<a href="' + base_path + 'calls/' + activity_id + '.html" class="' + ' '.join(row_classes) + '">'
+            '<div class="call-row">'
+            '<div class="call-direction ' + dir_class + '">' + dir_icon + '</div>'
+            '<div class="call-info">'
+            '<div class="call-client">' + esc(client_name) + '</div>'
+            '<div class="call-meta">' + meta + '</div>'
+            '</div>'
+            + duration_html +
+            '<div class="call-time">' + format_time(c.get('created', '')) + '</div>'
+            + score_html +
+            '</div></a>')
+
+
+# ============================================================
+# ГЛАВНАЯ СТРАНИЦА
+# ============================================================
 
 def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: str) -> str:
     today = format_date(generated_at)
     analyzed_count = len(analyses)
     critical_count = stats["critical_count"]
-    avg = stats.get("avg_dept_score")
-    avg_html = f'<div class="kpi green"><div class="kpi-label">Средняя оценка</div><div class="kpi-value">{avg}</div></div>' if avg else ""
 
-    kpi_html = f"""<div class="kpi-row">
-      <div class="kpi"><div class="kpi-label">Всего звонков</div><div class="kpi-value">{stats['total']}</div></div>
-      <div class="kpi green"><div class="kpi-label">Входящих</div><div class="kpi-value">{stats['incoming']}</div></div>
-      <div class="kpi accent"><div class="kpi-label">Исходящих</div><div class="kpi-value">{stats['outgoing']}</div></div>
-      <div class="kpi amber"><div class="kpi-label">Проанализировано</div><div class="kpi-value">{analyzed_count}</div></div>
-      <div class="kpi red"><div class="kpi-label">Срочно</div><div class="kpi-value">{critical_count}</div></div>
-      {avg_html}
-    </div>"""
+    kpi_html = ('<div class="kpi-row">'
+                '<div class="kpi"><div class="kpi-label">Всего звонков</div>'
+                '<div class="kpi-value">' + str(stats['total']) + '</div>'
+                '<div class="kpi-hint">за последние сутки</div></div>'
+                '<div class="kpi green"><div class="kpi-label">Входящих</div>'
+                '<div class="kpi-value">' + str(stats['incoming']) + '</div></div>'
+                '<div class="kpi accent"><div class="kpi-label">Исходящих</div>'
+                '<div class="kpi-value">' + str(stats['outgoing']) + '</div></div>'
+                '<div class="kpi amber"><div class="kpi-label">Проанализировано</div>'
+                '<div class="kpi-value">' + str(analyzed_count) + '</div>'
+                '<div class="kpi-hint">из ' + str(stats['total']) + '</div></div>'
+                '<div class="kpi red"><div class="kpi-label">Срочно к РОПу</div>'
+                '<div class="kpi-value">' + str(critical_count) + '</div>'
+                '<div class="kpi-hint">критичных</div></div>'
+                '</div>')
 
+    # Рейтинг менеджеров
     managers_html = ""
     for i, m in enumerate(stats["managers"][:10], 1):
         rank_class = ["", "gold", "silver", "bronze"][min(i, 3)] if i <= 3 else ""
         avatar_class = manager_color_class(m["id"])
         if m.get("avg_score") is not None:
             avg_cls = score_color(m["avg_score"])
-            avg_html2 = f'<div class="m-avg {avg_cls}">{m["avg_score"]}</div>'
-            stats_line = f'оценок: <b>{m["analyzed"]}</b>'
-            if m["critical"]: stats_line += f' · 🔴 <b>{m["critical"]}</b>'
+            avg_html = '<div class="m-avg ' + avg_cls + '">' + str(m["avg_score"]) + '</div>'
+            stats_line = ('оценок: <b>' + str(m["analyzed"]) + '</b> из ' + str(m["count"]))
+            if m["critical"]:
+                stats_line += ' · 🔴 <b>' + str(m["critical"]) + '</b>'
         else:
-            avg_html2 = '<div class="m-avg empty">—</div>'
-            stats_line = f'входящих: <b>{m["in"]}</b> · исходящих: <b>{m["out"]}</b>'
-        managers_html += f"""<a href="managers/{m['id']}.html" class="row-link">
-<div class="manager-row">
-  <div class="rank {rank_class}">{i}</div>
-  <div class="manager-info">
-    <div class="m-avatar {avatar_class}">{manager_avatar_html(m)}</div>
-    <div><div class="m-name">{esc(m['name'])}</div><div class="m-stats">{stats_line}</div></div>
-  </div>
-  {avg_html2}<div class="m-count">{m['count']}</div>
-</div></a>"""
-    if not managers_html: managers_html = '<div class="empty">Звонков нет</div>'
+            avg_html = '<div class="m-avg empty">—</div>'
+            stats_line = ('входящих: <b>' + str(m["in"]) + '</b> · исходящих: <b>' + str(m["out"]) + '</b>')
+
+        managers_html += ('<a href="managers/' + str(m['id']) + '.html" class="row-link">'
+                          '<div class="manager-row">'
+                          '<div class="rank ' + rank_class + '">' + str(i) + '</div>'
+                          '<div class="manager-info">'
+                          '<div class="m-avatar ' + avatar_class + '">' + manager_avatar_html(m) + '</div>'
+                          '<div><div class="m-name">' + esc(m['name']) + '</div>'
+                          '<div class="m-stats">' + stats_line + '</div></div>'
+                          '</div>'
+                          + avg_html +
+                          '<div class="m-count">' + str(m['count']) + '</div>'
+                          '</div></a>')
+    if not managers_html:
+        managers_html = '<div class="empty">Звонков нет</div>'
 
     recent = sorted(calls, key=lambda x: x.get("created", ""), reverse=True)[:10]
-    calls_html = "".join(render_call_row(c, analysis=analyses.get(c["activity_id"])) for c in recent) or '<div class="empty">Нет</div>'
+    calls_html = "".join(render_call_row(c, analysis=analyses.get(c["activity_id"])) for c in recent)
+    if not calls_html:
+        calls_html = '<div class="empty">Звонков нет</div>'
 
     notice = ""
     if critical_count > 0:
-        notice = f'<div class="notice danger"><b>🔴 Внимание!</b> Найдено <b>{critical_count}</b> критичных звонков. <a href="critical.html" style="color: var(--red); font-weight: 700; text-decoration: underline;">К списку →</a></div>'
+        notice = ('<div class="notice danger">'
+                  '<b>🔴 Внимание!</b> Найдено <b>' + str(critical_count) + '</b> критичных звонков, требующих внимания РОПа. '
+                  '<a href="critical.html" style="color: var(--red); font-weight: 700; text-decoration: underline;">Перейти к списку →</a>'
+                  '</div>')
+    elif analyzed_count > 0:
+        notice = ('<div class="notice success">'
+                  '<b>✓ Анализ работает.</b> ' + str(analyzed_count) + ' звонков проанализированы ИИ.'
+                  '</div>')
 
-    body = f"""<div class="page-head"><div><h1>Сводка</h1><div class="sub">{COMPANY_NAME} · {stats['total']} звонков</div></div><div class="pill">📅 {today}</div></div>
-{notice}{kpi_html}
-<div class="grid">
-  <div class="panel"><div class="panel-head"><h3>Рейтинг по качеству</h3><a href="managers.html" class="hint" style="color:var(--brand-medium);">все →</a></div>{managers_html}</div>
-  <div class="panel"><div class="panel-head"><h3>Последние звонки</h3><a href="all-calls.html" class="hint" style="color:var(--brand-medium);">все →</a></div>{calls_html}</div>
-</div>"""
+    body = ('<div class="page-head">'
+            '<div><h1>Сводка</h1><div class="sub">' + COMPANY_NAME + ' · ' + str(stats['total']) + ' звонков · ' + str(stats['managers_count']) + ' менеджеров</div></div>'
+            '<div class="pill">📅 ' + today + '</div>'
+            '</div>'
+            + notice + kpi_html +
+            '<div class="grid">'
+            '<div class="panel">'
+            '<div class="panel-head"><h3>Рейтинг по качеству</h3><a href="managers.html" class="hint" style="color:var(--brand-medium);">все →</a></div>'
+            + managers_html +
+            '</div>'
+            '<div class="panel">'
+            '<div class="panel-head"><h3>Последние звонки</h3><a href="all-calls.html" class="hint" style="color:var(--brand-medium);">все →</a></div>'
+            + calls_html +
+            '</div>'
+            '</div>')
     return page_template("Сводка", body, "dashboard", generated_at, critical_count)
 
 
+# ============================================================
+# ОТЧЁТ РОПа
+# ============================================================
+
 def render_rop_report(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: str) -> str:
-    """Сводный отчёт для руководителя (раздел 13 ТЗ)."""
     today = format_date(generated_at)
     critical_count = stats["critical_count"]
 
-    # Топ-5 ошибок
-    top_low_html = ""
-    if stats["top_low_criteria"]:
-        items = ""
-        for crit, cnt in stats["top_low_criteria"]:
-            items += f'<div class="alignment-row"><div><span class="alignment-stage">{esc(crit)}</span></div><div class="alignment-status missing">{cnt} раз</div></div>'
-        top_low_html = f'<div class="panel"><div class="panel-head"><h3>📉 Топ слабых критериев</h3></div>{items}</div>'
+    # Топ-5 слабых критериев по компании
+    criterion_scores = defaultdict(list)
+    for a in analyses.values():
+        scores = a.get("analysis", {}).get("scores", {}) or {}
+        for crit, val in scores.items():
+            try:
+                criterion_scores[crit].append(float(val))
+            except (TypeError, ValueError):
+                pass
+    weak_criteria = []
+    for crit, vals in criterion_scores.items():
+        if vals:
+            avg = sum(vals) / len(vals)
+            weak_criteria.append((crit, round(avg, 1), len(vals)))
+    weak_criteria.sort(key=lambda x: x[1])
+    weak_html = ""
+    for crit, avg, count in weak_criteria[:5]:
+        cls = score_color(avg)
+        weak_html += ('<div class="rop-list-item">'
+                      '<div>' + esc(crit) + '</div>'
+                      '<div><span class="mini-score ' + cls + '">' + str(avg) + '</span> · ' + str(count) + ' звонков</div>'
+                      '</div>')
+    if not weak_html:
+        weak_html = '<div class="empty">Нет данных</div>'
 
-    top_trig_html = ""
-    if stats["top_triggers"]:
-        items = ""
-        for t, cnt in stats["top_triggers"]:
-            items += f'<div class="alignment-row"><div><span class="alignment-stage">{esc(t)}</span></div><div class="alignment-status partial">{cnt} раз</div></div>'
-        top_trig_html = f'<div class="panel"><div class="panel-head"><h3>⚠️ Топ-5 триггеров дня</h3></div>{items}</div>'
+    # Топ-5 триггеров
+    trigger_counter = Counter()
+    for a in analyses.values():
+        for t in a.get("analysis", {}).get("triggers", []) or []:
+            trigger_counter[t.get("name", "")] += 1
+    top_triggers = trigger_counter.most_common(5)
+    triggers_html = ""
+    for name, cnt in top_triggers:
+        triggers_html += ('<div class="rop-list-item">'
+                          '<div>' + esc(name) + '</div>'
+                          '<div class="count">' + str(cnt) + '×</div>'
+                          '</div>')
+    if not triggers_html:
+        triggers_html = '<div class="empty">Триггеров не зафиксировано</div>'
 
-    # Рейтинг с просадкой (avg<6)
-    drop_managers = [m for m in stats["managers"] if m.get("avg_score") is not None and m["avg_score"] < 6]
-    drop_html = ""
-    if drop_managers:
-        items = ""
-        for m in drop_managers:
-            avatar_class = manager_color_class(m["id"])
-            items += f"""<a href="managers/{m['id']}.html" class="row-link"><div class="manager-row">
-  <div class="rank">!</div>
-  <div class="manager-info"><div class="m-avatar {avatar_class}">{manager_avatar_html(m)}</div>
-  <div><div class="m-name">{esc(m['name'])}</div><div class="m-stats">{m['analyzed']} разборов</div></div></div>
-  <div class="m-avg low">{m['avg_score']}</div><div class="m-count">{m['count']}</div>
-</div></a>"""
-        drop_html = f'<div class="panel"><div class="panel-head"><h3>📉 Менеджеры с просадкой (avg &lt; 6)</h3></div>{items}</div>'
+    # Менеджеры с просадкой (низкие средние оценки)
+    weak_managers = [m for m in stats["managers"] if m.get("avg_score") is not None and m["avg_score"] < 6.5]
+    weak_managers.sort(key=lambda x: x["avg_score"])
+    weak_m_html = ""
+    for m in weak_managers[:5]:
+        avg_cls = score_color(m["avg_score"])
+        weak_m_html += ('<div class="rop-list-item">'
+                        '<div><a href="managers/' + str(m['id']) + '.html">' + esc(m['name']) + '</a> '
+                        '<span style="color:var(--text-muted); font-size:11px;">(' + str(m['analyzed']) + ' разборов)</span></div>'
+                        '<div><span class="mini-score ' + avg_cls + '">' + str(m['avg_score']) + '</span></div>'
+                        '</div>')
+    if not weak_m_html:
+        weak_m_html = '<div class="empty">Все менеджеры в норме</div>'
 
-    # Критичные звонки
-    critical_calls = []
-    for c in calls:
-        a = analyses.get(c["activity_id"])
-        if a and a.get("analysis", {}).get("is_critical"):
-            critical_calls.append((c, a))
-    critical_calls.sort(key=lambda x: x[1]["analysis"].get("overall_score", 0))
-    crit_rows = ""
-    for c, a in critical_calls[:10]:
-        an = a["analysis"]
-        score = an.get("overall_score", 0)
-        reason = an.get("critical_reason", "")
-        crit_rows += f"""<a href="calls/{esc(c['activity_id'])}.html" class="row-link critical"><div class="call-row">
-  <div class="call-direction {'in' if c.get('direction') == 'incoming' else 'out'}">{'↓' if c.get('direction') == 'incoming' else '↑'}</div>
-  <div class="call-info"><div class="call-client">{esc(c.get('client', {}).get('name', ''))} · {esc(c.get('manager', {}).get('name', ''))}</div>
-  <div class="call-meta"><b>{esc(reason)}</b></div></div>
-  <div class="call-time">{format_time(c.get('created', ''))}</div>
-  <div class="mini-score crit">{score}</div>
-</div></a>"""
-    crit_rows_or_empty = crit_rows or '<div class="empty">Нет</div>'
-    crit_html = f'<div class="panel"><div class="panel-head"><h3>🔴 Критичные звонки</h3><span class="hint">{len(critical_calls)} шт</span></div>{crit_rows_or_empty}</div>'
+    body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Отчёт РОПа</div>'
+            '<div class="page-head">'
+            '<div><h1>📊 Сводный отчёт РОПа</h1><div class="sub">' + today + ' · аналитика по отделу</div></div>'
+            '</div>'
+            '<div class="kpi-row">'
+            '<div class="kpi"><div class="kpi-label">Всего звонков</div><div class="kpi-value">' + str(stats['total']) + '</div></div>'
+            '<div class="kpi amber"><div class="kpi-label">Проанализировано</div><div class="kpi-value">' + str(len(analyses)) + '</div></div>'
+            '<div class="kpi red"><div class="kpi-label">Критичных</div><div class="kpi-value">' + str(critical_count) + '</div></div>'
+            '<div class="kpi blue"><div class="kpi-label">Менеджеров</div><div class="kpi-value">' + str(stats['managers_count']) + '</div></div>'
+            '</div>'
+            '<div class="rop-section">'
+            '<h3>📉 Топ-5 слабых критериев по отделу</h3>'
+            '<div class="label">Где менеджеры в среднем недорабатывают</div>'
+            + weak_html +
+            '</div>'
+            '<div class="rop-section">'
+            '<h3>⚠️ Топ-5 частых триггеров</h3>'
+            '<div class="label">Какие ошибки повторяются чаще всего</div>'
+            + triggers_html +
+            '</div>'
+            '<div class="rop-section">'
+            '<h3>👤 Менеджеры с просадкой (средняя &lt; 6.5)</h3>'
+            '<div class="label">С кем нужно поработать индивидуально</div>'
+            + weak_m_html +
+            '</div>')
+    return page_template("Отчёт РОПа", body, "rop", generated_at, critical_count)
 
-    # Общий вывод
-    conclusion = ""
-    avg = stats.get("avg_dept_score")
-    if avg:
-        if avg >= 7.5:
-            conclusion = f"<b>Отдел отработал хорошо.</b> Средняя оценка {avg}/10."
-        elif avg >= 6:
-            conclusion = f"<b>Средний день.</b> Средняя оценка {avg}/10. Есть моменты для улучшения."
-        else:
-            conclusion = f"<b>Нужно реагировать.</b> Средняя оценка {avg}/10 ниже нормы."
-    if stats["top_low_criteria"]:
-        first = stats["top_low_criteria"][0]
-        conclusion += f"<br>Главная зона роста — <b>{esc(first[0])}</b> ({first[1]} срабатываний)."
 
-    body = f"""<div class="breadcrumb"><a href="index.html">Главная</a> › Отчёт РОПа</div>
-<div class="page-head"><div><h1>Сводный отчёт</h1><div class="sub">{COMPANY_NAME} · {today}</div></div></div>
-<div class="kpi-row">
-  <div class="kpi"><div class="kpi-label">Всего звонков</div><div class="kpi-value">{stats['total']}</div></div>
-  <div class="kpi amber"><div class="kpi-label">Проанализировано</div><div class="kpi-value">{len(analyses)}</div></div>
-  <div class="kpi green"><div class="kpi-label">Средняя оценка</div><div class="kpi-value">{avg or '—'}</div></div>
-  <div class="kpi red"><div class="kpi-label">Критичных</div><div class="kpi-value">{critical_count}</div></div>
-</div>
-<div class="recommendation"><div class="label">📋 Вывод по отделу за день</div><div class="text">{conclusion}</div></div>
-{top_low_html}{top_trig_html}{drop_html}{crit_html}"""
-    return page_template("Отчёт РОПа", body, "rop_report", generated_at, critical_count)
-
+# ============================================================
+# СПИСОК МЕНЕДЖЕРОВ
+# ============================================================
 
 def render_managers_list(stats: Dict, generated_at: str) -> str:
     rows = ""
@@ -733,298 +852,343 @@ def render_managers_list(stats: Dict, generated_at: str) -> str:
         avatar_class = manager_color_class(m["id"])
         if m.get("avg_score") is not None:
             avg_cls = score_color(m["avg_score"])
-            avg_html = f'<div class="m-avg {avg_cls}">{m["avg_score"]}</div>'
-            stats_line = f'оценок: <b>{m["analyzed"]}</b>'
-            if m["critical"]: stats_line += f' · 🔴 <b>{m["critical"]}</b>'
+            avg_html = '<div class="m-avg ' + avg_cls + '">' + str(m["avg_score"]) + '</div>'
+            stats_line = ('оценок: <b>' + str(m["analyzed"]) + '</b> из ' + str(m["count"]))
+            if m["critical"]:
+                stats_line += ' · 🔴 <b>' + str(m["critical"]) + '</b>'
         else:
             avg_html = '<div class="m-avg empty">—</div>'
-            stats_line = f'входящих: <b>{m["in"]}</b> · исходящих: <b>{m["out"]}</b>'
-        rows += f"""<a href="managers/{m['id']}.html" class="row-link"><div class="manager-row">
-  <div class="rank {rank_class}">{i}</div>
-  <div class="manager-info"><div class="m-avatar {avatar_class}">{manager_avatar_html(m)}</div>
-  <div><div class="m-name">{esc(m['name'])}</div><div class="m-stats">{stats_line}</div></div></div>
-  {avg_html}<div class="m-count">{m['count']}</div>
-</div></a>"""
-    if not rows: rows = '<div class="empty">Нет</div>'
-    body = f"""<div class="breadcrumb"><a href="index.html">Главная</a> › Менеджеры</div>
-<div class="page-head"><div><h1>Менеджеры</h1><div class="sub">{COMPANY_NAME}</div></div></div>
-<div class="panel"><div class="panel-head"><h3>Рейтинг по качеству</h3></div>{rows}</div>"""
+            stats_line = ('входящих: <b>' + str(m["in"]) + '</b> · исходящих: <b>' + str(m["out"]) + '</b>')
+        rows += ('<a href="managers/' + str(m['id']) + '.html" class="row-link">'
+                 '<div class="manager-row">'
+                 '<div class="rank ' + rank_class + '">' + str(i) + '</div>'
+                 '<div class="manager-info">'
+                 '<div class="m-avatar ' + avatar_class + '">' + manager_avatar_html(m) + '</div>'
+                 '<div><div class="m-name">' + esc(m['name']) + '</div>'
+                 '<div class="m-stats">' + stats_line + '</div></div>'
+                 '</div>'
+                 + avg_html +
+                 '<div class="m-count">' + str(m['count']) + '</div>'
+                 '</div></a>')
+    if not rows:
+        rows = '<div class="empty">Менеджеров нет</div>'
+    body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Менеджеры</div>'
+            '<div class="page-head"><div><h1>Менеджеры</h1>'
+            '<div class="sub">' + COMPANY_NAME + ' · ' + str(stats['managers_count']) + ' · ' + str(stats['total']) + ' звонков</div></div></div>'
+            '<div class="panel"><div class="panel-head"><h3>Рейтинг по качеству</h3></div>' + rows + '</div>')
     return page_template("Менеджеры", body, "managers", generated_at, stats["critical_count"])
 
 
+# ============================================================
+# СТРАНИЦА МЕНЕДЖЕРА (С ДНЕВНЫМ ОТЧЁТОМ)
+# ============================================================
+
 def render_manager_page(manager: Dict, analyses: Dict, generated_at: str, critical_count: int) -> str:
-    """Дневной отчёт по менеджеру (раздел 12 ТЗ)."""
-    report = compute_manager_daily_report(manager, analyses)
     calls = sorted(manager["calls"], key=lambda x: x.get("created", ""), reverse=True)
-    
-    kpis = f"""<div class="kpi-row">
-      <div class="kpi"><div class="kpi-label">Звонков</div><div class="kpi-value">{manager['count']}</div></div>
-      <div class="kpi green"><div class="kpi-label">Входящих</div><div class="kpi-value">{manager['in']}</div></div>
-      <div class="kpi accent"><div class="kpi-label">Исходящих</div><div class="kpi-value">{manager['out']}</div></div>
-      <div class="kpi amber"><div class="kpi-label">Проанализировано</div><div class="kpi-value">{report['analyzed_count']}</div></div>"""
-    if report["avg_score"] is not None:
-        kpis += f'<div class="kpi"><div class="kpi-label">Средняя оценка</div><div class="kpi-value">{report["avg_score"]}</div></div>'
-    if manager.get("critical", 0) > 0:
-        kpis += f'<div class="kpi red"><div class="kpi-label">Критичных</div><div class="kpi-value">{manager["critical"]}</div></div>'
-    kpis += "</div>"
-
-    main_problem_html = ""
-    if report["main_problem_day"]:
-        main_problem_html = f'<div class="main-problem"><div class="label">⚠️ Главная проблема дня</div><div class="text">{esc(report["main_problem_day"])}</div></div>'
-
-    strengths_html = ""
-    if report["strengths_top"]:
-        items = "".join(f"<li>{esc(s)} <span style='color:var(--text-muted)'>({cnt}×)</span></li>" for s, cnt in report["strengths_top"])
-        strengths_html = f'<div class="sw-card strengths"><h4>✓ Сильные стороны</h4><ul>{items}</ul></div>'
-    weak_html = ""
-    if report["weaknesses_top"]:
-        items = "".join(f"<li>{esc(w)} <span style='color:var(--text-muted)'>({cnt}×)</span></li>" for w, cnt in report["weaknesses_top"])
-        weak_html = f'<div class="sw-card weaknesses"><h4>✗ Зоны роста</h4><ul>{items}</ul></div>'
-    sw_html = f'<div class="sw-grid">{strengths_html}{weak_html}</div>' if (strengths_html or weak_html) else ""
-
-    # Категории CRM-контекста
-    ctx_html = ""
-    if report["crm_contexts"]:
-        items = "".join(f'<div class="alignment-row"><div class="alignment-stage">{esc(k)}</div><div class="alignment-status full">{v}</div></div>' for k, v in report["crm_contexts"].items())
-        ctx_html = f'<div class="panel"><div class="panel-head"><h3>По категориям CRM</h3></div>{items}</div>'
-    
-    goals_html = ""
-    if report["goals"]:
-        items = "".join(f'<div class="alignment-row"><div class="alignment-stage">{esc(k)}</div><div class="alignment-status full">{v}</div></div>' for k, v in report["goals"].items())
-        goals_html = f'<div class="panel"><div class="panel-head"><h3>По целям разговора</h3></div>{items}</div>'
-
-    # Средние оценки по критериям
-    crit_avg_html = ""
-    if report["criteria_avgs"]:
-        rows_a = ""
-        for crit, avg in sorted(report["criteria_avgs"].items(), key=lambda x: x[1]):
-            cls = score_color(avg)
-            width = max(0, min(100, int(avg * 10)))
-            rows_a += f"""<div class="score-row"><div class="score-name">{esc(crit)}</div>
-<div class="score-bar"><div class="score-fill {cls}" style="width:{width}%"></div></div>
-<div class="score-val {cls}">{avg}</div></div>"""
-        crit_avg_html = f'<div class="scores-panel"><div class="panel-head"><h3>Средние оценки по критериям</h3></div>{rows_a}</div>'
-
-    # Низкобалльные звонки
-    low_html = ""
-    if report["low_score_calls"]:
-        items = ""
-        for c, an in report["low_score_calls"]:
-            score = an.get("overall_score", 0)
-            cls = "crit" if an.get("is_critical") else score_color(score)
-            items += f"""<a href="../calls/{esc(c['activity_id'])}.html" class="row-link"><div class="call-row">
-  <div class="call-direction {'in' if c.get('direction') == 'incoming' else 'out'}">{'↓' if c.get('direction') == 'incoming' else '↑'}</div>
-  <div class="call-info"><div class="call-client">{esc(c.get('client', {}).get('name', ''))}</div>
-  <div class="call-meta">{esc(an.get('main_problem', ''))}</div></div>
-  <div class="call-time">{format_time(c.get('created', ''))}</div><div class="mini-score {cls}">{score}</div>
-</div></a>"""
-        low_html = f'<div class="panel"><div class="panel-head"><h3>📉 Звонки с низкой оценкой</h3></div>{items}</div>'
-
-    rows = "".join(render_call_row(c, show_manager=False, analysis=analyses.get(c["activity_id"]), base_calls_path="../calls/") for c in calls)
-    if not rows: rows = '<div class="empty">Нет</div>'
+    rows = "".join(render_call_row(c, show_manager=False,
+                                   analysis=analyses.get(c["activity_id"]),
+                                   base_path="../") for c in calls)
+    if not rows:
+        rows = '<div class="empty">Звонков нет</div>'
     avatar_class = manager_color_class(manager["id"])
 
-    body = f"""<div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../managers.html">Менеджеры</a> › {esc(manager['name'])}</div>
-<div class="page-head"><div style="display:flex; align-items:center; gap:18px;">
-<div class="m-avatar {avatar_class}" style="width:64px; height:64px; font-size:20px;">{manager_avatar_html(manager, base_path="../")}</div>
-<div><h1>{esc(manager['name'])}</h1><div class="sub">Дневной отчёт</div></div></div></div>
-{kpis}{main_problem_html}{sw_html}
-<div class="sw-grid">{ctx_html}{goals_html}</div>
-{crit_avg_html}{low_html}
-<div class="panel"><div class="panel-head"><h3>Все звонки</h3><span class="hint">{len(calls)}</span></div>{rows}</div>"""
-    return page_template(manager["name"], body, "managers", generated_at, critical_count)
+    kpis = ('<div class="kpi-row">'
+            '<div class="kpi"><div class="kpi-label">Звонков</div><div class="kpi-value">' + str(manager['count']) + '</div></div>'
+            '<div class="kpi green"><div class="kpi-label">Входящих</div><div class="kpi-value">' + str(manager['in']) + '</div></div>'
+            '<div class="kpi accent"><div class="kpi-label">Исходящих</div><div class="kpi-value">' + str(manager['out']) + '</div></div>')
+    if manager.get("avg_score") is not None:
+        kpis += ('<div class="kpi amber"><div class="kpi-label">Средняя оценка</div>'
+                 '<div class="kpi-value">' + str(manager['avg_score']) + '</div>'
+                 '<div class="kpi-hint">по ' + str(manager['analyzed']) + ' разборам</div></div>')
+    if manager.get("critical", 0) > 0:
+        kpis += ('<div class="kpi red"><div class="kpi-label">Критичных</div>'
+                 '<div class="kpi-value">' + str(manager['critical']) + '</div></div>')
+    kpis += "</div>"
+
+    # Дневной отчёт по менеджеру
+    daily = compute_manager_daily_report(manager, analyses)
+    daily_html = ""
+    if daily.get("has_data"):
+        # Лучший и худший
+        best_html = ""
+        if daily["best"]:
+            c, a = daily["best"]
+            sc = a.get("analysis", {}).get("overall_score", 0)
+            cls = score_color(sc)
+            best_html = ('<div class="dr-callref">'
+                         '<span class="sc mini-score ' + cls + '">' + str(sc) + '</span>'
+                         '<a href="../calls/' + esc(c['activity_id']) + '.html">'
+                         + esc(c.get('client', {}).get('name', '')) + ' · ' + format_time(c.get('created', '')) + '</a>'
+                         '</div>')
+
+        worst_html = ""
+        if daily["worst"] and daily["worst"] != daily["best"]:
+            c, a = daily["worst"]
+            sc = a.get("analysis", {}).get("overall_score", 0)
+            cls = "crit" if a.get("analysis", {}).get("is_critical") else score_color(sc)
+            worst_html = ('<div class="dr-callref">'
+                          '<span class="sc mini-score ' + cls + '">' + str(sc) + '</span>'
+                          '<a href="../calls/' + esc(c['activity_id']) + '.html">'
+                          + esc(c.get('client', {}).get('name', '')) + ' · ' + format_time(c.get('created', '')) + '</a>'
+                          '</div>')
+
+        weak_html = ""
+        for crit, avg in daily["weak_criteria"]:
+            weak_html += '<div class="dr-list-item">' + esc(crit) + ' — <b>' + str(avg) + '</b>/10</div>'
+        if not weak_html:
+            weak_html = '<div class="dr-list-item" style="color:var(--brand-olive);">Все критерии выше 6</div>'
+
+        trig_html = ""
+        for name, cnt in daily["top_triggers"]:
+            trig_html += '<div class="dr-list-item">' + esc(name) + ' — <b>' + str(cnt) + '×</b></div>'
+        if not trig_html:
+            trig_html = '<div class="dr-list-item" style="color:var(--brand-olive);">Триггеров не зафиксировано</div>'
+
+        daily_html = ('<div class="daily-report">'
+                      '<h3>📋 Дневной отчёт по менеджеру</h3>'
+                      '<div class="dr-block">'
+                      '<div class="label">Проанализировано звонков: ' + str(daily["analyzed"]) + '</div>'
+                      '</div>')
+        if best_html:
+            daily_html += '<div class="dr-block"><div class="label">🏆 Лучший разбор</div>' + best_html + '</div>'
+        if worst_html:
+            daily_html += '<div class="dr-block"><div class="label">📉 Худший разбор</div>' + worst_html + '</div>'
+        daily_html += ('<div class="dr-block"><div class="label">Слабые критерии</div><div class="dr-list">' + weak_html + '</div></div>'
+                       '<div class="dr-block"><div class="label">Частые триггеры</div><div class="dr-list">' + trig_html + '</div></div>'
+                       '</div>')
+
+    body = ('<div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../managers.html">Менеджеры</a> › ' + esc(manager['name']) + '</div>'
+            '<div class="page-head">'
+            '<div style="display:flex; align-items:center; gap:18px;">'
+            '<div class="m-avatar ' + avatar_class + '" style="width:64px; height:64px; font-size:20px;">' + manager_avatar_html(manager, base_path="../") + '</div>'
+            '<div><h1>' + esc(manager['name']) + '</h1><div class="sub">' + COMPANY_NAME + ' · ' + str(manager['count']) + ' звонков</div></div>'
+            '</div></div>'
+            + kpis + daily_html +
+            '<div class="panel"><div class="panel-head"><h3>Все звонки</h3>'
+            '<span class="hint">' + str(len(calls)) + ' штук</span></div>' + rows + '</div>')
+    return page_template(manager["name"], body, "managers", generated_at, critical_count, base_path="../")
 
 
-def render_call_page(call: Dict, analysis_data: Dict, generated_at: str, critical_count: int) -> str:
+# ============================================================
+# СТРАНИЦА ЗВОНКА (С РУЧНОЙ ПРАВКОЙ)
+# ============================================================
+
+def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: str, critical_count: int) -> str:
     direction = call.get("direction", "")
     dir_label = direction_label(direction)
     client = call.get("client", {})
     manager = call.get("manager", {})
     bitrix_link = crm_link(call)
-    bitrix_call_url = call.get("bitrix_url", "")
     activity_id = call["activity_id"]
 
     crm_link_html = ""
     if bitrix_link:
-        owner_type_label = {"deal": "сделка", "lead": "лид", "contact": "контакт", "company": "компания"}.get(call.get("crm", {}).get("owner_type", ""), "запись")
-        crm_link_html = f'<a href="{esc(bitrix_link)}" target="_blank">{owner_type_label} №{esc(call.get("crm", {}).get("owner_id", ""))}</a>'
+        owner_type_label = {"deal": "сделка", "lead": "лид", "contact": "контакт", "company": "компания"}.get(
+            call.get("crm", {}).get("owner_type", ""), "запись")
+        crm_link_html = ('<a href="' + esc(bitrix_link) + '" target="_blank">' + owner_type_label +
+                         ' №' + esc(call.get("crm", {}).get("owner_id", "")) + '</a>')
 
     has_ai = analysis_data is not None
     analysis = (analysis_data or {}).get("analysis", {}) if has_ai else {}
     transcription = (analysis_data or {}).get("transcription", {}) if has_ai else {}
     is_crit = analysis.get("is_critical", False)
     crit_reason = analysis.get("critical_reason", "")
-    is_corrected = analysis.get("manually_corrected", False)
+    is_corrected = analysis.get("score_corrected", False)
+    correction_comment = analysis.get("correction_comment", "")
 
-    tags_html = f'<span class="call-tag accent">{esc(dir_label)}</span>'
+    # Теги: двухосевая классификация (тип/контекст + цели)
+    tags_html = '<span class="call-tag accent">' + esc(dir_label) + '</span>'
     if has_ai:
-        cls_data = analysis.get("classification", {})
-        if cls_data.get("crm_context"):
-            tags_html += f'<span class="call-tag">{esc(cls_data["crm_context"])}</span>'
-        for g in (cls_data.get("goals") or []):
-            tags_html += f'<span class="call-tag green">{esc(g)}</span>'
+        cls = analysis.get("classification", {})
+        # CRM-контекст (тип звонка/этап воронки)
+        if cls.get("crm_context"):
+            tags_html += '<span class="call-tag">' + esc(cls["crm_context"]) + '</span>'
+        elif cls.get("type"):
+            tags_html += '<span class="call-tag">' + esc(cls["type"]) + '</span>'
+        if cls.get("funnel_stage"):
+            tags_html += '<span class="call-tag">Этап: ' + esc(cls["funnel_stage"]) + '</span>'
+        # Цели — отдельная ось
+        goals = cls.get("goals") or ([cls["goal"]] if cls.get("goal") else [])
+        for g in goals:
+            if g:
+                tags_html += '<span class="call-tag goal">' + esc(g) + '</span>'
         triggers_count = len(analysis.get("triggers", []) or [])
         if triggers_count > 0:
-            tags_html += f'<span class="call-tag warning">Триггеров: {triggers_count}</span>'
+            tags_html += '<span class="call-tag warning">Триггеров: ' + str(triggers_count) + '</span>'
 
     critical_badge = ""
     if is_crit:
-        critical_badge = f'<div class="critical-badge">🔴 СРОЧНО · {esc(crit_reason)}</div>'
-    if is_corrected:
-        critical_badge += f'<div class="corrected-badge">✏️ Правка РОПа</div>'
+        critical_badge = '<div class="critical-badge">🔴 СРОЧНО · ' + esc(crit_reason) + '</div>'
 
+    # Оценка с кнопкой правки
+    edit_btn_html = ('<button class="edit-btn" onclick="openEditModal()">✏️ Изменить оценку</button>')
+    corrected_mark_html = '<span class="score-corrected-mark">ред.</span>' if is_corrected else ''
     if has_ai:
         score = analysis.get("overall_score")
         if score is not None:
             sc_cls = "crit" if is_crit else score_color(score)
-            score_html = f'''<div class="score-big {sc_cls}">
-<div class="num">{score}<span class="max">/10</span></div>
-<div class="label">Оценка</div>
-<button class="edit-score-btn" onclick="openEditModal('{esc(activity_id)}', {score})">✏️ Изменить</button>
-</div>'''
+            score_html = ('<div class="score-big ' + sc_cls + '">'
+                          + corrected_mark_html +
+                          '<div class="num">' + esc(score) + '<span class="max">/10</span></div>'
+                          '<div class="label">Оценка</div>'
+                          + edit_btn_html + '</div>')
         else:
             score_html = '<div class="score-big placeholder"><div class="num">—</div><div class="label">нет</div></div>'
     else:
         score_html = '<div class="score-big placeholder"><div class="num">—</div><div class="label">не анализирован</div></div>'
 
+    # Длительность
     duration_html = ""
     dur = call.get("duration_sec") or transcription.get("duration_sec")
     if dur:
-        duration_html = f'<div class="detail"><div class="detail-label">Длительность</div><div class="detail-value">{format_duration(dur)}</div></div>'
+        duration_html = ('<div class="detail"><div class="detail-label">Длительность</div>'
+                         '<div class="detail-value">' + format_duration(dur) + '</div></div>')
 
     card_classes = "call-card critical" if is_crit else "call-card"
-    head_html = f"""<div class="{card_classes}"><div class="call-card-head"><div>
-{critical_badge}
-<h2>{esc(client.get('name', 'Неизвестный клиент'))}{' · ' + esc(client.get('company')) if client.get('company') else ''}</h2>
-<div class="call-tags">{tags_html}</div></div>{score_html}</div>
-<div class="detail-grid">
-  <div class="detail"><div class="detail-label">Менеджер</div><div class="detail-value"><a href="../managers/{manager.get('id', 0)}.html">{esc(manager.get('name', ''))}</a></div></div>
-  <div class="detail"><div class="detail-label">Телефон</div><div class="detail-value">{esc(client.get('phone_masked') or '—')}</div></div>
-  <div class="detail"><div class="detail-label">Время</div><div class="detail-value">{format_datetime(call.get('created', ''))}</div></div>
-  {duration_html}
-  <div class="detail"><div class="detail-label">Направление</div><div class="detail-value">{esc(dir_label)}</div></div>
-  <div class="detail"><div class="detail-label">В CRM</div><div class="detail-value">{crm_link_html or '—'}</div></div>
-</div></div>"""
+    client_name_full = esc(client.get('name', 'Неизвестный клиент'))
+    if client.get('company'):
+        client_name_full += ' · ' + esc(client.get('company'))
 
+    head_html = ('<div class="' + card_classes + '">'
+                 '<div class="call-card-head">'
+                 '<div>' + critical_badge +
+                 '<h2>' + client_name_full + '</h2>'
+                 '<div class="call-tags">' + tags_html + '</div>'
+                 '</div>'
+                 + score_html +
+                 '</div>'
+                 '<div class="detail-grid">'
+                 '<div class="detail"><div class="detail-label">Менеджер</div>'
+                 '<div class="detail-value"><a href="../managers/' + str(manager.get('id', 0)) + '.html">' + esc(manager.get('name', '')) + '</a></div></div>'
+                 '<div class="detail"><div class="detail-label">Телефон</div>'
+                 '<div class="detail-value">' + esc(client.get('phone_masked') or '—') + '</div></div>'
+                 '<div class="detail"><div class="detail-label">Время</div>'
+                 '<div class="detail-value">' + format_datetime(call.get('created', '')) + '</div></div>'
+                 + duration_html +
+                 '<div class="detail"><div class="detail-label">Направление</div>'
+                 '<div class="detail-value">' + esc(dir_label) + '</div></div>'
+                 '<div class="detail"><div class="detail-label">В CRM</div>'
+                 '<div class="detail-value">' + (crm_link_html or '—') + '</div></div>'
+                 '</div></div>')
+
+    # Комментарий к ручной правке
+    correction_note_html = ""
+    if is_corrected and correction_comment:
+        correction_note_html = ('<div class="correction-note">'
+                                '<b>✏️ Оценка отредактирована вручную.</b> Комментарий: ' + esc(correction_comment) +
+                                '</div>')
+
+    # Аудио-плеер
     audio = call.get("audio") or {}
     public_path = audio.get("public_path")
+    bitrix_call_url = call.get("bitrix_url", "") or (bitrix_link if bitrix_link else "")
     audio_html = ""
     if public_path:
-        bitrix_btn = f'<a href="{esc(bitrix_call_url)}" target="_blank" class="bitrix-link">Открыть в Bitrix24</a>' if bitrix_call_url else ""
-        audio_html = f'<div class="audio-player"><audio controls preload="metadata" src="../{esc(public_path)}"></audio>{bitrix_btn}</div>'
+        bitrix_btn = ""
+        if bitrix_call_url:
+            bitrix_btn = '<a href="' + esc(bitrix_call_url) + '" target="_blank" class="bitrix-link">Открыть в Bitrix24</a>'
+        audio_html = ('<div class="audio-player">'
+                      '<audio controls preload="metadata" src="../' + esc(public_path) + '"></audio>'
+                      + bitrix_btn + '</div>')
     elif bitrix_call_url:
-        audio_html = f'<div class="audio-missing">🎵 Запись в Bitrix24: <a href="{esc(bitrix_call_url)}" target="_blank">открыть карточку звонка →</a></div>'
+        audio_html = ('<div class="audio-missing">'
+                      '🎵 Запись в Bitrix24: <a href="' + esc(bitrix_call_url) + '" target="_blank">открыть карточку звонка →</a>'
+                      '</div>')
 
-    # Модальное окно для правки оценки
-    modal_html = """
-<div class="modal-overlay" id="editModal">
-  <div class="modal">
-    <h3>Изменить оценку звонка</h3>
-    <p>Введите новую оценку. После нажатия «Скопировать» JSON будет в буфере обмена — вставьте его в файл <code>manual_corrections.json</code> на GitHub.</p>
-    <p><b>ID звонка:</b> <span id="editCallId"></span></p>
-    <input type="number" id="newScore" min="0" max="10" step="0.1" placeholder="Например: 7.5">
-    <textarea id="editComment" placeholder="Комментарий (опционально): почему меняете оценку"></textarea>
-    <div class="modal-buttons">
-      <button class="btn secondary" onclick="closeEditModal()">Отмена</button>
-      <button class="btn primary" onclick="copyCorrection()">Скопировать JSON и открыть GitHub</button>
-    </div>
-  </div>
-</div>
-<script>
-var currentEditId = null;
-function openEditModal(id, currentScore) {
-  currentEditId = id;
-  document.getElementById('editCallId').textContent = id;
-  document.getElementById('newScore').value = currentScore;
-  document.getElementById('editComment').value = '';
-  document.getElementById('editModal').classList.add('show');
-}
-function closeEditModal() {
-  document.getElementById('editModal').classList.remove('show');
-}
-function copyCorrection() {
-  var newScore = parseFloat(document.getElementById('newScore').value);
-  var comment = document.getElementById('editComment').value;
-  if (isNaN(newScore)) { alert('Введите число от 0 до 10'); return; }
-  var correction = {};
-  correction[currentEditId] = { overall_score: newScore, comment: comment };
-  var jsonStr = JSON.stringify(correction, null, 2);
-  navigator.clipboard.writeText(jsonStr).then(function() {
-    alert('JSON скопирован в буфер обмена!\\n\\nСейчас откроется файл manual_corrections.json — вставьте туда содержимое.');
-    window.open('https://github.com/mavisgroupiishki-alt/sales-analytics/edit/main/manual_corrections.json', '_blank');
-    closeEditModal();
-  }).catch(function() {
-    prompt('Скопируйте этот текст:', jsonStr);
-  });
-}
-</script>"""
-
+    # Анализ
     if not has_ai:
-        rest_html = '<div class="placeholder-panel"><h3>📝 Транскрипт</h3><p>Звонок ещё не прошёл ИИ-анализ.</p></div>'
+        rest_html = ('<div class="placeholder-panel">'
+                     '<h3>📝 Транскрипт</h3><p>Звонок ещё не прошёл ИИ-анализ.</p>'
+                     '</div>')
     else:
-        summary_html = ""
+        rest_html = ""
+
+        # Резюме
         if analysis.get("summary"):
-            summary_html += f'<div class="ai-summary"><div class="label">📋 Резюме</div><div class="text">{esc(analysis["summary"])}</div></div>'
-        if analysis.get("outcome"):
-            summary_html += f'<div class="ai-summary"><div class="label">🎯 Итог</div><div class="text">{esc(analysis["outcome"])}</div></div>'
-        for kq in (analysis.get("key_quotes") or []):
-            if not kq: continue
+            rest_html += ('<div class="ai-summary">'
+                          '<div class="label">📋 Резюме</div>'
+                          '<div class="text">' + esc(analysis["summary"]) + '</div>'
+                          '</div>')
+
+        # Основная проблема
+        if analysis.get("main_problem"):
+            rest_html += ('<div class="main-problem">'
+                          '<div class="label">⚠️ Основная проблема</div>'
+                          '<div class="text">' + esc(analysis["main_problem"]) + '</div>'
+                          '</div>')
+
+        # Сильные / Слабые стороны
+        strengths = analysis.get("strengths") or []
+        weaknesses = analysis.get("weaknesses") or []
+        if strengths or weaknesses:
+            sw_html = '<div class="strengths-weaknesses">'
+            if strengths:
+                st_items = "".join('<li>' + esc(s) + '</li>' for s in strengths)
+                sw_html += ('<div class="sw-box strong">'
+                            '<div class="label">✅ Сильные стороны</div>'
+                            '<ul>' + st_items + '</ul></div>')
+            if weaknesses:
+                wk_items = "".join('<li>' + esc(w) + '</li>' for w in weaknesses)
+                sw_html += ('<div class="sw-box weak">'
+                            '<div class="label">⚠️ Слабые стороны</div>'
+                            '<ul>' + wk_items + '</ul></div>')
+            sw_html += '</div>'
+            rest_html += sw_html
+
+        # Цитаты
+        key_quotes = analysis.get("key_quotes") or ([analysis.get("key_quote")] if analysis.get("key_quote") else [])
+        for kq in key_quotes:
+            if not kq:
+                continue
             time_str = kq.get("time", "")
             who = "клиент" if kq.get("speaker") == "client" else "менеджер"
-            meta = f"— {esc(who)}"
-            if time_str: meta += f" · {esc(time_str)}"
-            summary_html += f'<div class="ai-key-quote">{esc(kq.get("text", ""))}<span class="meta">{meta}</span></div>'
-
-        main_problem_html = ""
-        if analysis.get("main_problem"):
-            main_problem_html = f'<div class="main-problem"><div class="label">⚠️ Основная проблема</div><div class="text">{esc(analysis["main_problem"])}</div></div>'
-
-        # Сильные/слабые
-        sw_html = ""
-        s_items = analysis.get("strengths") or []
-        w_items = analysis.get("weaknesses") or []
-        if s_items or w_items:
-            s_html = ""
-            if s_items:
-                items = "".join(f"<li>{esc(s)}</li>" for s in s_items)
-                s_html = f'<div class="sw-card strengths"><h4>✓ Сильные стороны</h4><ul>{items}</ul></div>'
-            w_html = ""
-            if w_items:
-                items = "".join(f"<li>{esc(w)}</li>" for w in w_items)
-                w_html = f'<div class="sw-card weaknesses"><h4>✗ Зоны роста</h4><ul>{items}</ul></div>'
-            sw_html = f'<div class="sw-grid">{s_html}{w_html}</div>'
+            time_meta = "— " + esc(who)
+            if time_str:
+                time_meta += " · " + esc(time_str)
+            rest_html += ('<div class="ai-key-quote">' + esc(kq.get("text", "")) +
+                          '<span class="meta">' + time_meta + '</span></div>')
 
         # Дата следующего контакта
-        nc_html = ""
-        nc = analysis.get("next_contact")
-        if nc and nc.get("date_or_period"):
-            nc_html = f"""<div class="next-contact"><div class="label">📅 Следующий контакт</div>
-<div class="text">{esc(nc.get('date_or_period', ''))}{f" в {esc(nc.get('time'))}" if nc.get('time') else ''}</div>
-<div class="sub">{esc(nc.get('context', ''))} · инициатор: {esc(nc.get('initiator', '—'))}</div></div>"""
+        next_contact = analysis.get("next_contact") or {}
+        nc_text = ""
+        if isinstance(next_contact, dict):
+            if next_contact.get("date"):
+                nc_text = "📅 " + esc(next_contact["date"])
+                if next_contact.get("action"):
+                    nc_text += " — " + esc(next_contact["action"])
+            elif next_contact.get("text"):
+                nc_text = esc(next_contact["text"])
+        elif isinstance(next_contact, str) and next_contact:
+            nc_text = esc(next_contact)
+        if nc_text:
+            rest_html += ('<div class="next-contact">'
+                          '<div class="label">📞 Следующий контакт</div>'
+                          '<div class="text">' + nc_text + '</div></div>')
 
-        # Скрипты
+        # Использованные скрипты
         scripts_used = analysis.get("scripts_used") or []
-        scripts_html = ""
         if scripts_used:
-            tags = "".join(f'<span class="tag">{esc(s)}</span>' for s in scripts_used)
-            scripts_html = f'<div class="scripts-used"><b>Сравнение со скриптами:</b> {tags}</div>'
+            tags = "".join('<span class="tag">' + esc(s) + '</span>' for s in scripts_used)
+            rest_html += ('<div class="scripts-used"><b>Сравнение со скриптами:</b> ' + tags + '</div>')
 
-        # Сопоставление по этапам
-        alignment_html = ""
-        alignment = analysis.get("scripts_alignment") or []
-        if alignment:
-            items = ""
-            for a in alignment:
-                status = a.get("status", "").lower()
-                if "соблюд" in status: cls = "full"
-                elif "част" in status: cls = "partial"
-                else: cls = "missing"
-                evidence_html = f'<div class="alignment-evidence">{esc(a.get("evidence", ""))} <span class="crit-time">{esc(a.get("time", ""))}</span></div>' if a.get("evidence") else ""
-                items += f'<div class="alignment-row"><div><div class="alignment-stage">{esc(a.get("stage", ""))}</div>{evidence_html}</div><div class="alignment-status {cls}">{esc(a.get("status", ""))}</div></div>'
-            alignment_html = f'<div class="scripts-alignment"><div class="panel-head"><h3>Соответствие этапам скрипта</h3></div>{items}</div>'
+        # Соответствие этапам скриптов
+        scripts_alignment = analysis.get("scripts_alignment") or []
+        if scripts_alignment:
+            sa_rows = ""
+            for stage in scripts_alignment:
+                stage_name = esc(stage.get("stage", ""))
+                status = stage.get("status", "miss")
+                status_cls = {"full": "full", "partial": "partial", "miss": "miss"}.get(status, "miss")
+                status_label = {"full": "✓ Соблюдено", "partial": "± Частично", "miss": "✗ Пропущено"}.get(status, "—")
+                sa_rows += ('<div class="sa-row">'
+                            '<div class="sa-stage">' + stage_name + '</div>'
+                            '<div class="sa-status ' + status_cls + '">' + status_label + '</div>'
+                            '</div>')
+            rest_html += ('<div class="scripts-alignment">'
+                          '<div class="label">📑 Соответствие этапам скрипта</div>'
+                          + sa_rows + '</div>')
 
         # Транскрипт
-        transcript_html = ""
         ts = analysis.get("transcript_split") or []
         if ts:
             msgs = ""
@@ -1032,97 +1196,214 @@ function copyCorrection() {
                 who = m.get("speaker", "")
                 who_label = "менеджер" if who == "manager" else "клиент"
                 time_str = esc(m.get("time", ""))
-                msgs += f'<div class="msg"><div class="msg-time">{time_str}</div><div class="msg-body"><div class="msg-who {esc(who)}">{esc(who_label)}</div><div class="msg-text">{esc(m.get("text", ""))}</div></div></div>'
-            transcript_html = f'<div class="transcript-panel"><div class="transcript-head"><h3>📝 Транскрипт</h3><span class="hint">{len(ts)} реплик · {format_duration(transcription.get("duration_sec"))}</span></div><div class="transcript-body">{msgs}</div></div>'
+                msgs += ('<div class="msg">'
+                         '<div class="msg-time">' + time_str + '</div>'
+                         '<div class="msg-body">'
+                         '<div class="msg-who ' + esc(who) + '">' + who_label + '</div>'
+                         '<div class="msg-text">' + esc(m.get('text', '')) + '</div>'
+                         '</div></div>')
+            rest_html += ('<div class="transcript-panel">'
+                          '<div class="transcript-head"><h3>📝 Транскрипт</h3>'
+                          '<span class="hint">' + str(len(ts)) + ' реплик · ' + format_duration(transcription.get("duration_sec")) + '</span>'
+                          '</div>'
+                          '<div class="transcript-body">' + msgs + '</div>'
+                          '</div>')
 
-        # Оценки
-        scores_html = ""
+        # Оценки по 17 критериям + веса
         scores = analysis.get("scores") or {}
+        weights = analysis.get("weights") or {}
         if scores:
-            rows_s = ""
-            for crit, val in scores.items():
-                try: val_f = float(val)
-                except: val_f = 0
+            score_rows = ""
+            # Сортируем по весу (важные сверху)
+            sorted_criteria = sorted(
+                scores.items(),
+                key=lambda x: -float(weights.get(x[0], 0)) if weights else 0
+            )
+            for crit, val in sorted_criteria:
+                try:
+                    val_f = float(val)
+                except (TypeError, ValueError):
+                    val_f = 0
                 cls = score_color(val_f)
                 width = max(0, min(100, int(val_f * 10)))
-                rows_s += f'<div class="score-row"><div class="score-name">{esc(crit)}</div><div class="score-bar"><div class="score-fill {cls}" style="width:{width}%"></div></div><div class="score-val {cls}">{val_f}</div></div>'
-            scores_html = f'<div class="scores-panel"><div class="panel-head"><h3>📊 Оценка по 17 критериям</h3></div>{rows_s}</div>'
+                weight = weights.get(crit, 0)
+                weight_str = ""
+                if weight:
+                    try:
+                        weight_str = str(int(float(weight) * 100)) + "%"
+                    except (TypeError, ValueError):
+                        weight_str = ""
+                score_rows += ('<div class="score-row">'
+                               '<div class="score-name">' + esc(crit) + '</div>'
+                               '<div class="score-bar"><div class="score-fill ' + cls + '" style="width:' + str(width) + '%;"></div></div>'
+                               '<div class="score-val ' + cls + '">' + str(val_f) + '</div>'
+                               '<div class="score-weight">' + weight_str + '</div>'
+                               '</div>')
+            rest_html += ('<div class="scores-panel">'
+                          '<div class="panel-head"><h3>📊 Оценка по 17 критериям</h3>'
+                          '<span class="hint">по весам ТЗ</span></div>'
+                          + score_rows + '</div>')
 
-        # Низкие баллы с детализацией
-        low_details_html = ""
-        for lsd in (analysis.get("low_score_details") or []):
-            quote = lsd.get("quote", "")
-            time_str = lsd.get("time", "")
-            low_details_html += f"""<div class="low-score-detail">
-<div class="crit-name">{esc(lsd.get('criterion', ''))} — {esc(lsd.get('score', ''))}/10</div>
-<div>{esc(lsd.get('problem', ''))}</div>
-{f'<div class="crit-quote">«{esc(quote)}» <span class="crit-time">{esc(time_str)}</span></div>' if quote else ''}
-<div class="crit-reco">💡 {esc(lsd.get('recommendation', ''))}</div></div>"""
-        if low_details_html:
-            low_details_html = f'<div class="panel"><div class="panel-head"><h3>⚠️ Низкие баллы (<6)</h3></div><div style="padding:14px 18px;">{low_details_html}</div></div>'
+        # Низкие баллы с цитатами и рекомендациями
+        low_details = analysis.get("low_score_details") or []
+        for ld in low_details:
+            crit = esc(ld.get("criterion", ""))
+            sc_val = ld.get("score", "")
+            problem = esc(ld.get("problem", ""))
+            quote = ld.get("quote", "")
+            t = ld.get("time", "")
+            reco = esc(ld.get("recommendation", ""))
+            quote_html = ""
+            if quote:
+                qt = "« " + esc(quote) + " »"
+                if t:
+                    qt += ' <span class="timecode" style="font-size:10px;color:var(--brand-medium);">' + esc(t) + '</span>'
+                quote_html = '<div class="lsq">' + qt + '</div>'
+            reco_html = ""
+            if reco:
+                reco_html = '<div class="lsr"><b>Рекомендация:</b> ' + reco + '</div>'
+            rest_html += ('<div class="low-score-block">'
+                          '<div class="lsh">' + crit + ' — ' + str(sc_val) + '/10</div>'
+                          '<div>' + problem + '</div>'
+                          + quote_html + reco_html +
+                          '</div>')
 
         # Триггеры
-        trig_html = ""
         triggers = analysis.get("triggers") or []
         if triggers:
             items = ""
             for t in triggers:
                 time_str = t.get("time", "")
-                tc = f'<span class="timecode">{esc(time_str)}</span>' if time_str else ""
+                tc = ('<span class="timecode">' + esc(time_str) + '</span>') if time_str else ""
                 desc = t.get("description", "")
-                items += f'<div class="trigger-row"><div class="trigger-marker"></div><div class="trigger-text">{esc(t.get("name", ""))}{tc}{f"<div class=\\"sub\\">{esc(desc)}</div>" if desc else ""}</div></div>'
-            trig_html = f'<div class="trigger-list"><div class="panel-head"><h3>⚠️ Триггеры</h3><span class="hint">{len(triggers)}</span></div>{items}</div>'
+                desc_html = ('<div class="sub">' + esc(desc) + '</div>') if desc else ""
+                items += ('<div class="trigger-row">'
+                          '<div class="trigger-marker"></div>'
+                          '<div class="trigger-text">' + esc(t.get('name', '')) + tc + desc_html + '</div>'
+                          '</div>')
+            rest_html += ('<div class="trigger-list">'
+                          '<div class="panel-head"><h3>⚠️ Триггеры</h3>'
+                          '<span class="hint">' + str(len(triggers)) + ' шт</span></div>'
+                          + items + '</div>')
 
         # Рекомендация
-        reco_html = ""
         if analysis.get("recommendation"):
-            reco_html = f'<div class="recommendation"><div class="label">💡 Рекомендация</div><div class="text">{esc(analysis["recommendation"])}</div></div>'
+            rest_html += ('<div class="recommendation">'
+                          '<div class="label">💡 Рекомендация менеджеру</div>'
+                          '<div class="text">' + esc(analysis["recommendation"]) + '</div>'
+                          '</div>')
 
-        rest_html = summary_html + main_problem_html + nc_html + sw_html + scripts_html + alignment_html + transcript_html + scores_html + low_details_html + trig_html + reco_html
+    # Модалка для ручной правки
+    modal_html = build_edit_modal(activity_id, analysis.get("overall_score", ""))
 
-    body = f'<div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../all-calls.html">Звонки</a> › Звонок №{esc(activity_id)}</div>{head_html}{audio_html}{rest_html}{modal_html}'
-    return page_template(f"Звонок №{activity_id}", body, "calls", generated_at, critical_count)
+    body = ('<div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../all-calls.html">Звонки</a> › Звонок №' + esc(activity_id) + '</div>'
+            + head_html + correction_note_html + audio_html + rest_html + modal_html)
+    return page_template("Звонок №" + str(activity_id), body, "calls", generated_at, critical_count, base_path="../")
 
+
+def build_edit_modal(activity_id: str, current_score) -> str:
+    """Модальное окно для правки оценки. Копирует JSON в буфер обмена для последующей вставки в GitHub."""
+    safe_id = esc(activity_id)
+    safe_score = esc(current_score) if current_score else ""
+    return ('<div class="modal-backdrop" id="editModal">'
+            '<div class="modal">'
+            '<h3>Изменить оценку звонка №' + safe_id + '</h3>'
+            '<label>Новая оценка (0–10)</label>'
+            '<input type="number" step="0.1" min="0" max="10" id="newScore" value="' + safe_score + '">'
+            '<label>Комментарий (опционально)</label>'
+            '<textarea id="newComment" placeholder="Почему изменена оценка..."></textarea>'
+            '<div class="instruction">'
+            '<b>Как сохранить:</b><br>'
+            '1. Нажмите «Скопировать» — JSON попадёт в буфер обмена<br>'
+            '2. Откройте <code>manual_corrections.json</code> в GitHub<br>'
+            '3. Вставьте содержимое (или объедините с существующим)<br>'
+            '4. Commit changes — оценка обновится при следующем запуске<br>'
+            '<a href="https://github.com/mavisgroupiishki-alt/sales-analytics/edit/main/manual_corrections.json" target="_blank" '
+            'style="display:inline-block; margin-top:8px; color:var(--brand-dark); font-weight:600;">→ Открыть файл в GitHub</a>'
+            '</div>'
+            '<div class="actions">'
+            '<button class="btn-cancel" onclick="closeEditModal()">Отмена</button>'
+            '<button class="btn-save" onclick="copyCorrection()">📋 Скопировать JSON</button>'
+            '</div>'
+            '</div></div>'
+            '<script>'
+            'function openEditModal() { document.getElementById("editModal").classList.add("active"); }'
+            'function closeEditModal() { document.getElementById("editModal").classList.remove("active"); }'
+            'function copyCorrection() {'
+            '  var score = parseFloat(document.getElementById("newScore").value);'
+            '  var comment = document.getElementById("newComment").value;'
+            '  var obj = {};'
+            '  obj["' + safe_id + '"] = { overall_score: score, comment: comment };'
+            '  var json = JSON.stringify(obj, null, 2);'
+            '  navigator.clipboard.writeText(json).then(function() {'
+            '    alert("Скопировано! Откройте manual_corrections.json в GitHub и вставьте.");'
+            '    closeEditModal();'
+            '  }).catch(function() {'
+            '    prompt("Скопируйте вручную:", json);'
+            '  });'
+            '}'
+            '</script>')
+
+
+# ============================================================
+# ВСЕ ЗВОНКИ
+# ============================================================
 
 def render_all_calls(calls: List[Dict], analyses: Dict, generated_at: str, critical_count: int) -> str:
     sorted_calls = sorted(calls, key=lambda x: x.get("created", ""), reverse=True)
     rows = "".join(render_call_row(c, analysis=analyses.get(c["activity_id"])) for c in sorted_calls)
-    if not rows: rows = '<div class="empty">Нет</div>'
-    body = f"""<div class="breadcrumb"><a href="index.html">Главная</a> › Все звонки</div>
-<div class="page-head"><div><h1>Все звонки</h1><div class="sub">{len(calls)} штук</div></div></div>
-<input type="text" class="search-box" id="searchInput" placeholder="🔍 Поиск..." oninput="filterCalls()">
-<div class="filter-row">
-  <button class="filter-btn active" onclick="setFilter('all', this)">Все</button>
-  <button class="filter-btn" onclick="setFilter('incoming', this)">Входящие</button>
-  <button class="filter-btn" onclick="setFilter('outgoing', this)">Исходящие</button>
-  <button class="filter-btn" onclick="setFilter('critical', this)">🔴 Критичные</button>
-</div>
-<div class="panel"><div class="panel-head"><h3>Список</h3><span class="hint" id="visibleCount">{len(calls)} видно</span></div><div id="callsList">{rows}</div></div>
+    if not rows:
+        rows = '<div class="empty">Звонков нет</div>'
+
+    script_block = """
 <script>
 var currentFilter = 'all';
-function setFilter(f, btn) {{
+function setFilter(f, btn) {
   currentFilter = f;
-  document.querySelectorAll('.filter-btn').forEach(function(b){{ b.classList.remove('active'); }});
-  btn.classList.add('active'); filterCalls();
-}}
-function filterCalls() {{
+  document.querySelectorAll('.filter-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  filterCalls();
+}
+function filterCalls() {
   var q = document.getElementById('searchInput').value.toLowerCase();
   var rows = document.querySelectorAll('#callsList .row-link');
   var v = 0;
-  rows.forEach(function(r) {{
+  rows.forEach(function(r) {
     var t = r.textContent.toLowerCase();
     var d = r.querySelector('.call-direction').classList;
     var matchText = !q || t.indexOf(q) !== -1;
-    var matchFilter = currentFilter === 'all' || (currentFilter === 'incoming' && d.contains('in')) || (currentFilter === 'outgoing' && d.contains('out')) || (currentFilter === 'critical' && r.classList.contains('critical'));
+    var matchFilter = currentFilter === 'all' || 
+      (currentFilter === 'incoming' && d.contains('in')) ||
+      (currentFilter === 'outgoing' && d.contains('out')) ||
+      (currentFilter === 'critical' && r.classList.contains('critical'));
     var show = matchText && matchFilter;
     r.style.display = show ? '' : 'none';
     if (show) v++;
-  }});
+  });
   document.getElementById('visibleCount').textContent = v + ' видно';
-}}
+}
 </script>"""
+
+    body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Все звонки</div>'
+            '<div class="page-head"><div><h1>Все звонки</h1>'
+            '<div class="sub">' + COMPANY_NAME + ' · ' + str(len(calls)) + ' штук</div></div></div>'
+            '<input type="text" class="search-box" id="searchInput" placeholder="🔍 Поиск..." oninput="filterCalls()">'
+            '<div class="filter-row">'
+            '<button class="filter-btn active" onclick="setFilter(\'all\', this)">Все</button>'
+            '<button class="filter-btn" onclick="setFilter(\'incoming\', this)">Входящие</button>'
+            '<button class="filter-btn" onclick="setFilter(\'outgoing\', this)">Исходящие</button>'
+            '<button class="filter-btn" onclick="setFilter(\'critical\', this)">🔴 Критичные</button>'
+            '</div>'
+            '<div class="panel"><div class="panel-head"><h3>Список</h3>'
+            '<span class="hint" id="visibleCount">' + str(len(calls)) + ' видно</span></div>'
+            '<div id="callsList">' + rows + '</div></div>'
+            + script_block)
     return page_template("Все звонки", body, "calls", generated_at, critical_count)
 
+
+# ============================================================
+# КРИТИЧНЫЕ
+# ============================================================
 
 def render_critical_page(calls: List[Dict], analyses: Dict, generated_at: str, critical_count: int) -> str:
     critical_calls = []
@@ -1132,41 +1413,64 @@ def render_critical_page(calls: List[Dict], analyses: Dict, generated_at: str, c
             critical_calls.append((c, a))
     critical_calls.sort(key=lambda x: x[0].get("created", ""), reverse=True)
 
-    body_top = f"""<div class="breadcrumb"><a href="index.html">Главная</a> › Срочно</div>
-<div class="page-head"><div><h1>🔴 Срочно</h1><div class="sub">Критичные звонки</div></div></div>"""
+    body_top = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Срочно</div>'
+                '<div class="page-head"><div><h1>🔴 Срочно к РОПу</h1>'
+                '<div class="sub">Критичные звонки, требующие немедленного внимания</div></div></div>')
 
     if not critical_calls:
-        body = body_top + '<div class="notice success"><b>✓ Критичных нет.</b></div>'
+        body = body_top + '<div class="notice success"><b>✓ Критичных звонков нет.</b></div>'
     else:
         rows = ""
         for c, a in critical_calls:
             an = a["analysis"]
             score = an.get("overall_score", 0)
             reason = an.get("critical_reason", "")
-            duration_html = f'<div class="call-duration">{format_duration(c.get("duration_sec"))}</div>' if c.get("duration_sec") else ""
-            rows += f"""<a href="calls/{esc(c['activity_id'])}.html" class="row-link critical"><div class="call-row">
-<div class="call-direction {'in' if c.get('direction') == 'incoming' else 'out'}">{'↓' if c.get('direction') == 'incoming' else '↑'}</div>
-<div class="call-info"><div class="call-client">{esc(c.get('client', {}).get('name', ''))} · {esc(c.get('manager', {}).get('name', ''))}</div>
-<div class="call-meta"><b>{esc(reason)}</b> · {esc(an.get('main_problem', ''))}</div></div>
-{duration_html}<div class="call-time">{format_time(c.get('created', ''))}</div><div class="mini-score crit">{score}</div>
-</div></a>"""
-        body = body_top + f'<div class="panel"><div class="panel-head"><h3>Найдено</h3><span class="hint">{len(critical_calls)}</span></div>{rows}</div>'
+            triggers = an.get("triggers", [])
+            trig_list = ", ".join(t.get("name", "") for t in triggers[:3])
+            if len(triggers) > 3:
+                trig_list += " + ещё " + str(len(triggers) - 3)
+            duration_html = ""
+            if c.get("duration_sec"):
+                duration_html = '<div class="call-duration">' + format_duration(c.get("duration_sec")) + '</div>'
+            dir_icon = "↓" if c.get('direction') == 'incoming' else "↑"
+            dir_cls = "in" if c.get('direction') == 'incoming' else "out"
+            rows += ('<a href="calls/' + esc(c['activity_id']) + '.html" class="row-link critical">'
+                     '<div class="call-row">'
+                     '<div class="call-direction ' + dir_cls + '">' + dir_icon + '</div>'
+                     '<div class="call-info">'
+                     '<div class="call-client">' + esc(c.get('client', {}).get('name', '')) + ' · ' + esc(c.get('manager', {}).get('name', '')) + '</div>'
+                     '<div class="call-meta"><b>' + esc(reason) + '.</b> ' + esc(trig_list) + '</div>'
+                     '</div>'
+                     + duration_html +
+                     '<div class="call-time">' + format_time(c.get('created', '')) + '</div>'
+                     '<div class="mini-score crit">' + esc(score) + '</div>'
+                     '</div></a>')
+        body = body_top + ('<div class="panel"><div class="panel-head"><h3>Найдено критичных</h3>'
+                           '<span class="hint">' + str(len(critical_calls)) + ' звонков</span></div>'
+                           + rows + '</div>')
     return page_template("Срочно", body, "critical", generated_at, critical_count)
 
+
+# ============================================================
+# ТРИГГЕРЫ
+# ============================================================
 
 def render_triggers_page(calls: List[Dict], analyses: Dict, generated_at: str, critical_count: int) -> str:
     triggers_data = defaultdict(list)
     for c in calls:
         a = analyses.get(c["activity_id"])
         if a:
-            for t in a.get("analysis", {}).get("triggers", []):
+            for t in a.get("analysis", {}).get("triggers", []) or []:
                 triggers_data[t.get("name", "")].append((c, a, t))
 
-    body_top = f"""<div class="breadcrumb"><a href="index.html">Главная</a> › Триггеры</div>
-<div class="page-head"><div><h1>⚠️ Триггеры</h1><div class="sub">По типам</div></div></div>"""
+    body_top = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Триггеры</div>'
+                '<div class="page-head"><div><h1>⚠️ Триггеры</h1>'
+                '<div class="sub">Группировка по типу ошибок</div></div></div>')
 
     if not triggers_data:
-        body = body_top + '<div class="placeholder-panel"><h3>⏳ Триггеры пока не зафиксированы</h3></div>'
+        body = body_top + ('<div class="placeholder-panel">'
+                           '<h3>⏳ Триггеры пока не зафиксированы</h3>'
+                           '<p>После анализа звонков сюда попадут все срабатывания.</p></div>')
     else:
         sections = ""
         for trig_name, items in sorted(triggers_data.items(), key=lambda x: -len(x[1])):
@@ -1175,56 +1479,104 @@ def render_triggers_page(calls: List[Dict], analyses: Dict, generated_at: str, c
                 an = a["analysis"]
                 score = an.get("overall_score", 0)
                 cls = "crit" if an.get("is_critical") else score_color(score)
-                duration_html = f'<div class="call-duration">{format_duration(c.get("duration_sec"))}</div>' if c.get("duration_sec") else ""
-                rows += f"""<a href="calls/{esc(c['activity_id'])}.html" class="row-link"><div class="call-row">
-<div class="call-direction {'in' if c.get('direction') == 'incoming' else 'out'}">{'↓' if c.get('direction') == 'incoming' else '↑'}</div>
-<div class="call-info"><div class="call-client">{esc(c.get('client', {}).get('name', ''))} · {esc(c.get('manager', {}).get('name', ''))}</div>
-<div class="call-meta">{esc(t.get('description', ''))}</div></div>
-{duration_html}<div class="call-time">{format_time(c.get('created', ''))}</div><div class="mini-score {cls}">{score}</div>
-</div></a>"""
-            sections += f'<div class="panel"><div class="panel-head"><h3>{esc(trig_name)}</h3><span class="hint">{len(items)}</span></div>{rows}</div>'
+                duration_html = ""
+                if c.get("duration_sec"):
+                    duration_html = '<div class="call-duration">' + format_duration(c.get("duration_sec")) + '</div>'
+                dir_icon = "↓" if c.get('direction') == 'incoming' else "↑"
+                dir_cls = "in" if c.get('direction') == 'incoming' else "out"
+                rows += ('<a href="calls/' + esc(c['activity_id']) + '.html" class="row-link">'
+                         '<div class="call-row">'
+                         '<div class="call-direction ' + dir_cls + '">' + dir_icon + '</div>'
+                         '<div class="call-info">'
+                         '<div class="call-client">' + esc(c.get('client', {}).get('name', '')) + ' · ' + esc(c.get('manager', {}).get('name', '')) + '</div>'
+                         '<div class="call-meta">' + esc(t.get('description', '')) + '</div>'
+                         '</div>'
+                         + duration_html +
+                         '<div class="call-time">' + format_time(c.get('created', '')) + '</div>'
+                         '<div class="mini-score ' + cls + '">' + esc(score) + '</div>'
+                         '</div></a>')
+            sections += ('<div class="panel">'
+                         '<div class="panel-head"><h3>' + esc(trig_name) + '</h3>'
+                         '<span class="hint">' + str(len(items)) + ' срабатываний</span></div>'
+                         + rows + '</div>')
         body = body_top + sections
     return page_template("Триггеры", body, "triggers", generated_at, critical_count)
 
 
-def generate(calls_json_path: str = "calls_data.json", analyses_json_path: str = "analyses.json", output_dir: str = "docs"):
+# ============================================================
+# ОСНОВНАЯ ГЕНЕРАЦИЯ
+# ============================================================
+
+def generate(calls_json_path: str = "calls_data.json",
+             analyses_json_path: str = "analyses.json",
+             corrections_json_path: str = "manual_corrections.json",
+             output_dir: str = "docs"):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
     out_dir = Path(output_dir)
     out_dir.mkdir(exist_ok=True)
     (out_dir / "managers").mkdir(exist_ok=True)
     (out_dir / "calls").mkdir(exist_ok=True)
 
-    calls = json.loads(Path(calls_json_path).read_text(encoding="utf-8")) if Path(calls_json_path).exists() else []
-    analyses = json.loads(Path(analyses_json_path).read_text(encoding="utf-8")) if Path(analyses_json_path).exists() else {}
+    # Загрузка данных
+    calls = []
+    if Path(calls_json_path).exists():
+        calls = json.loads(Path(calls_json_path).read_text(encoding="utf-8"))
+
+    analyses = {}
+    if Path(analyses_json_path).exists():
+        analyses = json.loads(Path(analyses_json_path).read_text(encoding="utf-8"))
+
+    corrections = {}
+    if Path(corrections_json_path).exists():
+        try:
+            corrections = json.loads(Path(corrections_json_path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            logger.warning(f"Не удалось прочитать {corrections_json_path}, игнорируем")
+
+    # Применяем ручные правки
+    if corrections:
+        analyses = apply_manual_corrections(analyses, corrections)
+        logger.info(f"Применено ручных правок: {len(corrections)}")
 
     logger.info(f"Звонков: {len(calls)}, анализов: {len(analyses)}")
     stats = compute_stats(calls, analyses)
     generated_at = datetime.now().isoformat()
     crit = stats["critical_count"]
 
-    (out_dir / "index.html").write_text(render_index(calls, stats, analyses, generated_at), encoding="utf-8")
-    (out_dir / "rop-report.html").write_text(render_rop_report(calls, stats, analyses, generated_at), encoding="utf-8")
-    (out_dir / "managers.html").write_text(render_managers_list(stats, generated_at), encoding="utf-8")
-    (out_dir / "all-calls.html").write_text(render_all_calls(calls, analyses, generated_at, crit), encoding="utf-8")
-    (out_dir / "critical.html").write_text(render_critical_page(calls, analyses, generated_at, crit), encoding="utf-8")
-    (out_dir / "triggers.html").write_text(render_triggers_page(calls, analyses, generated_at, crit), encoding="utf-8")
+    # Главные страницы (в корне docs/)
+    (out_dir / "index.html").write_text(
+        render_index(calls, stats, analyses, generated_at), encoding="utf-8")
+    (out_dir / "rop-report.html").write_text(
+        render_rop_report(calls, stats, analyses, generated_at), encoding="utf-8")
+    (out_dir / "managers.html").write_text(
+        render_managers_list(stats, generated_at), encoding="utf-8")
+    (out_dir / "all-calls.html").write_text(
+        render_all_calls(calls, analyses, generated_at, crit), encoding="utf-8")
+    (out_dir / "critical.html").write_text(
+        render_critical_page(calls, analyses, generated_at, crit), encoding="utf-8")
+    (out_dir / "triggers.html").write_text(
+        render_triggers_page(calls, analyses, generated_at, crit), encoding="utf-8")
 
+    # Страницы менеджеров
     for m in stats["managers"]:
-        html_content = render_manager_page(m, analyses, generated_at, crit)
-        for old, new in [('href="index.html"', 'href="../index.html"'), ('href="rop-report.html"', 'href="../rop-report.html"'), ('href="managers.html"', 'href="../managers.html"'), ('href="all-calls.html"', 'href="../all-calls.html"'), ('href="critical.html"', 'href="../critical.html"'), ('href="triggers.html"', 'href="../triggers.html"'), ('src="logo.png"', 'src="../logo.png"')]:
-            html_content = html_content.replace(old, new)
-        (out_dir / "managers" / f"{m['id']}.html").write_text(html_content, encoding="utf-8")
+        (out_dir / "managers" / f"{m['id']}.html").write_text(
+            render_manager_page(m, analyses, generated_at, crit), encoding="utf-8")
 
+    # Страницы звонков
     for call in calls:
         analysis_data = analyses.get(call["activity_id"])
-        html_content = render_call_page(call, analysis_data, generated_at, crit)
-        for old, new in [('href="index.html"', 'href="../index.html"'), ('href="rop-report.html"', 'href="../rop-report.html"'), ('href="managers.html"', 'href="../managers.html"'), ('href="all-calls.html"', 'href="../all-calls.html"'), ('href="critical.html"', 'href="../critical.html"'), ('href="triggers.html"', 'href="../triggers.html"'), ('src="logo.png"', 'src="../logo.png"')]:
-            html_content = html_content.replace(old, new)
-        (out_dir / "calls" / f"{call['activity_id']}.html").write_text(html_content, encoding="utf-8")
+        (out_dir / "calls" / f"{call['activity_id']}.html").write_text(
+            render_call_page(call, analysis_data, generated_at, crit), encoding="utf-8")
 
     (out_dir / ".nojekyll").write_text("", encoding="utf-8")
-    print(f"\n✅ Сайт сгенерирован")
-    print(f"   Звонков: {len(calls)}, анализов: {len(analyses)}, критичных: {crit}")
+
+    print("")
+    print("✅ Сайт сгенерирован")
+    print(f"   Звонков: {len(calls)}")
+    print(f"   С ИИ-анализом: {len(analyses)}")
+    print(f"   Критичных: {crit}")
+    print(f"   Ручных правок: {len(corrections)}")
 
 
 if __name__ == "__main__":
