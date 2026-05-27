@@ -11,6 +11,7 @@
   --brand-gold: #C9A961; --brand-olive: #7C8B6F; --brand-terracotta: #B86B4F;
   --text-primary: #2A1F15; --text-secondary: #6B5544; --text-muted: #A39686;
   --border: #E8DFD0; --border-soft: #F0E8DA;
+  --red: #A0432B; --red-soft: #FFE5DC;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -30,48 +31,53 @@ a { color: inherit; text-decoration: none; }
 }
 .logo { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
 .logo-img { height: 48px; width: auto; display: block; flex-shrink: 0; }
-.logo-text { display: flex; flex-direction: column; font-family: "Georgia", serif; line-height: 1.1; }
+.logo-text { display: flex; flex-direction: column; line-height: 1.1; }
 .logo-text .brand { font-size: 17px; font-weight: 700; letter-spacing: 1px; color: #fff; }
 .logo-text .sub { font-size: 10px; letter-spacing: 3px; color: var(--brand-gold); text-transform: uppercase; margin-top: 2px; }
-.logo .short-name { display: none; }
 .nav {
   display: flex; gap: 22px; font-size: 13px; flex: 1;
   overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
-  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-family: -apple-system, sans-serif;
 }
 .nav::-webkit-scrollbar { display: none; }
-.nav a { color: rgba(255,255,255,0.75); padding: 4px 2px; border-bottom: 2px solid transparent; white-space: nowrap; flex-shrink: 0; letter-spacing: 0.3px; }
+.nav a { color: rgba(255,255,255,0.75); padding: 4px 2px; border-bottom: 2px solid transparent; white-space: nowrap; flex-shrink: 0; }
 .nav a.active { color: #fff; border-bottom-color: var(--brand-gold); }
 .nav a:hover { color: #fff; }
-.timestamp { font-size: 11px; color: rgba(255,255,255,0.5); white-space: nowrap; flex-shrink: 0; letter-spacing: 0.5px; }
+.nav a.critical-link { color: var(--red-soft); position: relative; }
+.nav a.critical-link::after { content: ""; width: 6px; height: 6px; background: var(--red); border-radius: 50%; display: inline-block; margin-left: 5px; vertical-align: middle; }
+.timestamp { font-size: 11px; color: rgba(255,255,255,0.5); white-space: nowrap; flex-shrink: 0; }
 .container { max-width: 1280px; margin: 0 auto; padding: 24px 24px 40px; }
-.breadcrumb { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; font-family: -apple-system, sans-serif; letter-spacing: 0.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.breadcrumb { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; font-family: -apple-system, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .breadcrumb a { color: var(--brand-medium); border-bottom: 1px dotted var(--border); }
 .breadcrumb a:hover { color: var(--brand-dark); border-bottom-style: solid; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap; gap: 14px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
-.page-head h1 { font-family: "Georgia", serif; font-size: 28px; font-weight: 400; margin-bottom: 6px; color: var(--brand-dark); letter-spacing: 0.3px; }
+.page-head h1 { font-size: 28px; font-weight: 400; margin-bottom: 6px; color: var(--brand-dark); }
 .page-head .sub { font-size: 13px; color: var(--text-secondary); font-family: -apple-system, sans-serif; }
-.pill { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--brand-dark); font-family: -apple-system, sans-serif; box-shadow: 0 1px 0 rgba(61,46,31,0.04); }
-.notice { background: linear-gradient(135deg, var(--brand-paper), #F8F1E3); border: 1px solid var(--brand-gold); border-left: 4px solid var(--brand-gold); border-radius: 4px; padding: 14px 18px; margin-bottom: 22px; font-size: 13px; color: var(--brand-dark); line-height: 1.6; font-family: -apple-system, sans-serif; }
+.pill { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--brand-dark); font-family: -apple-system, sans-serif; }
+.notice { background: linear-gradient(135deg, var(--brand-paper), #F8F1E3); border: 1px solid var(--brand-gold); border-left: 4px solid var(--brand-gold); border-radius: 4px; padding: 14px 18px; margin-bottom: 22px; font-size: 13px; color: var(--brand-dark); font-family: -apple-system, sans-serif; }
 .notice b { font-weight: 700; }
 .notice.success { background: linear-gradient(135deg, #E8F0E0, #F0F4E8); border-color: var(--brand-olive); border-left-color: var(--brand-olive); color: #2A3A1F; }
+.notice.danger { background: linear-gradient(135deg, var(--red-soft), #FFEEE5); border-color: var(--red); border-left-color: var(--red); color: var(--red); }
 .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 24px; }
-.kpi { background: #fff; border-radius: 6px; padding: 16px 18px; border: 1px solid var(--border); border-top: 3px solid var(--brand-medium); box-shadow: 0 1px 2px rgba(61,46,31,0.03); }
+.kpi { background: #fff; border-radius: 6px; padding: 16px 18px; border: 1px solid var(--border); border-top: 3px solid var(--brand-medium); }
 .kpi.accent { border-top-color: var(--brand-terracotta); }
 .kpi.green { border-top-color: var(--brand-olive); }
 .kpi.amber { border-top-color: var(--brand-gold); }
+.kpi.red { border-top-color: var(--red); }
 .kpi-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; margin-bottom: 8px; font-family: -apple-system, sans-serif; }
-.kpi-value { font-family: "Georgia", serif; font-size: 30px; font-weight: 400; line-height: 1; color: var(--brand-dark); }
+.kpi-value { font-size: 30px; font-weight: 400; line-height: 1; color: var(--brand-dark); }
 .kpi-hint { margin-top: 6px; font-size: 11px; color: var(--text-muted); font-family: -apple-system, sans-serif; }
 .grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-bottom: 22px; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
-.panel { background: #fff; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 1px 2px rgba(61,46,31,0.03); }
+.panel { background: #fff; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; }
 .panel-head { padding: 14px 18px; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between; align-items: center; background: linear-gradient(180deg, #FFFCF7, #fff); }
-.panel-head h3 { font-family: "Georgia", serif; font-size: 16px; font-weight: 600; color: var(--brand-dark); letter-spacing: 0.3px; }
+.panel-head h3 { font-size: 16px; font-weight: 600; color: var(--brand-dark); }
 .panel-head .hint { font-size: 12px; color: var(--text-muted); font-family: -apple-system, sans-serif; }
 .row-link { display: block; transition: background 0.15s; font-family: -apple-system, sans-serif; }
 .row-link:hover { background: var(--brand-paper); }
-.manager-row { display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+.row-link.critical { background: linear-gradient(90deg, var(--red-soft), transparent 60%); }
+.row-link.critical:hover { background: linear-gradient(90deg, #FFD9C8, var(--brand-paper) 60%); }
+.manager-row { display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
 .manager-row:last-child { border-bottom: none; }
 .rank { width: 22px; height: 22px; border-radius: 50%; background: var(--brand-paper); color: var(--text-secondary); font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center; }
 .rank.gold { background: var(--brand-gold); color: #fff; }
@@ -86,9 +92,14 @@ a { color: inherit; text-decoration: none; }
 .m-avatar.e { background: linear-gradient(135deg, var(--brand-gold), var(--brand-terracotta)); }
 .m-name { font-weight: 600; font-size: 14px; color: var(--brand-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-stats { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-.m-stats b { color: var(--brand-dark); font-weight: 700; }
-.m-count { font-family: "Georgia", serif; font-weight: 600; font-size: 20px; min-width: 36px; text-align: right; color: var(--brand-dark); }
-.call-row { display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 12px; padding: 11px 18px; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
+.m-stats b { color: var(--brand-dark); }
+.m-avg { font-family: "Georgia", serif; font-weight: 700; font-size: 18px; padding: 3px 10px; border-radius: 4px; min-width: 50px; text-align: center; }
+.m-avg.high { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
+.m-avg.mid { background: rgba(201,169,97,0.18); color: var(--brand-gold); }
+.m-avg.low { background: rgba(184,107,79,0.15); color: var(--brand-terracotta); }
+.m-avg.empty { background: var(--brand-paper); color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.m-count { font-weight: 600; font-size: 18px; min-width: 36px; text-align: right; color: var(--text-secondary); font-family: "Georgia", serif; }
+.call-row { display: grid; grid-template-columns: 28px 1fr auto auto auto; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
 .call-row:last-child { border-bottom: none; }
 .call-direction { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
 .call-direction.in { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
@@ -96,26 +107,27 @@ a { color: inherit; text-decoration: none; }
 .call-info { min-width: 0; overflow: hidden; }
 .call-client { font-weight: 600; color: var(--brand-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .call-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.call-duration { font-size: 11px; color: var(--text-muted); font-weight: 600; white-space: nowrap; padding: 2px 7px; background: var(--brand-paper); border-radius: 10px; }
 .call-time { font-size: 12px; color: var(--text-secondary); white-space: nowrap; font-weight: 600; }
-.mini-score { font-family: "Georgia", serif; font-size: 14px; font-weight: 700; padding: 3px 8px; border-radius: 4px; }
+.mini-score { font-family: "Georgia", serif; font-size: 14px; font-weight: 700; padding: 3px 8px; border-radius: 4px; min-width: 36px; text-align: center; }
 .mini-score.high { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
 .mini-score.mid { background: rgba(201,169,97,0.18); color: var(--brand-gold); }
 .mini-score.low { background: rgba(184,107,79,0.15); color: var(--brand-terracotta); }
+.mini-score.crit { background: var(--red); color: #fff; }
 .empty { padding: 36px 18px; text-align: center; color: var(--text-muted); font-size: 14px; font-style: italic; }
 .footer-note { text-align: center; padding: 36px 16px 16px; font-size: 12px; color: var(--text-muted); font-family: -apple-system, sans-serif; border-top: 1px solid var(--border); margin-top: 40px; }
 .footer-brand { font-family: "Georgia", serif; font-size: 14px; font-weight: 600; color: var(--brand-dark); letter-spacing: 1.5px; margin-bottom: 6px; }
 .footer-divider { display: inline-block; width: 30px; height: 1px; background: var(--brand-gold); margin: 8px auto; vertical-align: middle; }
-.search-box { width: 100%; padding: 11px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: #fff; margin-bottom: 14px; font-family: -apple-system, sans-serif; color: var(--brand-dark); }
-.search-box:focus { outline: 2px solid var(--brand-gold); outline-offset: -1px; }
+.search-box { width: 100%; padding: 11px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: #fff; margin-bottom: 14px; font-family: -apple-system, sans-serif; }
 .filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .filter-btn { padding: 7px 14px; border-radius: 20px; background: #fff; border: 1px solid var(--border); font-size: 12px; cursor: pointer; font-weight: 600; color: var(--text-secondary); font-family: -apple-system, sans-serif; }
-.filter-btn:hover { border-color: var(--brand-medium); }
 .filter-btn.active { background: var(--brand-dark); color: #fff; border-color: var(--brand-dark); }
-
-/* Карточка звонка */
-.call-card { background: #fff; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 18px; box-shadow: 0 1px 2px rgba(61,46,31,0.03); }
+.call-card { background: #fff; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 18px; }
+.call-card.critical { border-color: var(--red); box-shadow: 0 0 0 1px var(--red), 0 4px 12px rgba(160,67,43,0.1); }
 .call-card-head { padding: 22px 24px; display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; background: linear-gradient(180deg, #FFFCF7, #fff); border-bottom: 1px solid var(--border-soft); }
-.call-card-head h2 { font-family: "Georgia", serif; font-size: 22px; font-weight: 400; margin-bottom: 10px; color: var(--brand-dark); }
+.call-card.critical .call-card-head { background: linear-gradient(180deg, var(--red-soft), #fff); }
+.call-card-head h2 { font-size: 22px; font-weight: 400; margin-bottom: 10px; color: var(--brand-dark); }
+.critical-badge { display: inline-block; background: var(--red); color: #fff; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-bottom: 10px; font-family: -apple-system, sans-serif; letter-spacing: 0.5px; }
 .call-tags { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; font-family: -apple-system, sans-serif; }
 .call-tag { background: var(--brand-paper); padding: 4px 10px; border-radius: 12px; color: var(--brand-medium); border: 1px solid var(--border); }
 .call-tag.accent { background: var(--brand-dark); color: #fff; font-weight: 600; border-color: var(--brand-dark); }
@@ -124,6 +136,7 @@ a { color: inherit; text-decoration: none; }
 .score-big.high { background: linear-gradient(135deg, var(--brand-olive), #6B7B5F); }
 .score-big.mid { background: linear-gradient(135deg, var(--brand-gold), #B89A55); }
 .score-big.low { background: linear-gradient(135deg, var(--brand-terracotta), #A65E45); }
+.score-big.crit { background: linear-gradient(135deg, var(--red), #7D2818); }
 .score-big.placeholder { background: linear-gradient(135deg, #BFB5A8, var(--text-muted)); }
 .score-big .num { font-family: "Georgia", serif; font-size: 36px; font-weight: 400; line-height: 1; }
 .score-big .num .max { font-size: 16px; opacity: 0.7; }
@@ -131,29 +144,33 @@ a { color: inherit; text-decoration: none; }
 .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; padding: 20px 24px 24px; }
 .detail { background: var(--brand-cream); border: 1px solid var(--border-soft); border-radius: 4px; padding: 11px 14px; }
 .detail-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; font-weight: 600; font-family: -apple-system, sans-serif; }
-.detail-value { font-size: 13px; font-weight: 600; color: var(--brand-dark); word-wrap: break-word; font-family: -apple-system, sans-serif; }
+.detail-value { font-size: 13px; font-weight: 600; color: var(--brand-dark); font-family: -apple-system, sans-serif; }
 .detail-value a { color: var(--brand-medium); border-bottom: 1px dotted var(--border); }
-.detail-value a:hover { color: var(--brand-dark); border-bottom-style: solid; }
-
-/* ИИ-анализ - реальные блоки */
+.audio-player { background: var(--brand-paper); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 16px 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.audio-player audio { flex: 1; min-width: 240px; height: 38px; }
+.audio-player .bitrix-link { font-family: -apple-system, sans-serif; font-size: 12px; color: var(--brand-dark); text-decoration: underline; padding: 6px 12px; background: #fff; border-radius: 4px; border: 1px solid var(--border); }
+.audio-player .bitrix-link:hover { background: var(--brand-dark); color: #fff; }
+.audio-missing { background: var(--brand-paper); border: 1px dashed var(--border); border-radius: 6px; padding: 14px 18px; margin-bottom: 16px; font-family: -apple-system, sans-serif; font-size: 13px; color: var(--text-secondary); }
+.audio-missing a { color: var(--brand-dark); font-weight: 600; }
 .ai-summary { background: linear-gradient(135deg, #FFF8E8, #FFF4DC); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
-.ai-summary .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.ai-summary .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 8px; }
 .ai-summary .text { font-size: 14px; color: var(--brand-dark); line-height: 1.6; }
-.ai-key-quote { background: var(--brand-paper); border-left: 3px solid var(--brand-medium); padding: 12px 16px; margin-top: 12px; font-family: "Georgia", serif; font-style: italic; font-size: 14px; color: var(--brand-dark); }
+.ai-key-quote { background: var(--brand-paper); border-left: 3px solid var(--brand-medium); padding: 12px 16px; margin-top: 12px; font-style: italic; font-size: 14px; color: var(--brand-dark); }
 .ai-key-quote::before { content: "« "; color: var(--brand-medium); }
 .ai-key-quote::after { content: " »"; color: var(--brand-medium); }
-.ai-key-quote .author { display: block; font-style: normal; font-size: 11px; color: var(--text-muted); margin-top: 6px; font-family: -apple-system, sans-serif; letter-spacing: 0.5px; }
+.ai-key-quote .meta { display: block; font-style: normal; font-size: 11px; color: var(--text-muted); margin-top: 6px; font-family: -apple-system, sans-serif; }
 .transcript-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
 .transcript-head { padding: 14px 20px; border-bottom: 1px solid var(--border-soft); background: linear-gradient(180deg, #FFFCF7, #fff); display: flex; justify-content: space-between; align-items: center; }
-.transcript-head h3 { font-family: "Georgia", serif; font-size: 16px; font-weight: 600; color: var(--brand-dark); }
+.transcript-head h3 { font-size: 16px; font-weight: 600; color: var(--brand-dark); }
 .transcript-body { padding: 6px 0; max-height: 500px; overflow-y: auto; font-family: -apple-system, sans-serif; }
-.msg { padding: 10px 20px; border-bottom: 1px solid var(--border-soft); }
+.msg { padding: 10px 20px; border-bottom: 1px solid var(--border-soft); display: grid; grid-template-columns: 60px 1fr; gap: 12px; }
 .msg:last-child { border-bottom: none; }
-.msg-who { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.msg-time { font-size: 11px; color: var(--text-muted); font-weight: 600; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.msg-body { min-width: 0; }
+.msg-who { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
 .msg-who.client { color: var(--brand-olive); }
 .msg-who.manager { color: var(--brand-terracotta); }
 .msg-text { font-size: 13px; color: var(--brand-dark); line-height: 1.55; }
-
 .scores-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
 .score-row { display: grid; grid-template-columns: 1fr 110px 50px; align-items: center; gap: 14px; padding: 9px 20px; border-bottom: 1px solid var(--border-soft); font-family: -apple-system, sans-serif; font-size: 13px; }
 .score-row:last-child { border-bottom: none; }
@@ -167,21 +184,22 @@ a { color: inherit; text-decoration: none; }
 .score-val.high { color: var(--brand-olive); }
 .score-val.mid { color: var(--brand-gold); }
 .score-val.low { color: var(--brand-terracotta); }
-
 .trigger-list { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
 .trigger-row { padding: 12px 20px; display: flex; gap: 12px; align-items: flex-start; border-bottom: 1px solid var(--border-soft); }
 .trigger-row:last-child { border-bottom: none; }
 .trigger-marker { width: 6px; height: 6px; border-radius: 50%; background: var(--brand-terracotta); margin-top: 7px; flex-shrink: 0; }
-.trigger-text { font-family: -apple-system, sans-serif; font-size: 13px; color: var(--brand-dark); }
+.trigger-text { font-family: -apple-system, sans-serif; font-size: 13px; color: var(--brand-dark); flex: 1; }
 .trigger-text .sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.trigger-text .timecode { display: inline-block; font-size: 10px; color: var(--brand-medium); background: var(--brand-paper); padding: 1px 6px; border-radius: 3px; margin-left: 6px; font-variant-numeric: tabular-nums; }
 .recommendation { background: linear-gradient(135deg, #FFF8E8, #FFF4DC); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
-.recommendation .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+.recommendation .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 8px; }
 .recommendation .text { font-size: 14px; color: var(--brand-dark); line-height: 1.6; }
-
+.scripts-used { background: var(--brand-paper); border: 1px solid var(--border); border-radius: 6px; padding: 12px 18px; margin-bottom: 16px; font-family: -apple-system, sans-serif; font-size: 12px; color: var(--text-secondary); }
+.scripts-used b { color: var(--brand-dark); }
+.scripts-used .tag { display: inline-block; background: #fff; border: 1px solid var(--border); padding: 2px 8px; margin: 3px 4px 0 0; border-radius: 10px; font-size: 11px; }
 .placeholder-panel { background: linear-gradient(135deg, var(--brand-paper), #F8F1E3); border: 1px dashed var(--brand-gold); border-radius: 6px; padding: 20px 22px; margin-bottom: 16px; }
-.placeholder-panel h3 { font-family: "Georgia", serif; font-size: 16px; font-weight: 600; color: var(--brand-dark); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-.placeholder-panel p { font-size: 13px; color: var(--brand-medium); font-family: -apple-system, sans-serif; line-height: 1.6; }
-
+.placeholder-panel h3 { font-size: 16px; font-weight: 600; color: var(--brand-dark); margin-bottom: 8px; }
+.placeholder-panel p { font-size: 13px; color: var(--brand-medium); font-family: -apple-system, sans-serif; }
 @media (max-width: 640px) {
   .topbar { padding: 10px 14px; gap: 12px; }
   .logo-img { height: 40px; }
@@ -196,12 +214,13 @@ a { color: inherit; text-decoration: none; }
   .score-big .num { font-size: 28px; }
   .detail-grid { grid-template-columns: 1fr; padding: 16px 18px 18px; gap: 10px; }
   .score-row { grid-template-columns: 1fr 80px 40px; padding: 9px 14px; }
-  .call-row { grid-template-columns: 28px 1fr auto; }
+  .call-row { grid-template-columns: 28px 1fr auto auto; }
   .call-row .call-time { display: none; }
+  .manager-row { grid-template-columns: 26px 1fr auto; }
+  .manager-row .m-count { display: none; }
+  .msg { grid-template-columns: 45px 1fr; gap: 8px; }
 }
-@media (max-width: 380px) {
-  .kpi-row { grid-template-columns: 1fr; }
-}
+@media (max-width: 380px) { .kpi-row { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -213,23 +232,115 @@ a { color: inherit; text-decoration: none; }
         <span class="sub">Sales Analytics</span>
       </div>
     </a>
-    <div class="nav"><a class="" href="index.html">Сводка</a><a class="active" href="../managers.html">Менеджеры</a><a class="" href="../all-calls.html">Все звонки</a><a class="" href="../triggers.html">Триггеры</a></div>
-    <div class="timestamp">обновлено 2026-05-26 14:18</div>
+    <div class="nav"><a href="index.html">Сводка</a><a class="active" href="../managers.html">Менеджеры</a><a href="../all-calls.html">Все звонки</a><a href="../critical.html">Срочно</a><a href="../triggers.html">Триггеры</a></div>
+    <div class="timestamp">обновлено 2026-05-27 07:16</div>
   </div>
   <div class="container">
     <div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../managers.html">Менеджеры</a> › Роман Авсеенко</div>
     <div class="page-head">
       <div style="display:flex; align-items:center; gap:18px;">
         <div class="m-avatar b" style="width:64px; height:64px; font-size:20px;"><img src="../avatars/1286.png" alt="РА"></div>
-        <div><h1>Роман Авсеенко</h1><div class="sub">Mavis Group · 107 звонков</div></div>
+        <div><h1>Роман Авсеенко</h1><div class="sub">Mavis Group · 80 звонков</div></div>
       </div>
     </div>
+    
     <div class="kpi-row">
-      <div class="kpi"><div class="kpi-label">Всего звонков</div><div class="kpi-value">107</div></div>
+      <div class="kpi"><div class="kpi-label">Звонков</div><div class="kpi-value">80</div></div>
       <div class="kpi green"><div class="kpi-label">Входящих</div><div class="kpi-value">6</div></div>
-      <div class="kpi accent"><div class="kpi-label">Исходящих</div><div class="kpi-value">101</div></div>
-    </div>
-    <div class="panel"><div class="panel-head"><h3>Все звонки</h3><span class="hint">107 штук</span></div>
+      <div class="kpi accent"><div class="kpi-label">Исходящих</div><div class="kpi-value">74</div></div>
+    <div class="kpi amber"><div class="kpi-label">Средняя оценка</div><div class="kpi-value">6.4</div><div class="kpi-hint">по 1 разборам</div></div></div>
+    <div class="panel"><div class="panel-head"><h3>Все звонки</h3><span class="hint">80 штук</span></div>
+    <a href="calls/419662.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Николай  Казинец</div>
+          <div class="call-meta">ООО &quot;ТернионСтрой&quot;</div>
+        </div>
+        <div class="call-duration">3 мин 6 сек</div>
+        <div class="call-time">10:07</div>
+        
+      </div>
+    </a>
+    
+    <a href="calls/419650.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Андрей Белмонтажбай</div>
+          <div class="call-meta">Белмонтажбай, ООО</div>
+        </div>
+        
+        <div class="call-time">10:07</div>
+        
+      </div>
+    </a>
+    
+    <a href="calls/419640.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Константин</div>
+          <div class="call-meta">Промметаллсистемы, ОДО</div>
+        </div>
+        <div class="call-duration">1 мин 21 сек</div>
+        <div class="call-time">09:58</div>
+        
+      </div>
+    </a>
+    
+    <a href="calls/419634.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Ирина</div>
+          <div class="call-meta">Этнатехсервис, ОДО</div>
+        </div>
+        <div class="call-duration">26 сек</div>
+        <div class="call-time">09:52</div>
+        
+      </div>
+    </a>
+    
+    <a href="calls/419526.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Ирина</div>
+          <div class="call-meta">Этнатехсервис, ОДО</div>
+        </div>
+        <div class="call-duration">1 мин 23 сек</div>
+        <div class="call-time">17:37</div>
+        
+      </div>
+    </a>
+    
+    <a href="calls/419522.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Ирина</div>
+          <div class="call-meta">Этнатехсервис, ОДО</div>
+        </div>
+        
+        <div class="call-time">17:36</div>
+        
+      </div>
+    </a>
+    
+    <a href="calls/419516.html" class="row-link">
+      <div class="call-row">
+        <div class="call-direction out">↑</div>
+        <div class="call-info">
+          <div class="call-client">Ирина</div>
+          <div class="call-meta">Этнатехсервис, ОДО</div>
+        </div>
+        
+        <div class="call-time">17:33</div>
+        
+      </div>
+    </a>
+    
     <a href="calls/419470.html" class="row-link">
       <div class="call-row">
         <div class="call-direction out">↑</div>
@@ -237,6 +348,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Ирина Ивановна</div>
           <div class="call-meta">ООО &quot;ТентЛюксПро&quot;</div>
         </div>
+        <div class="call-duration">22 сек</div>
         <div class="call-time">17:14</div>
         
       </div>
@@ -249,6 +361,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Денис</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">17:00</div>
         
       </div>
@@ -261,6 +374,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">4 мин 42 сек</div>
         <div class="call-time">16:44</div>
         <div class="mini-score mid">6.4</div>
       </div>
@@ -273,6 +387,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Денис Александрович</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">55 сек</div>
         <div class="call-time">16:37</div>
         
       </div>
@@ -285,6 +400,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Николай</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">16:25</div>
         
       </div>
@@ -297,6 +413,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">александр</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">1 мин 1 сек</div>
         <div class="call-time">16:22</div>
         
       </div>
@@ -309,6 +426,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Дмитрий Директор Промстроймет</div>
           <div class="call-meta">ПромСтройМет, ООО</div>
         </div>
+        <div class="call-duration">5 сек</div>
         <div class="call-time">16:20</div>
         
       </div>
@@ -321,6 +439,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">56 сек</div>
         <div class="call-time">16:17</div>
         
       </div>
@@ -333,6 +452,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">1 мин 9 сек</div>
         <div class="call-time">16:15</div>
         
       </div>
@@ -345,6 +465,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">алина</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">16:09</div>
         
       </div>
@@ -357,6 +478,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">57 сек</div>
         <div class="call-time">16:07</div>
         
       </div>
@@ -369,6 +491,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">15:58</div>
         
       </div>
@@ -381,6 +504,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">15:57</div>
         
       </div>
@@ -393,6 +517,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">15:56</div>
         
       </div>
@@ -405,6 +530,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">15:55</div>
         
       </div>
@@ -417,6 +543,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">15:53</div>
         
       </div>
@@ -429,6 +556,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">15:52</div>
         
       </div>
@@ -441,6 +569,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">1 мин 25 сек</div>
         <div class="call-time">15:49</div>
         
       </div>
@@ -453,6 +582,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">15:47</div>
         
       </div>
@@ -465,6 +595,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Дмитрий Промстроймет</div>
           <div class="call-meta">ПромСтройМет, ООО</div>
         </div>
+        <div class="call-duration">20 сек</div>
         <div class="call-time">15:20</div>
         
       </div>
@@ -477,6 +608,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Термине (БУХГАЛТЕРША АРМЯНКА)</div>
           <div class="call-meta">Белмонтажбай, ООО</div>
         </div>
+        <div class="call-duration">2 мин 2 сек</div>
         <div class="call-time">14:19</div>
         
       </div>
@@ -489,6 +621,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Андрей Белмонтажбай</div>
           <div class="call-meta">Белмонтажбай, ООО</div>
         </div>
+        <div class="call-duration">1 мин 6 сек</div>
         <div class="call-time">14:17</div>
         
       </div>
@@ -501,6 +634,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">1 мин 42 сек</div>
         <div class="call-time">14:14</div>
         
       </div>
@@ -513,6 +647,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">2 мин 16 сек</div>
         <div class="call-time">14:10</div>
         
       </div>
@@ -525,6 +660,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">14:10</div>
         
       </div>
@@ -537,6 +673,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Константин</div>
           <div class="call-meta">Пока без названия</div>
         </div>
+        <div class="call-duration">39 сек</div>
         <div class="call-time">14:02</div>
         
       </div>
@@ -549,6 +686,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">2 мин 2 сек</div>
         <div class="call-time">13:59</div>
         
       </div>
@@ -561,6 +699,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Андрей Белмонтажбай</div>
           <div class="call-meta">Белмонтажбай, ООО</div>
         </div>
+        <div class="call-duration">8 мин 17 сек</div>
         <div class="call-time">13:43</div>
         
       </div>
@@ -573,6 +712,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Максим</div>
           <div class="call-meta">БЕЛГРИС, ООО</div>
         </div>
+        
         <div class="call-time">13:42</div>
         
       </div>
@@ -585,6 +725,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Андрей Белмонтажбай</div>
           <div class="call-meta">Белмонтажбай, ООО</div>
         </div>
+        
         <div class="call-time">13:42</div>
         
       </div>
@@ -597,6 +738,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Юрий новэлитстрой</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">13:36</div>
         
       </div>
@@ -609,6 +751,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Александр</div>
           <div class="call-meta">Частное предприятие АлВаНазСтрой</div>
         </div>
+        
         <div class="call-time">13:34</div>
         
       </div>
@@ -621,6 +764,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Станислав МеталлАква</div>
           <div class="call-meta">МеталлАкваКомпани, ООО</div>
         </div>
+        
         <div class="call-time">13:21</div>
         
       </div>
@@ -633,6 +777,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Игорь</div>
           <div class="call-meta">Игорь от виктории скай тауверс</div>
         </div>
+        
         <div class="call-time">13:21</div>
         
       </div>
@@ -645,6 +790,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        
         <div class="call-time">13:20</div>
         
       </div>
@@ -657,6 +803,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Сергей Приедет сегодня от ВК</div>
           <div class="call-meta">Сергей Приедет сегодня от ВК</div>
         </div>
+        <div class="call-duration">23 сек</div>
         <div class="call-time">13:19</div>
         
       </div>
@@ -669,6 +816,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">виталий</div>
           <div class="call-meta">Сергей Приедет сегодня от ВК</div>
         </div>
+        
         <div class="call-time">13:14</div>
         
       </div>
@@ -681,6 +829,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Олег Пирожкин</div>
           <div class="call-meta">ООО «КристалВижн Технолоджи»</div>
         </div>
+        
         <div class="call-time">13:11</div>
         
       </div>
@@ -693,6 +842,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Андрей Белмонтажбай</div>
           <div class="call-meta">Белмонтажбай, ООО</div>
         </div>
+        <div class="call-duration">1 мин 57 сек</div>
         <div class="call-time">13:06</div>
         
       </div>
@@ -705,6 +855,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Артем  КомфортСтройКомпани</div>
           <div class="call-meta">КомфортСтройКомпани, ООО</div>
         </div>
+        <div class="call-duration">2 мин 1 сек</div>
         <div class="call-time">12:53</div>
         
       </div>
@@ -717,6 +868,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Андрей Белмонтажбай</div>
           <div class="call-meta">Белмонтажбай, ООО</div>
         </div>
+        
         <div class="call-time">12:51</div>
         
       </div>
@@ -729,6 +881,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Дмитрий Промстроймет</div>
           <div class="call-meta">ПромСтройМет, ООО</div>
         </div>
+        <div class="call-duration">42 сек</div>
         <div class="call-time">12:49</div>
         
       </div>
@@ -741,6 +894,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">александр</div>
           <div class="call-meta">+375 29 676-10-95 - Входящий звонок</div>
         </div>
+        
         <div class="call-time">12:46</div>
         
       </div>
@@ -753,6 +907,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Вадим</div>
           <div class="call-meta">ООО &quot;Бугбуд&quot;</div>
         </div>
+        
         <div class="call-time">12:43</div>
         
       </div>
@@ -765,6 +920,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Вадим</div>
           <div class="call-meta">ООО &quot;Бугбуд&quot;</div>
         </div>
+        
         <div class="call-time">12:31</div>
         
       </div>
@@ -777,6 +933,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Елена тоссат</div>
           <div class="call-meta">Тоссат</div>
         </div>
+        <div class="call-duration">8 мин 39 сек</div>
         <div class="call-time">12:07</div>
         
       </div>
@@ -789,6 +946,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">чуп &quot;ТермакИнжиниринг&quot;</div>
           <div class="call-meta">чуп &quot;ТермакИнжиниринг&quot;</div>
         </div>
+        
         <div class="call-time">12:05</div>
         
       </div>
@@ -801,6 +959,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">алексей</div>
           <div class="call-meta">чуп &quot;ТермакИнжиниринг&quot;</div>
         </div>
+        
         <div class="call-time">12:05</div>
         
       </div>
@@ -813,6 +972,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Александр</div>
           <div class="call-meta">СПАРТИС, ООО</div>
         </div>
+        <div class="call-duration">7 мин 44 сек</div>
         <div class="call-time">11:52</div>
         
       </div>
@@ -825,6 +985,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Роман</div>
           <div class="call-meta">ООО АкаСтрой</div>
         </div>
+        <div class="call-duration">5 мин 59 сек</div>
         <div class="call-time">11:31</div>
         
       </div>
@@ -837,6 +998,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Михаил</div>
           <div class="call-meta">БЛК7, ООО</div>
         </div>
+        <div class="call-duration">17 сек</div>
         <div class="call-time">11:30</div>
         
       </div>
@@ -849,6 +1011,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Дмитрий Промстроймет</div>
           <div class="call-meta">ПромСтройМет, ООО</div>
         </div>
+        <div class="call-duration">1 мин 31 сек</div>
         <div class="call-time">11:23</div>
         
       </div>
@@ -861,6 +1024,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Андрей</div>
           <div class="call-meta">ООО &quot;град строймастер&quot;</div>
         </div>
+        
         <div class="call-time">11:20</div>
         
       </div>
@@ -873,6 +1037,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Неизвестный клиент</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">1 мин 18 сек</div>
         <div class="call-time">11:10</div>
         
       </div>
@@ -885,6 +1050,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Татьяна</div>
           <div class="call-meta">Сити-Лад Плюс, Частное предприятие</div>
         </div>
+        
         <div class="call-time">11:08</div>
         
       </div>
@@ -897,6 +1063,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Андрей Николаевич Белподрядтитан</div>
           <div class="call-meta">ООО &quot;БелПодрядТитан&quot;</div>
         </div>
+        
         <div class="call-time">11:06</div>
         
       </div>
@@ -909,6 +1076,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Дмитрий Промстроймет</div>
           <div class="call-meta">ПромСтройМет, ООО</div>
         </div>
+        <div class="call-duration">3 мин 4 сек</div>
         <div class="call-time">11:02</div>
         
       </div>
@@ -921,6 +1089,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Артем  КомфортСтройКомпани</div>
           <div class="call-meta">КомфортСтройКомпани, ООО</div>
         </div>
+        
         <div class="call-time">11:01</div>
         
       </div>
@@ -933,6 +1102,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Станислав МеталлАква</div>
           <div class="call-meta">МеталлАкваКомпани, ООО</div>
         </div>
+        
         <div class="call-time">10:53</div>
         
       </div>
@@ -945,6 +1115,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Андрей Белмонтажбай</div>
           <div class="call-meta">Белмонтажбай, ООО</div>
         </div>
+        <div class="call-duration">4 мин 58 сек</div>
         <div class="call-time">10:44</div>
         
       </div>
@@ -957,6 +1128,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Александр</div>
           <div class="call-meta">СПАРТИС, ООО</div>
         </div>
+        
         <div class="call-time">10:35</div>
         
       </div>
@@ -969,6 +1141,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Вячеслав Городесткий</div>
           <div class="call-meta"></div>
         </div>
+        <div class="call-duration">45 сек</div>
         <div class="call-time">10:31</div>
         
       </div>
@@ -981,6 +1154,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Андрей Белмонтажбай</div>
           <div class="call-meta">Белмонтажбай, ООО</div>
         </div>
+        <div class="call-duration">11 сек</div>
         <div class="call-time">10:28</div>
         
       </div>
@@ -993,6 +1167,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Татьяна</div>
           <div class="call-meta">МагЭнергоСтрой, ООО</div>
         </div>
+        <div class="call-duration">32 сек</div>
         <div class="call-time">10:27</div>
         
       </div>
@@ -1005,6 +1180,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">виталий</div>
           <div class="call-meta">Сергей Приедет сегодня от ВК</div>
         </div>
+        <div class="call-duration">10 сек</div>
         <div class="call-time">10:05</div>
         
       </div>
@@ -1017,6 +1193,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Сергей Приедет сегодня от ВК</div>
           <div class="call-meta">Сергей Приедет сегодня от ВК</div>
         </div>
+        <div class="call-duration">34 сек</div>
         <div class="call-time">10:04</div>
         
       </div>
@@ -1029,6 +1206,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Виталий</div>
           <div class="call-meta">СУ - 181</div>
         </div>
+        <div class="call-duration">1 мин 14 сек</div>
         <div class="call-time">09:58</div>
         
       </div>
@@ -1041,6 +1219,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Виталий</div>
           <div class="call-meta">СУ - 181</div>
         </div>
+        <div class="call-duration">56 сек</div>
         <div class="call-time">09:56</div>
         
       </div>
@@ -1053,6 +1232,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Николай  Казинец</div>
           <div class="call-meta">ООО &quot;ТернионСтрой&quot;</div>
         </div>
+        
         <div class="call-time">09:52</div>
         
       </div>
@@ -1065,6 +1245,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Руслан</div>
           <div class="call-meta">Татемэнерго</div>
         </div>
+        
         <div class="call-time">09:48</div>
         
       </div>
@@ -1077,6 +1258,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">СЕРГЕЙ</div>
           <div class="call-meta">бэлкос М РАСШИРЕНИЕ</div>
         </div>
+        
         <div class="call-time">09:46</div>
         
       </div>
@@ -1089,6 +1271,7 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Артем  КомфортСтройКомпани</div>
           <div class="call-meta">КомфортСтройКомпани, ООО</div>
         </div>
+        <div class="call-duration">17 сек</div>
         <div class="call-time">09:45</div>
         
       </div>
@@ -1101,415 +1284,8 @@ a { color: inherit; text-decoration: none; }
           <div class="call-client">Александр</div>
           <div class="call-meta">СПАРТИС, ООО</div>
         </div>
+        
         <div class="call-time">09:40</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418436.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Николай</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">18:00</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418434.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Руслан</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">17:58</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418406.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Денис Александрович</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">17:50</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418400.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Денис Александрович</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">17:48</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418386.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">александр</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">17:44</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418378.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Денис</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">17:43</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418370.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Юрий новэлитстрой</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">17:39</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418362.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Константин</div>
-          <div class="call-meta">Пока без названия</div>
-        </div>
-        <div class="call-time">17:37</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418342.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Артем  КомфортСтройКомпани</div>
-          <div class="call-meta">КомфортСтройКомпани, ООО</div>
-        </div>
-        <div class="call-time">17:12</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418332.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Кирилл</div>
-          <div class="call-meta">ООО УрбаНова</div>
-        </div>
-        <div class="call-time">17:03</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418328.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Андрей Белмонтажбай</div>
-          <div class="call-meta">Белмонтажбай, ООО</div>
-        </div>
-        <div class="call-time">17:00</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418320.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Вадим</div>
-          <div class="call-meta">ВитФорестСтрой, ООО</div>
-        </div>
-        <div class="call-time">16:56</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418288.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Сергей Приедет сегодня от ВК</div>
-          <div class="call-meta">Сергей Приедет сегодня от ВК</div>
-        </div>
-        <div class="call-time">16:42</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418276.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Дмитрий Промстроймет</div>
-          <div class="call-meta">ПромСтройМет, ООО</div>
-        </div>
-        <div class="call-time">16:34</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418202.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Виталий</div>
-          <div class="call-meta">СУ - 181</div>
-        </div>
-        <div class="call-time">16:06</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418194.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Игорь Стройкомплекс</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">16:01</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418190.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">АННА БИСП БУХГАЛТЕР</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">16:00</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418184.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Сергей</div>
-          <div class="call-meta">Самбуд, ЧП</div>
-        </div>
-        <div class="call-time">15:57</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418170.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">СЕРГЕЙ</div>
-          <div class="call-meta">бэлкос М РАСШИРЕНИЕ</div>
-        </div>
-        <div class="call-time">15:52</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418158.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Татьяна Фэтсит</div>
-          <div class="call-meta">ФэтСит</div>
-        </div>
-        <div class="call-time">15:47</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418146.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Роман</div>
-          <div class="call-meta">ООО АкаСтрой</div>
-        </div>
-        <div class="call-time">15:44</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418140.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Франц</div>
-          <div class="call-meta">СТРОЙСАНТЕХМОНТАЖ, ТСОДО</div>
-        </div>
-        <div class="call-time">15:43</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418136.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">алексей</div>
-          <div class="call-meta">ООО &quot;Инфоспектр&quot;</div>
-        </div>
-        <div class="call-time">15:41</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418118.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">андрй успехперсон</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">15:32</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418114.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Дмитрий директор</div>
-          <div class="call-meta">МасКомпани, ООО</div>
-        </div>
-        <div class="call-time">15:31</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418106.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">алексей</div>
-          <div class="call-meta">ООО &quot;Инфоспектр&quot;</div>
-        </div>
-        <div class="call-time">15:29</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418102.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">андрй успехперсон</div>
-          <div class="call-meta"></div>
-        </div>
-        <div class="call-time">15:28</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418098.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Сергей</div>
-          <div class="call-meta">Успехперсон, ООО</div>
-        </div>
-        <div class="call-time">15:27</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418092.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Роман</div>
-          <div class="call-meta">ООО АкаСтрой</div>
-        </div>
-        <div class="call-time">15:25</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418078.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Андрей Николаевич Белподрядтитан</div>
-          <div class="call-meta">ООО &quot;БелПодрядТитан&quot;</div>
-        </div>
-        <div class="call-time">15:21</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418030.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">сергей Азбука кровли</div>
-          <div class="call-meta">Азбука кровли</div>
-        </div>
-        <div class="call-time">15:09</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/418014.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Николай</div>
-          <div class="call-meta">ИП Иванов Кирилл Анатольевич</div>
-        </div>
-        <div class="call-time">15:05</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/417946.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">алексей</div>
-          <div class="call-meta">ООО &quot;ГайДен&quot;</div>
-        </div>
-        <div class="call-time">14:55</div>
-        
-      </div>
-    </a>
-    
-    <a href="calls/417936.html" class="row-link">
-      <div class="call-row">
-        <div class="call-direction out">↑</div>
-        <div class="call-info">
-          <div class="call-client">Ярослав</div>
-          <div class="call-meta">Теплоэнергострой, ООО</div>
-        </div>
-        <div class="call-time">14:47</div>
         
       </div>
     </a>
@@ -1519,7 +1295,7 @@ a { color: inherit; text-decoration: none; }
     <div class="footer-brand">MAVIS GROUP</div>
     <div class="footer-divider"></div>
     <div>Sales Analytics · Автоматический анализ звонков отдела продаж</div>
-    <div style="margin-top:6px; font-size:11px;">Источник: Bitrix24 · Запуск: GitHub Actions · © 2026</div>
+    <div style="margin-top:6px; font-size:11px;">Bitrix24 · GitHub Actions · Claude Haiku · © 2026</div>
   </div>
 </body>
 </html>
