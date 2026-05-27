@@ -1,8 +1,8 @@
 """
 Bitrix24 модуль.
 - Забирает звонки за сутки
-- Скачивает аудио в audio_temp/ (для анализа) и docs/audio/ (для плеера на 3 дня)
-- Автоматически чистит аудио старше 3 дней из docs/audio/
+- Скачивает аудио в audio_temp/ + docs/audio/ на 3 дня
+- Автоочистка старых MP3
 """
 
 import os
@@ -21,8 +21,8 @@ ACTIVITY_TYPE_CALL = 2
 DEFAULT_REQUEST_TIMEOUT = 60
 MIN_AUDIO_SIZE_BYTES = 10_000
 DEFAULT_AUDIO_DOWNLOAD_LIMIT = 0
-MIN_DURATION_SEC = 40
-AUDIO_KEEP_DAYS = 3  # сколько дней храним MP3 для плеера
+MIN_DURATION_SEC = 20  # По ТЗ: анализируем звонки от 20 сек
+AUDIO_KEEP_DAYS = 3
 
 ALLOWED_MANAGERS = [
     "Роман Авсеенко",
@@ -155,7 +155,6 @@ def download_audio(client: Bitrix24Client, file_id: int, save_to: Path) -> Path:
 
 
 def cleanup_old_audio(audio_dir: Path, keep_days: int = AUDIO_KEEP_DAYS) -> int:
-    """Удаляет MP3 файлы старше keep_days дней. Возвращает количество удалённых."""
     if not audio_dir.exists():
         return 0
     cutoff = datetime.now(timezone.utc).timestamp() - keep_days * 86400
@@ -254,7 +253,6 @@ def _mask_phone(phone: str) -> str:
 
 
 def get_bitrix_call_url(activity_id: str) -> str:
-    """Ссылка на звонок в Bitrix24 интерфейсе."""
     return f"https://mavisgroup.bitrix24.by/crm/timeline/?activityId={activity_id}"
 
 
@@ -293,45 +291,38 @@ def main():
     else:
         results = all_results
 
-    # Добавляем ссылку на Bitrix24 для каждого звонка
     for r in results:
         r["bitrix_url"] = get_bitrix_call_url(r["activity_id"])
 
-    # Статистика
     with_duration = [r for r in results if r.get("duration_sec") is not None]
     long_enough = [r for r in results if r.get("duration_sec") and r["duration_sec"] >= MIN_DURATION_SEC]
     print(f"\nДлительность:")
     print(f"   С известной длительностью: {len(with_duration)}/{len(results)}")
     print(f"   ≥ {MIN_DURATION_SEC} сек: {len(long_enough)}")
 
-    # ============================================================
-    # СКАЧИВАНИЕ АУДИО
-    # ============================================================
     audio_limit = int(os.environ.get("DOWNLOAD_AUDIO_COUNT", DEFAULT_AUDIO_DOWNLOAD_LIMIT))
     print(f"\nDOWNLOAD_AUDIO_COUNT = {audio_limit}")
 
     if audio_limit != 0:
-        # 1) Очистка старых файлов из docs/audio/
         docs_audio = Path("docs") / "audio"
         deleted = cleanup_old_audio(docs_audio, AUDIO_KEEP_DAYS)
         if deleted:
             print(f"\nУдалено старых MP3 (>{AUDIO_KEEP_DAYS} дней): {deleted}")
 
-        # 2) Скачивание новых
         audio_temp = Path("audio_temp")
         audio_temp.mkdir(exist_ok=True)
         docs_audio.mkdir(parents=True, exist_ok=True)
 
+        # Кандидаты: ТОЛЬКО с известной длительностью ≥ MIN_DURATION_SEC
+        # и сортируем от старых к новым (у новых аудио может ещё не быть на диске Bitrix)
         candidates = [
-    r for r in results
-    if r.get("audio") and r["audio"].get("file_id")
-    and r.get("duration_sec") is not None
-    and r["duration_sec"] >= MIN_DURATION_SEC
-]
-# Сортируем от самых старых к новым — у свежих ещё не загружено аудио
-candidates.sort(key=lambda x: x.get("created", ""), reverse=False)
+            r for r in results
+            if r.get("audio") and r["audio"].get("file_id")
+            and r.get("duration_sec") is not None
+            and r["duration_sec"] >= MIN_DURATION_SEC
+        ]
+        candidates.sort(key=lambda x: x.get("created", ""), reverse=False)
 
-        # -1 = все, иначе ограничение
         to_download = candidates if audio_limit == -1 else candidates[:audio_limit]
         print(f"\nКандидатов: {len(candidates)}, скачиваем: {len(to_download)}")
 
@@ -343,7 +334,6 @@ candidates.sort(key=lambda x: x.get("created", ""), reverse=False)
             dur_str = f"{dur} сек" if dur else "неизв."
             print(f"\n[{i}/{len(to_download)}] {activity_id} ({call['manager']['name']}, {dur_str}):")
             try:
-                # Скачиваем в audio_temp для анализа
                 temp_path = download_audio(client, file_id, audio_temp)
                 size = temp_path.stat().st_size
                 if size < MIN_AUDIO_SIZE_BYTES:
@@ -351,7 +341,6 @@ candidates.sort(key=lambda x: x.get("created", ""), reverse=False)
                     temp_path.unlink()
                     continue
 
-                # Также копируем в docs/audio/ для плеера (имя по activity_id для простоты)
                 public_path = docs_audio / f"{activity_id}.mp3"
                 shutil.copy2(temp_path, public_path)
 
@@ -366,7 +355,6 @@ candidates.sort(key=lambda x: x.get("created", ""), reverse=False)
 
         print(f"\nИтого скачано: {downloaded}/{len(to_download)}")
 
-        # Размер папки docs/audio
         if docs_audio.exists():
             total_size = sum(f.stat().st_size for f in docs_audio.glob("*.mp3"))
             file_count = len(list(docs_audio.glob("*.mp3")))
