@@ -232,20 +232,20 @@ a { color: inherit; text-decoration: none; }
         <span class="sub">Sales Analytics</span>
       </div>
     </a>
-    <div class="nav"><a href="index.html">Сводка</a><a href="../managers.html">Менеджеры</a><a class="active" href="../all-calls.html">Все звонки</a><a href="../critical.html">Срочно</a><a href="../triggers.html">Триггеры</a></div>
-    <div class="timestamp">обновлено 2026-05-27 07:30</div>
+    <div class="nav"><a href="index.html">Сводка</a><a href="../managers.html">Менеджеры</a><a class="active" href="../all-calls.html">Все звонки</a><a class="critical-link" href="../critical.html">Срочно (3)</a><a href="../triggers.html">Триггеры</a></div>
+    <div class="timestamp">обновлено 2026-05-27 08:08</div>
   </div>
   <div class="container">
     <div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../all-calls.html">Звонки</a> › Звонок №418500</div>
     
-    <div class="call-card">
+    <div class="call-card critical">
       <div class="call-card-head">
         <div>
-          
+          <div class="critical-badge">🔴 СРОЧНО · Грубость в разговоре</div>
           <h2>Дмитрий</h2>
-          <div class="call-tags"><span class="call-tag accent">Исходящий</span></div>
+          <div class="call-tags"><span class="call-tag accent">Исходящий</span><span class="call-tag">Тип: исходящий (звонок на закрытие или обсуждение текущей услуги подбора)</span><span class="call-tag">Этап: отработка возражений / управление услугой подбора</span><span class="call-tag warning">Триггеров: 8</span></div>
         </div>
-        <div class="score-big placeholder"><div class="num">—</div><div class="label">не анализирован</div></div>
+        <div class="score-big crit"><div class="num">2.8<span class="max">/10</span></div><div class="label">Оценка</div></div>
       </div>
       <div class="detail-grid">
         <div class="detail"><div class="detail-label">Менеджер</div><div class="detail-value"><a href="../managers/2100.html">Ирина Богомольцева</a></div></div>
@@ -258,15 +258,387 @@ a { color: inherit; text-decoration: none; }
     </div>
     
     
-        <div class="audio-missing">
-          🎵 Запись звонка доступна в Bitrix24: <a href="https://mavisgroup.bitrix24.by/crm/timeline/?activityId=418500" target="_blank">открыть карточку звонка →</a>
+        <div class="audio-player">
+          <audio controls preload="metadata" src="../audio/418500.mp3"></audio>
+          <a href="https://mavisgroup.bitrix24.by/crm/timeline/?activityId=418500" target="_blank" class="bitrix-link">Открыть в Bitrix24</a>
         </div>
         
-    
-        <div class="placeholder-panel">
-          <h3>📝 Транскрипт</h3><p>Звонок ещё не прошёл ИИ-анализ.</p>
-        </div>
-        
+    <div class="ai-summary"><div class="label">📋 Резюме</div><div class="text">Менеджер Ирина звонит клиенту Дмитрию по вопросу подбора главного инженера. Был найден кандидат, но это не специалист из базы компании, а найденный через внешние организации, что требует дополнительной доплаты (от 800 до 1600 рублей). Менеджер предлагает два варианта: либо доплатить 800 рублей за текущего кандидата, либо ждать месяц появления своего специалиста. Разговор затруднён из-за плохого качества записи, неясной дикции менеджера и отсутствия четкого резюме договорённостей.</div></div><div class="ai-key-quote">Да, сколько по времени я ожидать?<span class="meta">— клиент · 02:21</span></div><div class="ai-key-quote">Смотрите, дело в том, что это из контрагента, если вы готовы доплатить, тогда сможем вам помочь.<span class="meta">— менеджер · 00:48</span></div><div class="scripts-used"><b>Сравнение со скриптами:</b> <span class="tag">Чек-лист по всем продуктам (частично — вопрос о специалистах, но поверхностно)</span><span class="tag">Возражения (частично — не использованы аргументы про экономию, качество, альтернативы)</span><span class="tag">Аттестация лучше подбора (не использован вообще — могла быть предложена аттестация найденного специалиста вместо дополнительного подбора)</span></div>
+            <div class="transcript-panel">
+              <div class="transcript-head"><h3>📝 Транскрипт</h3><span class="hint">34 реплик · 3 мин 22 сек</span></div>
+              <div class="transcript-body">
+                <div class="msg">
+                  <div class="msg-time">00:00</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Дмитрий здравствуйте.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:03</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Ирина из Mavis Group. Дмитрий, нашли главного инженера.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:09</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Смотрите, наша услуга в этом случае будет 1600.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:16</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Он хочет на руки на 6 месяцев, 750 рублей на руки.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:22</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Как раз в раздайте, а что 1700?</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:27</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Не понимаю.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:29</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Он хочет 6 месяцев, 750 рублей на руки.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:40</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">А он на своем продан подбор?</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:43</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Да, это понимаю.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:45</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">У нас там все оплатно.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">00:48</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Смотрите, дело в том, что это из контрагента, если вы готовы доплатить, тогда сможем вам помочь. Это не наш специалист, не тот, который у нас в 1000-х наших, мы искали через 2-ти организации.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:02</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">У вас оплачен подбор 800 рублей.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:05</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Да, я знаю.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:07</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">А мы должны дать даже больше, чем вы заплатили.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:15</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Или еще дальше?</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:19</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Я понимаю, что это сколько у меня?</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:22</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">У меня тут мало зависит.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:24</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Я что могу то делать в предлагорвом разной варианте?</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:27</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Вы же принимаете решение существенно.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:31</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Сколько получается перед вас?</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:34</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">80 рублей еще.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:38</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">А ты еще вам надо заплатить?</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">01:46</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">У вас оплачен подбор 800 рублей. Но поскольку это не наш кандидат, а мы искали через 2-ти организации. И, естественно, нам нужно с ними тоже расплатиться. Соответственно, у нас стоимость подбора увеличивается.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:01</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">У нас с вами 2 варианта. Первый, это вы можете доплатить еще столько же. И мы вам предоставим этого главного инженера. Он под дачу экзамен, у него было-то, так просто старый другой компания.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:13</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Либо мы ищем вам то, что у нас освободится там ближайшее время, чтобы это было нашего списка человека. Тогда ваш подвор так останется 800 рублей.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:21</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Да, сколько по времени я ожидать?</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:25</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Он у меня уже есть наличие. Мы его нашли.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:29</div>
+                  <div class="msg-body">
+                    <div class="msg-who client">клиент</div>
+                    <div class="msg-text">Я понимаю, я имею в это какие-то</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:31</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Зачем я знаю? Не знаю, там ближайшее освободилось вам через месяц.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:40</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Лежай сейчас, обузбай отсюда через месяц.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:44</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Может быть, может быть, кто-то откажется раньше.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:48</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Измите, я тут во мне не берусь, вы видите.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">02:53</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Но, если у нас есть пист, то мне братьето, то, и иногда по какой-то пист, они могут быть на писте.</div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <div class="msg-time">03:01</div>
+                  <div class="msg-body">
+                    <div class="msg-who manager">менеджер</div>
+                    <div class="msg-text">Не стоит денег, есть. Не то, что заниматься пистацией.</div>
+                  </div>
+                </div></div>
+            </div><div class="scores-panel"><div class="panel-head"><h3>📊 Оценка по критериям</h3></div>
+                <div class="score-row">
+                  <div class="score-name">Приветствие и представление</div>
+                  <div class="score-bar"><div class="score-fill mid" style="width:50%;"></div></div>
+                  <div class="score-val mid">5.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Выявление потребностей клиента</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:30%;"></div></div>
+                  <div class="score-val low">3.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Презентация ценности продукта</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:20%;"></div></div>
+                  <div class="score-val low">2.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Работа с возражениями</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:40%;"></div></div>
+                  <div class="score-val low">4.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Управление разговором</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:30%;"></div></div>
+                  <div class="score-val low">3.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Активное слушание</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:40%;"></div></div>
+                  <div class="score-val low">4.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Эмоциональный тон</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:20%;"></div></div>
+                  <div class="score-val low">2.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Структурированность разговора</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:20%;"></div></div>
+                  <div class="score-val low">2.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Использование скрипта компании</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:10%;"></div></div>
+                  <div class="score-val low">1.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Уточняющие вопросы</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:20%;"></div></div>
+                  <div class="score-val low">2.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Допродажа / cross-sell</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:0%;"></div></div>
+                  <div class="score-val low">0.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Фиксация следующего шага</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:20%;"></div></div>
+                  <div class="score-val low">2.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Прояснение бюджета</div>
+                  <div class="score-bar"><div class="score-fill mid" style="width:50%;"></div></div>
+                  <div class="score-val mid">5.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Проработка сроков</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:40%;"></div></div>
+                  <div class="score-val low">4.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Резюмирование договорённостей</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:10%;"></div></div>
+                  <div class="score-val low">1.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Завершение разговора</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:10%;"></div></div>
+                  <div class="score-val low">1.0</div>
+                </div>
+                <div class="score-row">
+                  <div class="score-name">Профессиональная речь</div>
+                  <div class="score-bar"><div class="score-fill low" style="width:20%;"></div></div>
+                  <div class="score-val low">2.0</div>
+                </div></div><div class="trigger-list"><div class="panel-head"><h3>⚠️ Триггеры</h3><span class="hint">8 шт</span></div>
+                <div class="trigger-row">
+                  <div class="trigger-marker"></div>
+                  <div class="trigger-text">Не отработано возражение «дорого»<span class="timecode">00:48</span>
+                    <div class="sub">Клиент резко возражает на стоимость дополнительного платежа (800 рублей доплаты), менеджер не использует аргументы из скрипта (экономия, соотношение цена/качество, альтернативы), а просто давит на необходимость доплаты [00:48].</div>
+                  </div>
+                </div>
+                <div class="trigger-row">
+                  <div class="trigger-marker"></div>
+                  <div class="trigger-text">Не предложена альтернатива при отказе<span class="timecode">02:13</span>
+                    <div class="sub">Менеджер предлагает две опции (доплатить или ждать месяц), но не объясняет преимущества каждого варианта, не учитывает срочность потребности клиента [02:13].</div>
+                  </div>
+                </div>
+                <div class="trigger-row">
+                  <div class="trigger-marker"></div>
+                  <div class="trigger-text">Не зафиксирован следующий шаг<span class="timecode">03:01</span>
+                    <div class="sub">По завершении разговора отсутствует четкая договорённость о том, какой вариант выбирает клиент и когда будет следующий контакт. Разговор просто обрывается [03:01].</div>
+                  </div>
+                </div>
+                <div class="trigger-row">
+                  <div class="trigger-marker"></div>
+                  <div class="trigger-text">Грубость или непрофессионализм<span class="timecode">02:31</span>
+                    <div class="sub">Менеджер говорит невнятно, речь заполнена паразитами и искажениями, неясная дикция делает разговор запутанным. Фраза &#x27;Зачем я знаю?&#x27; [02:31] звучит непрофессионально и груб к клиенту.</div>
+                  </div>
+                </div>
+                <div class="trigger-row">
+                  <div class="trigger-marker"></div>
+                  <div class="trigger-text">Не закрыл звонок резюме договорённостей<span class="timecode">03:01</span>
+                    <div class="sub">Разговор заканчивается без четкого резюме: нет повтора выбранного варианта, сроков, следующих шагов, контактов для связи [03:01].</div>
+                  </div>
+                </div>
+                <div class="trigger-row">
+                  <div class="trigger-marker"></div>
+                  <div class="trigger-text">Не выявлены потребности клиента<span class="timecode">02:21</span>
+                    <div class="sub">Менеджер не уточняет сроки, по которым клиенту нужен специалист, не спрашивает о критичности получить кандидата сейчас или можно подождать, не выясняет финансовые возможности [02:21-02:31].</div>
+                  </div>
+                </div>
+                <div class="trigger-row">
+                  <div class="trigger-marker"></div>
+                  <div class="trigger-text">Не задал уточняющие вопросы<span class="timecode">02:25</span>
+                    <div class="sub">Менеджер не уточняет: в какой срок реально нужен специалист, важна ли экономия для клиента, готов ли он работать с внешним кандидатом или предпочитает своего [02:25-02:40].</div>
+                  </div>
+                </div>
+                <div class="trigger-row">
+                  <div class="trigger-marker"></div>
+                  <div class="trigger-text">Упущена допродажа<span class="timecode">00:09</span>
+                    <div class="sub">Менеджер мог бы предложить дополнительные услуги (аттестацию найденного специалиста, документы СПК, охрану труда), но этого не происходит [00:09-03:01].</div>
+                  </div>
+                </div></div><div class="recommendation"><div class="label">💡 Рекомендация менеджеру</div><div class="text">Качество звонка критически низко. Необходимо: 1) переговорить с Дмитрием в спокойном режиме, четко резюмировав оба варианта (доплата 800 р. сейчас или ожидание месяца), уточнив сроки его потребности и использовав скрипт возражений (экономия, управляемость); 2) закрыть разговор четким резюме договорённостей и датой следующего контакта. Менеджеру следует улучшить речь (четкость дикции, избегать паразитов), использовать имя клиента, следовать корпоративному скрипту по подбору/аттестации специалистов и принципу «Аттестация лучше подбора» (предложить аттестацию найденного специалиста как альтернативу).</div></div>
     </div>
   <div class="footer-note">
     <div class="footer-brand">MAVIS GROUP</div>
