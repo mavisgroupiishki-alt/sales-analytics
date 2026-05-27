@@ -326,7 +326,9 @@ def analyze_transcript(transcription: Dict, call_meta: Dict, scripts_db: Dict, c
             text = text[4:]
         text = text.strip()
 
-    result = json.loads(text)
+    # Парсим только первый JSON-объект (Haiku иногда добавляет текст после)
+    decoder = json.JSONDecoder()
+    result, _ = decoder.raw_decode(text)
 
     # Определяем критичность
     is_crit, crit_reason = is_critical(result)
