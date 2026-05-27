@@ -323,11 +323,13 @@ def main():
         docs_audio.mkdir(parents=True, exist_ok=True)
 
         candidates = [
-            r for r in results
-            if r.get("audio") and r["audio"].get("file_id")
-            and (r.get("duration_sec") is None or r["duration_sec"] >= MIN_DURATION_SEC)
-        ]
-        candidates.sort(key=lambda x: x.get("created", ""), reverse=True)
+    r for r in results
+    if r.get("audio") and r["audio"].get("file_id")
+    and r.get("duration_sec") is not None
+    and r["duration_sec"] >= MIN_DURATION_SEC
+]
+# Сортируем от самых старых к новым — у свежих ещё не загружено аудио
+candidates.sort(key=lambda x: x.get("created", ""), reverse=False)
 
         # -1 = все, иначе ограничение
         to_download = candidates if audio_limit == -1 else candidates[:audio_limit]
