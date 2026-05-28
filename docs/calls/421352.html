@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Звонок №421352 — Mavis Group Sales Analytics</title>
+  <style>
+:root {
+  --brand-dark: #3D2E1F; --brand-medium: #6B5544; --brand-light: #A0826D;
+  --brand-cream: #FAF7F2; --brand-paper: #F2EBE0;
+  --brand-gold: #C9A961; --brand-olive: #7C8B6F; --brand-terracotta: #B86B4F;
+  --text-primary: #2A1F15; --text-secondary: #6B5544; --text-muted: #A39686;
+  --border: #E8DFD0; --border-soft: #F0E8DA;
+  --red: #A0432B; --red-soft: #FFE5DC;
+  --blue: #4A6B8A; --blue-soft: #DCE8F4;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "Georgia", "Garamond", -apple-system, "Segoe UI", system-ui, serif;
+  background: var(--brand-cream); color: var(--text-primary);
+  -webkit-font-smoothing: antialiased; line-height: 1.55;
+}
+a { color: inherit; text-decoration: none; }
+.topbar {
+  background: var(--brand-dark); color: #fff;
+  padding: 10px 24px;
+  display: flex; align-items: center; gap: 20px;
+  position: sticky; top: 0; z-index: 10;
+  box-shadow: 0 2px 12px rgba(61,46,31,0.25);
+  border-bottom: 3px solid var(--brand-gold);
+  overflow: hidden;
+}
+.logo { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.logo-img { height: 48px; width: auto; display: block; flex-shrink: 0; }
+.logo-text { display: flex; flex-direction: column; line-height: 1.1; }
+.logo-text .brand { font-size: 17px; font-weight: 700; letter-spacing: 1px; color: #fff; }
+.logo-text .sub { font-size: 10px; letter-spacing: 3px; color: var(--brand-gold); text-transform: uppercase; margin-top: 2px; }
+.nav {
+  display: flex; gap: 22px; font-size: 13px; flex: 1;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  font-family: -apple-system, sans-serif;
+}
+.nav::-webkit-scrollbar { display: none; }
+.nav a { color: rgba(255,255,255,0.75); padding: 4px 2px; border-bottom: 2px solid transparent; white-space: nowrap; flex-shrink: 0; }
+.nav a.active { color: #fff; border-bottom-color: var(--brand-gold); }
+.nav a:hover { color: #fff; }
+.nav a.critical-link { color: var(--red-soft); }
+.nav a.critical-link::after { content: ""; width: 6px; height: 6px; background: var(--red); border-radius: 50%; display: inline-block; margin-left: 5px; vertical-align: middle; }
+.timestamp { font-size: 11px; color: rgba(255,255,255,0.5); white-space: nowrap; flex-shrink: 0; }
+.container { max-width: 1280px; margin: 0 auto; padding: 24px 24px 40px; }
+.breadcrumb { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; font-family: -apple-system, sans-serif; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.breadcrumb a { color: var(--brand-medium); border-bottom: 1px dotted var(--border); }
+.breadcrumb a:hover { color: var(--brand-dark); border-bottom-style: solid; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap; gap: 14px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+.page-head h1 { font-size: 28px; font-weight: 400; margin-bottom: 6px; color: var(--brand-dark); }
+.page-head .sub { font-size: 13px; color: var(--text-secondary); font-family: -apple-system, sans-serif; }
+.pill { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--brand-dark); font-family: -apple-system, sans-serif; }
+.notice { background: linear-gradient(135deg, var(--brand-paper), #F8F1E3); border: 1px solid var(--brand-gold); border-left: 4px solid var(--brand-gold); border-radius: 4px; padding: 14px 18px; margin-bottom: 22px; font-size: 13px; color: var(--brand-dark); font-family: -apple-system, sans-serif; }
+.notice b { font-weight: 700; }
+.notice.success { background: linear-gradient(135deg, #E8F0E0, #F0F4E8); border-color: var(--brand-olive); border-left-color: var(--brand-olive); color: #2A3A1F; }
+.notice.danger { background: linear-gradient(135deg, var(--red-soft), #FFEEE5); border-color: var(--red); border-left-color: var(--red); color: var(--red); }
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.kpi { background: #fff; border-radius: 6px; padding: 16px 18px; border: 1px solid var(--border); border-top: 3px solid var(--brand-medium); }
+.kpi.accent { border-top-color: var(--brand-terracotta); }
+.kpi.green { border-top-color: var(--brand-olive); }
+.kpi.amber { border-top-color: var(--brand-gold); }
+.kpi.red { border-top-color: var(--red); }
+.kpi.blue { border-top-color: var(--blue); }
+.kpi-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; margin-bottom: 8px; font-family: -apple-system, sans-serif; }
+.kpi-value { font-size: 30px; font-weight: 400; line-height: 1; color: var(--brand-dark); }
+.kpi-hint { margin-top: 6px; font-size: 11px; color: var(--text-muted); font-family: -apple-system, sans-serif; }
+.grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-bottom: 22px; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+.panel { background: #fff; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 18px; }
+.panel-head { padding: 14px 18px; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between; align-items: center; background: linear-gradient(180deg, #FFFCF7, #fff); }
+.panel-head h3 { font-size: 16px; font-weight: 600; color: var(--brand-dark); }
+.panel-head .hint { font-size: 12px; color: var(--text-muted); font-family: -apple-system, sans-serif; }
+.row-link { display: block; transition: background 0.15s; font-family: -apple-system, sans-serif; }
+.row-link:hover { background: var(--brand-paper); }
+.row-link.critical { background: linear-gradient(90deg, var(--red-soft), transparent 60%); }
+.manager-row { display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border-soft); }
+.manager-row:last-child { border-bottom: none; }
+.rank { width: 22px; height: 22px; border-radius: 50%; background: var(--brand-paper); color: var(--text-secondary); font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+.rank.gold { background: var(--brand-gold); color: #fff; }
+.rank.silver { background: #BFB5A8; color: #fff; }
+.rank.bronze { background: var(--brand-terracotta); color: #fff; }
+.manager-info { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.m-avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-medium), var(--brand-dark)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; flex-shrink: 0; overflow: hidden; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border); }
+.m-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.m-avatar.b { background: linear-gradient(135deg, var(--brand-terracotta), var(--brand-light)); }
+.m-avatar.c { background: linear-gradient(135deg, var(--brand-olive), var(--brand-medium)); }
+.m-avatar.d { background: linear-gradient(135deg, #8B7E6F, var(--brand-medium)); }
+.m-avatar.e { background: linear-gradient(135deg, var(--brand-gold), var(--brand-terracotta)); }
+.m-name { font-weight: 600; font-size: 14px; color: var(--brand-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-stats { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.m-stats b { color: var(--brand-dark); }
+.m-avg { font-family: "Georgia", serif; font-weight: 700; font-size: 18px; padding: 3px 10px; border-radius: 4px; min-width: 50px; text-align: center; }
+.m-avg.high { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
+.m-avg.mid { background: rgba(201,169,97,0.18); color: var(--brand-gold); }
+.m-avg.low { background: rgba(184,107,79,0.15); color: var(--brand-terracotta); }
+.m-avg.empty { background: var(--brand-paper); color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.m-count { font-weight: 600; font-size: 18px; min-width: 36px; text-align: right; color: var(--text-secondary); font-family: "Georgia", serif; }
+.call-row { display: grid; grid-template-columns: 28px 1fr auto auto auto; align-items: center; gap: 10px; padding: 11px 18px; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
+.call-row:last-child { border-bottom: none; }
+.call-direction { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+.call-direction.in { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
+.call-direction.out { background: rgba(184,107,79,0.15); color: var(--brand-terracotta); }
+.call-info { min-width: 0; overflow: hidden; }
+.call-client { font-weight: 600; color: var(--brand-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.call-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.call-duration { font-size: 11px; color: var(--text-muted); font-weight: 600; white-space: nowrap; padding: 2px 7px; background: var(--brand-paper); border-radius: 10px; }
+.call-time { font-size: 12px; color: var(--text-secondary); white-space: nowrap; font-weight: 600; }
+.mini-score { font-family: "Georgia", serif; font-size: 14px; font-weight: 700; padding: 3px 8px; border-radius: 4px; min-width: 36px; text-align: center; }
+.mini-score.high { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
+.mini-score.mid { background: rgba(201,169,97,0.18); color: var(--brand-gold); }
+.mini-score.low { background: rgba(184,107,79,0.15); color: var(--brand-terracotta); }
+.mini-score.crit { background: var(--red); color: #fff; }
+.empty { padding: 36px 18px; text-align: center; color: var(--text-muted); font-size: 14px; font-style: italic; }
+.footer-note { text-align: center; padding: 36px 16px 16px; font-size: 12px; color: var(--text-muted); font-family: -apple-system, sans-serif; border-top: 1px solid var(--border); margin-top: 40px; }
+.footer-brand { font-family: "Georgia", serif; font-size: 14px; font-weight: 600; color: var(--brand-dark); letter-spacing: 1.5px; margin-bottom: 6px; }
+.footer-divider { display: inline-block; width: 30px; height: 1px; background: var(--brand-gold); margin: 8px auto; vertical-align: middle; }
+.search-box { width: 100%; padding: 11px 16px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: #fff; margin-bottom: 14px; font-family: -apple-system, sans-serif; }
+.filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.filter-btn { padding: 7px 14px; border-radius: 20px; background: #fff; border: 1px solid var(--border); font-size: 12px; cursor: pointer; font-weight: 600; color: var(--text-secondary); font-family: -apple-system, sans-serif; }
+.filter-btn.active { background: var(--brand-dark); color: #fff; border-color: var(--brand-dark); }
+.call-card { background: #fff; border-radius: 6px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 18px; }
+.call-card.critical { border-color: var(--red); box-shadow: 0 0 0 1px var(--red), 0 4px 12px rgba(160,67,43,0.1); }
+.call-card-head { padding: 22px 24px; display: grid; grid-template-columns: 1fr auto; gap: 18px; align-items: center; background: linear-gradient(180deg, #FFFCF7, #fff); border-bottom: 1px solid var(--border-soft); }
+.call-card.critical .call-card-head { background: linear-gradient(180deg, var(--red-soft), #fff); }
+.call-card-head h2 { font-size: 22px; font-weight: 400; margin-bottom: 10px; color: var(--brand-dark); }
+.critical-badge { display: inline-block; background: var(--red); color: #fff; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-bottom: 10px; font-family: -apple-system, sans-serif; letter-spacing: 0.5px; }
+.call-tags { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; font-family: -apple-system, sans-serif; }
+.call-tag { background: var(--brand-paper); padding: 4px 10px; border-radius: 12px; color: var(--brand-medium); border: 1px solid var(--border); }
+.call-tag.accent { background: var(--brand-dark); color: #fff; font-weight: 600; border-color: var(--brand-dark); }
+.call-tag.goal { background: var(--blue-soft); color: var(--blue); border-color: var(--blue); }
+.call-tag.warning { background: var(--brand-terracotta); color: #fff; font-weight: 600; border-color: var(--brand-terracotta); }
+.score-big { border-radius: 6px; padding: 14px 22px; text-align: center; min-width: 130px; color: #fff; position: relative; }
+.score-big.high { background: linear-gradient(135deg, var(--brand-olive), #6B7B5F); }
+.score-big.mid { background: linear-gradient(135deg, var(--brand-gold), #B89A55); }
+.score-big.low { background: linear-gradient(135deg, var(--brand-terracotta), #A65E45); }
+.score-big.crit { background: linear-gradient(135deg, var(--red), #7D2818); }
+.score-big.placeholder { background: linear-gradient(135deg, #BFB5A8, var(--text-muted)); }
+.score-big .num { font-family: "Georgia", serif; font-size: 36px; font-weight: 400; line-height: 1; }
+.score-big .num .max { font-size: 16px; opacity: 0.7; }
+.score-big .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; margin-top: 4px; opacity: 0.85; font-family: -apple-system, sans-serif; }
+.score-big .edit-btn { display: block; margin: 8px auto 0; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); color: #fff; padding: 3px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: -apple-system, sans-serif; }
+.score-big .edit-btn:hover { background: rgba(255,255,255,0.3); }
+.score-corrected-mark { position: absolute; top: 4px; right: 6px; font-size: 10px; background: rgba(255,255,255,0.3); padding: 1px 5px; border-radius: 3px; }
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; padding: 20px 24px 24px; }
+.detail { background: var(--brand-cream); border: 1px solid var(--border-soft); border-radius: 4px; padding: 11px 14px; }
+.detail-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; font-weight: 600; font-family: -apple-system, sans-serif; }
+.detail-value { font-size: 13px; font-weight: 600; color: var(--brand-dark); font-family: -apple-system, sans-serif; }
+.detail-value a { color: var(--brand-medium); border-bottom: 1px dotted var(--border); }
+.audio-player { background: var(--brand-paper); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 16px 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.audio-player audio { flex: 1; min-width: 240px; height: 38px; }
+.audio-player .bitrix-link { font-family: -apple-system, sans-serif; font-size: 12px; color: var(--brand-dark); text-decoration: underline; padding: 6px 12px; background: #fff; border-radius: 4px; border: 1px solid var(--border); }
+.audio-missing { background: var(--brand-paper); border: 1px dashed var(--border); border-radius: 6px; padding: 14px 18px; margin-bottom: 16px; font-family: -apple-system, sans-serif; font-size: 13px; color: var(--text-secondary); }
+.ai-summary { background: linear-gradient(135deg, #FFF8E8, #FFF4DC); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.ai-summary .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 8px; }
+.ai-summary .text { font-size: 14px; color: var(--brand-dark); line-height: 1.6; }
+.main-problem { background: linear-gradient(135deg, var(--red-soft), #FFEEE5); border: 1px solid var(--red); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.main-problem .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--red); font-weight: 700; margin-bottom: 8px; }
+.main-problem .text { font-size: 14px; color: var(--red); line-height: 1.6; font-weight: 600; }
+.next-contact { background: linear-gradient(135deg, var(--blue-soft), #EAF2FA); border: 1px solid var(--blue); border-radius: 6px; padding: 14px 20px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.next-contact .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--blue); font-weight: 700; margin-bottom: 6px; }
+.next-contact .text { font-size: 14px; color: var(--blue); font-weight: 600; }
+.strengths-weaknesses { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+@media (max-width: 700px) { .strengths-weaknesses { grid-template-columns: 1fr; } }
+.sw-box { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 16px 18px; font-family: -apple-system, sans-serif; }
+.sw-box.strong { border-left: 3px solid var(--brand-olive); }
+.sw-box.weak { border-left: 3px solid var(--brand-terracotta); }
+.sw-box .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin-bottom: 8px; }
+.sw-box.strong .label { color: var(--brand-olive); }
+.sw-box.weak .label { color: var(--brand-terracotta); }
+.sw-box ul { list-style: none; padding: 0; }
+.sw-box li { font-size: 13px; color: var(--brand-dark); padding: 4px 0; border-bottom: 1px solid var(--border-soft); }
+.sw-box li:last-child { border-bottom: none; }
+.sw-box li::before { content: "•  "; color: var(--brand-light); font-weight: 700; }
+.ai-key-quote { background: var(--brand-paper); border-left: 3px solid var(--brand-medium); padding: 12px 16px; margin-top: 12px; font-style: italic; font-size: 14px; color: var(--brand-dark); }
+.ai-key-quote::before { content: "« "; color: var(--brand-medium); }
+.ai-key-quote::after { content: " »"; color: var(--brand-medium); }
+.ai-key-quote .meta { display: block; font-style: normal; font-size: 11px; color: var(--text-muted); margin-top: 6px; font-family: -apple-system, sans-serif; }
+.transcript-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
+.transcript-head { padding: 14px 20px; border-bottom: 1px solid var(--border-soft); background: linear-gradient(180deg, #FFFCF7, #fff); display: flex; justify-content: space-between; align-items: center; }
+.transcript-head h3 { font-size: 16px; font-weight: 600; color: var(--brand-dark); }
+.transcript-body { padding: 6px 0; max-height: 500px; overflow-y: auto; font-family: -apple-system, sans-serif; }
+.msg { padding: 10px 20px; border-bottom: 1px solid var(--border-soft); display: grid; grid-template-columns: 60px 1fr; gap: 12px; }
+.msg:last-child { border-bottom: none; }
+.msg-time { font-size: 11px; color: var(--text-muted); font-weight: 600; padding-top: 2px; }
+.msg-body { min-width: 0; }
+.msg-who { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
+.msg-who.client { color: var(--brand-olive); }
+.msg-who.manager { color: var(--brand-terracotta); }
+.msg-text { font-size: 13px; color: var(--brand-dark); line-height: 1.55; }
+.scores-panel { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
+.score-row { display: grid; grid-template-columns: 1fr 110px 50px 32px; align-items: center; gap: 14px; padding: 9px 20px; border-bottom: 1px solid var(--border-soft); font-family: -apple-system, sans-serif; font-size: 13px; }
+.score-row:last-child { border-bottom: none; }
+.score-name { color: var(--brand-dark); }
+.score-bar { height: 6px; background: var(--brand-paper); border-radius: 3px; overflow: hidden; }
+.score-fill { height: 100%; }
+.score-fill.high { background: var(--brand-olive); }
+.score-fill.mid { background: var(--brand-gold); }
+.score-fill.low { background: var(--brand-terracotta); }
+.score-val { font-family: "Georgia", serif; font-weight: 700; font-size: 15px; text-align: right; }
+.score-val.high { color: var(--brand-olive); }
+.score-val.mid { color: var(--brand-gold); }
+.score-val.low { color: var(--brand-terracotta); }
+.score-weight { font-size: 10px; color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.low-score-block { background: var(--red-soft); border: 1px solid var(--red); border-radius: 6px; padding: 14px 18px; margin-bottom: 12px; font-family: -apple-system, sans-serif; }
+.low-score-block .lsh { font-weight: 700; color: var(--red); margin-bottom: 6px; font-size: 13px; }
+.low-score-block .lsq { font-style: italic; padding: 8px 12px; background: #fff; border-left: 2px solid var(--red); margin: 8px 0; font-size: 13px; }
+.low-score-block .lsr { font-size: 13px; color: var(--brand-dark); margin-top: 6px; }
+.low-score-block .lsr b { color: var(--red); }
+.trigger-list { background: #fff; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
+.trigger-row { padding: 12px 20px; display: flex; gap: 12px; align-items: flex-start; border-bottom: 1px solid var(--border-soft); }
+.trigger-row:last-child { border-bottom: none; }
+.trigger-marker { width: 6px; height: 6px; border-radius: 50%; background: var(--brand-terracotta); margin-top: 7px; flex-shrink: 0; }
+.trigger-text { font-family: -apple-system, sans-serif; font-size: 13px; color: var(--brand-dark); flex: 1; }
+.trigger-text .sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.trigger-text .timecode { display: inline-block; font-size: 10px; color: var(--brand-medium); background: var(--brand-paper); padding: 1px 6px; border-radius: 3px; margin-left: 6px; }
+.recommendation { background: linear-gradient(135deg, #FFF8E8, #FFF4DC); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.recommendation .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 8px; }
+.recommendation .text { font-size: 14px; color: var(--brand-dark); line-height: 1.6; }
+.scripts-alignment { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 16px 20px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.scripts-alignment .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--brand-dark); font-weight: 700; margin-bottom: 10px; }
+.sa-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border-soft); font-size: 13px; align-items: center; }
+.sa-row:last-child { border-bottom: none; }
+.sa-stage { color: var(--brand-dark); }
+.sa-status { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 10px; }
+.sa-status.full { background: rgba(124,139,111,0.15); color: var(--brand-olive); }
+.sa-status.partial { background: rgba(201,169,97,0.18); color: var(--brand-gold); }
+.sa-status.miss { background: rgba(184,107,79,0.15); color: var(--brand-terracotta); }
+.scripts-used { background: var(--brand-paper); border: 1px solid var(--border); border-radius: 6px; padding: 12px 18px; margin-bottom: 16px; font-family: -apple-system, sans-serif; font-size: 12px; color: var(--text-secondary); }
+.scripts-used b { color: var(--brand-dark); }
+.scripts-used .tag { display: inline-block; background: #fff; border: 1px solid var(--border); padding: 2px 8px; margin: 3px 4px 0 0; border-radius: 10px; font-size: 11px; }
+.placeholder-panel { background: linear-gradient(135deg, var(--brand-paper), #F8F1E3); border: 1px dashed var(--brand-gold); border-radius: 6px; padding: 20px 22px; margin-bottom: 16px; }
+.placeholder-panel h3 { font-size: 16px; font-weight: 600; color: var(--brand-dark); margin-bottom: 8px; }
+.placeholder-panel p { font-size: 13px; color: var(--brand-medium); font-family: -apple-system, sans-serif; }
+.correction-note { background: var(--blue-soft); border: 1px solid var(--blue); border-radius: 6px; padding: 12px 18px; margin-bottom: 14px; font-family: -apple-system, sans-serif; font-size: 13px; color: var(--blue); }
+.correction-note b { font-weight: 700; }
+.modal-backdrop { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(61,46,31,0.6); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+.modal-backdrop.active { display: flex; }
+.modal { background: #fff; border-radius: 8px; padding: 24px; max-width: 540px; width: 100%; box-shadow: 0 8px 32px rgba(61,46,31,0.3); font-family: -apple-system, sans-serif; max-height: 90vh; overflow-y: auto; }
+.modal h3 { font-size: 18px; margin-bottom: 14px; color: var(--brand-dark); }
+.modal label { display: block; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; font-weight: 600; margin-top: 12px; }
+.modal input, .modal textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; font-family: inherit; }
+.modal textarea { min-height: 80px; resize: vertical; }
+.modal .actions { display: flex; gap: 10px; margin-top: 18px; justify-content: flex-end; }
+.modal button { padding: 9px 18px; border-radius: 4px; font-size: 13px; cursor: pointer; font-weight: 600; border: none; font-family: inherit; }
+.modal .btn-cancel { background: var(--brand-paper); color: var(--brand-dark); }
+.modal .btn-save { background: var(--brand-dark); color: #fff; }
+.modal .instruction { background: var(--brand-paper); border: 1px solid var(--brand-gold); border-radius: 4px; padding: 10px 14px; font-size: 12px; color: var(--brand-dark); margin-top: 12px; line-height: 1.5; }
+.modal .instruction code { background: #fff; padding: 1px 5px; border-radius: 3px; font-family: monospace; font-size: 11px; word-break: break-all; }
+.daily-report { background: linear-gradient(135deg, #FFFBF0, #FFF6E0); border: 1px solid var(--brand-gold); border-radius: 6px; padding: 20px 22px; margin-bottom: 18px; font-family: -apple-system, sans-serif; }
+.daily-report h3 { font-size: 18px; color: var(--brand-dark); margin-bottom: 12px; font-family: "Georgia", serif; font-weight: 400; }
+.dr-block { margin-bottom: 14px; }
+.dr-block .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 6px; }
+.dr-list { font-size: 13px; color: var(--brand-dark); }
+.dr-list-item { padding: 4px 0; border-bottom: 1px dashed var(--border); }
+.dr-list-item:last-child { border-bottom: none; }
+.dr-callref { padding: 8px 12px; background: #fff; border-radius: 4px; font-size: 13px; margin-top: 4px; }
+.dr-callref a { color: var(--brand-medium); border-bottom: 1px dotted var(--border); }
+.dr-callref .sc { display: inline-block; font-family: "Georgia", serif; font-weight: 700; padding: 1px 7px; border-radius: 3px; margin-right: 6px; font-size: 12px; }
+.rop-section { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 18px 22px; margin-bottom: 16px; font-family: -apple-system, sans-serif; }
+.rop-section h3 { font-size: 16px; color: var(--brand-dark); margin-bottom: 12px; }
+.rop-section .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 8px; }
+.rop-list-item { padding: 6px 0; font-size: 13px; color: var(--brand-dark); border-bottom: 1px solid var(--border-soft); display: grid; grid-template-columns: 1fr auto; gap: 12px; }
+.rop-list-item:last-child { border-bottom: none; }
+.rop-list-item .count { font-weight: 700; color: var(--brand-terracotta); }
+@media (max-width: 640px) {
+  .topbar { padding: 10px 14px; gap: 12px; }
+  .logo-img { height: 40px; }
+  .logo-text .brand { font-size: 14px; }
+  .timestamp { display: none; }
+  .container { padding: 16px 14px 24px; }
+  .page-head h1 { font-size: 22px; }
+  .kpi-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .call-card-head { grid-template-columns: 1fr; gap: 14px; padding: 18px; }
+  .call-card-head h2 { font-size: 19px; }
+  .score-big { justify-self: start; min-width: auto; padding: 12px 18px; }
+  .score-big .num { font-size: 28px; }
+  .detail-grid { grid-template-columns: 1fr; padding: 16px 18px 18px; gap: 10px; }
+  .score-row { grid-template-columns: 1fr 80px 40px 28px; padding: 9px 14px; }
+  .call-row { grid-template-columns: 28px 1fr auto auto; }
+  .call-row .call-time { display: none; }
+  .manager-row { grid-template-columns: 26px 1fr auto; }
+  .manager-row .m-count { display: none; }
+  .msg { grid-template-columns: 45px 1fr; gap: 8px; }
+}
+@media (max-width: 380px) { .kpi-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="../index.html" class="logo">
+      <img class="logo-img" src="../logo.png" alt="Mavis Group" onerror="this.style.display='none'">
+      <div class="logo-text">
+        <span class="brand">Mavis Group</span>
+        <span class="sub">Sales Analytics</span>
+      </div>
+    </a>
+    <div class="nav"><a href="../index.html">Сводка</a><a href="../rop-report.html">Отчёт РОПа</a><a href="../managers.html">Менеджеры</a><a class="active" href="../all-calls.html">Все звонки</a><a class="critical-link" href="../critical.html">Срочно (105)</a><a href="../triggers.html">Триггеры</a></div>
+    <div class="timestamp">обновлено 2026-05-28 20:02</div>
+  </div>
+  <div class="container"><div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../all-calls.html">Звонки</a> › Звонок №421352</div><div class="call-card critical"><div class="call-card-head"><div><div class="critical-badge">🔴 СРОЧНО · Низкая оценка (3.2/10)</div><h2>Дмитрий · ООО Просто отопление</h2><div class="call-tags"><span class="call-tag accent">Исходящий</span><span class="call-tag">исходящий по сделке в работе</span><span class="call-tag">Этап: возражения и переговоры</span><span class="call-tag goal">уточнение информации</span><span class="call-tag goal">согласование следующего шага</span><span class="call-tag warning">Триггеров: 7</span></div></div><div class="score-big crit"><div class="num">3.2<span class="max">/10</span></div><div class="label">Оценка</div><button class="edit-btn" onclick="openEditModal()">✏️ Изменить оценку</button></div></div><div class="detail-grid"><div class="detail"><div class="detail-label">Менеджер</div><div class="detail-value"><a href="../managers/2154.html">Екатерина Халько</a></div></div><div class="detail"><div class="detail-label">Телефон</div><div class="detail-value">3754***7580</div></div><div class="detail"><div class="detail-label">Время</div><div class="detail-value">28.05.2026 17:03</div></div><div class="detail"><div class="detail-label">Длительность</div><div class="detail-value">3 мин 4 сек</div></div><div class="detail"><div class="detail-label">Направление</div><div class="detail-value">Исходящий</div></div><div class="detail"><div class="detail-label">В CRM</div><div class="detail-value"><a href="https://mavisgroup.bitrix24.by/crm/deal/details/34182/" target="_blank">сделка №34182</a></div></div></div></div><div class="audio-missing">🎵 Запись в Bitrix24: <a href="https://mavisgroup.bitrix24.by/crm/deal/details/34182/" target="_blank">открыть карточку звонка →</a></div><div class="ai-summary"><div class="label">📋 Резюме</div><div class="text">Менеджер перезвонил клиенту (ООО Просто отопление) по ранее обсуждаемому вопросу получения разрешающих документов. Клиент указывает на нехватку времени из-за большого объёма работ и обучения сотрудников. Вторая часть разговора посвящена уточнению технического вопроса о смене названия организации и возможности переоформления аттестата — менеджер пообещал уточнить у коллег процедуру. Разговор завершился без четкого результата и следующих шагов.</div></div><div class="main-problem"><div class="label">⚠️ Основная проблема</div><div class="text">Менеджер не зафиксировал дату следующей связи и не попытался закрыть сделку, оставив разговор в подвешенном состоянии без конкретного результата.</div></div><div class="strengths-weaknesses"><div class="sw-box strong"><div class="label">✅ Сильные стороны</div><ul><li>Менеджер доброжелателен, вежлив, не давит на клиента. Тон уважительный, попытка понять ситуацию. Фраза &#x27;Я поняла&#x27; показывает эмпатию.</li><li>После возражения клиента менеджер не настаивает, а предлагает помощь. Попытка показать, что компания может взять часть работы на себя — хороший подход для занятого клиента.</li><li>Менеджер обещает уточнить информацию у коллег вместо того, чтобы дать неправильный ответ о смене названия организации. Это показывает ответственность.</li></ul></div><div class="sw-box weak"><div class="label">⚠️ Слабые стороны</div><ul><li>Отсутствие структурированного диалога: менеджер не следует скрипту квалификации (не спрашивает о видах работ, объектах, сроках, юрлицах), тратит время на неглубокие вопросы.</li><li>Нет попытки закрытия сделки или хотя бы договорённости о следующем шаге. Звонок заканчивается в воздухе: менеджер обещает позвонить, но когда — неясно.</li><li>Менеджер не использует возможность для допродажи. При смене названия организации нужны и другие документы, но об этом не говорится. Потенциал расширения решения потерян.</li></ul></div></div><div class="ai-key-quote">Мы очень не готовы, очень так много работы<span class="meta">— клиент · 00:19</span></div><div class="ai-key-quote">Я понимаю, сейчас пока не особо актуально, мне много людей обучать<span class="meta">— клиент · 00:38</span></div><div class="ai-key-quote">Ну тогда нам не нужно, значит, будет<span class="meta">— клиент · 01:49</span></div><div class="scripts-used"><b>Сравнение со скриптами:</b> <span class="tag">Чек-лист по всем продуктам (частично — не полностью)</span><span class="tag">Возражения (СПК и Атт, &#x27;Сейчас не актуально&#x27; — частично)</span></div><div class="scripts-alignment"><div class="label">📑 Соответствие этапам скрипта</div><div class="sa-row"><div class="sa-stage">Представление и корректное начало</div><div class="sa-status miss">—</div></div><div class="sa-row"><div class="sa-stage">Выявление потребности (первичное) — СПК и Атт</div><div class="sa-status miss">—</div></div><div class="sa-row"><div class="sa-stage">Отработка возражений — &#x27;Сейчас не актуально&#x27;</div><div class="sa-status miss">—</div></div><div class="sa-row"><div class="sa-stage">Презентация решения</div><div class="sa-status miss">—</div></div><div class="sa-row"><div class="sa-stage">Допродажа</div><div class="sa-status miss">—</div></div><div class="sa-row"><div class="sa-stage">Закрытие и следующий шаг</div><div class="sa-status miss">—</div></div></div><div class="transcript-panel"><div class="transcript-head"><h3>📝 Транскрипт</h3><span class="hint">21 реплик · 3 мин 3 сек</span></div><div class="transcript-body"><div class="msg"><div class="msg-time">00:00</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">Алло. Дмитрий здравствуйте. Дмитрий, компания Mavis Group, обсуждались ранее со своими коллегами касательно получения разрешающих документов. Сейчас все эти статусы и ответы. Я брали небольшую паузу на решение насыщенных вопросов. Надеюсь, что там уже готовы вернуться, да?</div></div></div><div class="msg"><div class="msg-time">00:19</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Мы очень не готовы, очень так много работы, даже выходили с ним всё.</div></div></div><div class="msg"><div class="msg-time">00:26</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">Ну знаете, это хорошо, что много работы, именно поэтому для того, чтобы вы могли, скажем, заниматься суго своей работой, мы предлагаем взять вот эту часть тебя на себя. То есть мы сделаем всё, что необходимо с позиции оформления документов, заявок.</div></div></div><div class="msg"><div class="msg-time">00:38</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Я понимаю, сейчас пока не особо актуально, сейчас вот все... мне много людей обучать, всё это пока и что не зато.</div></div></div><div class="msg"><div class="msg-time">00:51</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">А вы подскажите, пожалуйста, а вы в рамках текущего ремонта работы выполняете сами?</div></div></div><div class="msg"><div class="msg-time">00:54</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Текущего, текущего и блядь, и всё ещё делаем.</div></div></div><div class="msg"><div class="msg-time">00:59</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">Самостоятельно делаете или кто-то работает?</div></div></div><div class="msg"><div class="msg-time">01:02</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Ну, получается, что взяли на работу выше насынтрудника и люди помогают всё, знаете.</div></div></div><div class="msg"><div class="msg-time">01:08</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">Я поняла, но в любом случае вы же помните, что мы организация, которая помогает. Да, я помню. Да, я помню.</div></div></div><div class="msg"><div class="msg-time">01:17</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Я помню, что все разрешающие документы. Да, скажите, пожалуйста, если можно, на секунду, мы меняем сейчас название организации.</div></div></div><div class="msg"><div class="msg-time">01:21</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">Если аттестат нашу это, можно писать заявление до своего центра. И просто бы...</div></div></div><div class="msg"><div class="msg-time">01:31</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Ну, то есть мы хотим... Ну, сейчас мы на новую организацию получаем документы. То есть не прокатят поменять название организации?</div></div></div><div class="msg"><div class="msg-time">01:41</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">Поменять название организации и поменять название советская оттрана? Название организации, название сертификации, нет, скорее в мзаного придётся переделать.</div></div></div><div class="msg"><div class="msg-time">01:49</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Ну тогда нам не нужно, значит, будет.</div></div></div><div class="msg"><div class="msg-time">01:53</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">Ну, давайте я уточню. Я уточню у коллег, смотрите, я вот уточню у коллег, вот для того, чтобы вам просто аттестат от вот этой новой организации сделать, вам нужно будет подать заявление в стройцентр и оплатить в госпожленную дурс-стройцентр. И в целом вам могут. Отлично.</div></div></div><div class="msg"><div class="msg-time">02:17</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Отлично.</div></div></div><div class="msg"><div class="msg-time">02:19</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">Вот. Поэтому в любом случае обращайтесь, потому что текущий ремонт, текущий ремонт на всё-таки я думаю с изобольшими деньгами. Так мы в пожарку, как бы больше заучили и поэтому...</div></div></div><div class="msg"><div class="msg-time">02:33</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Ну, сейчас... Ну, короче, занимаемся более пожаркой. Сейчас обучение, люди учатся и все.</div></div></div><div class="msg"><div class="msg-time">02:39</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">Я поняла, я поняла. Ну, тогда желаю вам удачи. У меня есть интереси нашей команды. Ну, мы это как бы помнимово, конечно, если вдруг мы там передумаем или что-то нам надо, будет обязательно обратиться.</div></div></div><div class="msg"><div class="msg-time">02:55</div><div class="msg-body"><div class="msg-who client">клиент</div><div class="msg-text">Обязательно обратимся, обязательно обращайтесь, будем очень рады. Хорошего дня.</div></div></div><div class="msg"><div class="msg-time">03:01</div><div class="msg-body"><div class="msg-who manager">менеджер</div><div class="msg-text">До свидания.</div></div></div></div></div><div class="scores-panel"><div class="panel-head"><h3>📊 Оценка по 17 критериям</h3><span class="hint">по весам ТЗ</span></div><div class="score-row"><div class="score-name">Представление и корректное начало</div><div class="score-bar"><div class="score-fill mid" style="width:70%;"></div></div><div class="score-val mid">7.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Подготовленность к звонку</div><div class="score-bar"><div class="score-fill mid" style="width:50%;"></div></div><div class="score-val mid">5.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Четкость цели и рамки разговора</div><div class="score-bar"><div class="score-fill low" style="width:40%;"></div></div><div class="score-val low">4.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Управление диалогом</div><div class="score-bar"><div class="score-fill mid" style="width:50%;"></div></div><div class="score-val mid">5.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Полнота выявления потребности</div><div class="score-bar"><div class="score-fill low" style="width:40%;"></div></div><div class="score-val low">4.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Глубина уточняющих вопросов</div><div class="score-bar"><div class="score-fill low" style="width:30%;"></div></div><div class="score-val low">3.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Резюмирование потребности</div><div class="score-bar"><div class="score-fill low" style="width:20%;"></div></div><div class="score-val low">2.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Презентация решения через пользу</div><div class="score-bar"><div class="score-fill low" style="width:40%;"></div></div><div class="score-val low">4.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Экспертность и уверенность</div><div class="score-bar"><div class="score-fill low" style="width:40%;"></div></div><div class="score-val low">4.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Допродажа / расширение решения</div><div class="score-bar"><div class="score-fill low" style="width:0%;"></div></div><div class="score-val low">0.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Распознавание возражения</div><div class="score-bar"><div class="score-fill mid" style="width:60%;"></div></div><div class="score-val mid">6.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Качество отработки возражений</div><div class="score-bar"><div class="score-fill low" style="width:30%;"></div></div><div class="score-val low">3.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Попытка закрытия / продвижение сделки</div><div class="score-bar"><div class="score-fill low" style="width:20%;"></div></div><div class="score-val low">2.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Фиксация следующего шага и даты связи</div><div class="score-bar"><div class="score-fill low" style="width:0%;"></div></div><div class="score-val low">0.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Выполнение обещаний и связь с CRM</div><div class="score-bar"><div class="score-fill mid" style="width:50%;"></div></div><div class="score-val mid">5.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Речь и эмоциональный фон</div><div class="score-bar"><div class="score-fill mid" style="width:50%;"></div></div><div class="score-val mid">5.0</div><div class="score-weight"></div></div><div class="score-row"><div class="score-name">Корректное завершение разговора</div><div class="score-bar"><div class="score-fill low" style="width:30%;"></div></div><div class="score-val low">3.0</div><div class="score-weight"></div></div></div><div class="low-score-block"><div class="lsh">Четкость цели и рамки разговора — 4.0/10</div><div>Менеджер начинает разговор без чёткого определения цели — не уточняет, вернулся ли клиент к решению вопроса или это просто &#x27;перезвон по ранним договорённостям&#x27;. Цель размывается на протяжении всего звонка.</div><div class="lsq">« Алло. Дмитрий здравствуйте. Дмитрий, компания Mavis Group, обсуждались ранее... Сейчас все эти статусы и ответы. » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">00:00</span></div><div class="lsr"><b>Рекомендация:</b> Начинать с чёткого и короткого резюме цели: &#x27;Дмитрий, я перезвонил, потому что у вас был вопрос о переоформлении аттестата при смене названия организации. Я уточнил эту информацию у наших экспертов. Есть ли у вас 10 минут на разговор?&#x27;</div></div><div class="low-score-block"><div class="lsh">Полнота выявления потребности — 4.0/10</div><div>Менеджер не выясняет полную картину: когда планируется смена названия, какие виды работ будут выполняться после обучения, на какие объекты ориентируется компания, какие документы нужны срочно, а какие можно сделать позже.</div><div class="lsq">« А вы подскажите, пожалуйста, а вы в рамках текущего ремонта работы выполняете сами? » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">00:51</span></div><div class="lsr"><b>Рекомендация:</b> После фразы клиента &#x27;мне много людей обучать&#x27; спросить: &#x27;А когда обучение закончится и вы будете готовы к новым проектам? На горизонте ближайших 30–45 дней есть объекты?&#x27;</div></div><div class="low-score-block"><div class="lsh">Глубина уточняющих вопросов — 3.0/10</div><div>Вопросы механические, не углубляют понимание ситуации. Нет зондирования по срокам, бюджету, видам работ, клиентам (юрлица/физлица). Вопрос про текущий ремонт мало помогает в контексте сертификации.</div><div class="lsq">« Самостоятельно делаете или кто-то работает? » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">00:59</span></div><div class="lsr"><b>Рекомендация:</b> Использовать чек-лист скрипта: &#x27;Какие виды работ вы будете выполнять: общестрой, сети, отделка? С кем работаете: с юрлицами или частными заказчиками? Есть ли уже объекты на горизонте?&#x27;</div></div><div class="low-score-block"><div class="lsh">Резюмирование потребности — 2.0/10</div><div>Менеджер никогда не резюмирует выявленные потребности. Не говорит: &#x27;Получается, вам нужен аттестат на новое назване организации, и вы хотите понять, нужно ли переоформлять весь пакет или только это?&#x27;</div><div class="lsq">« Я поняла, я поняла. Ну, тогда желаю вам удачи. » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">02:39</span></div><div class="lsr"><b>Рекомендация:</b> После уточнения факта смены названия провести резюме: &#x27;Давайте я уточню у коллег: вы хотите получить аттестат компании, но под новым названием, да? И потом мы вам позвоним с ответом и расчётом стоимости?&#x27;</div></div><div class="low-score-block"><div class="lsh">Презентация решения через пользу — 4.0/10</div><div>Менеджер только один раз упоминает ценность (&#x27;мы предлагаем взять эту часть на себя&#x27;), но не развивает её в контексте конкретных проблем клиента — нехватка времени, обучение сотрудников, смена организации.</div><div class="lsq">« для того, чтобы вы могли заниматься суго своей работой, мы предлагаем взять вот эту часть на себя » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">00:26</span></div><div class="lsr"><b>Рекомендация:</b> Связать предложение с болью клиента: &#x27;Вы же говорите, что много работы и сотрудников обучать — поэтому мы возьмём на себя все документы: аттестат, СПК, всё переоформим под новое название. Вы можете спокойно сосредоточиться на обучении, а мы за 2–3 недели закроем все вопросы.&#x27;</div></div><div class="low-score-block"><div class="lsh">Экспертность и уверенность — 4.0/10</div><div>Менеджер не звучит как эксперт. Не уверен в ответе о смене названия организации, медлит, запутывается в объяснении (&#x27;Поменять название организации и поменять название советская оттрана?&#x27;), обещает &#x27;уточнить у коллег&#x27; без уверенного тона.</div><div class="lsq">« Ну, давайте я уточню. Я уточню у коллег... вам нужно будет подать заявление в стройцентр и оплатить в госпожленную дурс-стройцентр » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">01:53</span></div><div class="lsr"><b>Рекомендация:</b> Если вопрос нужно уточнить, сказать уверенно: &#x27;Дмитрий, это хороший вопрос. Я уточню все детали у наших экспертов по аттестации и позвоню вам завтра к 14:00 с точным ответом. Это займёт 5 минут, но я буду знать все нюансы. Вам подходит?&#x27;</div></div><div class="low-score-block"><div class="lsh">Допродажа / расширение решения — 0.0/10</div><div>Полное отсутствие допродажи. Менеджер даже не упоминает, что кроме аттестата компании при смене названия может потребоваться СПК, СРО, аттестация специалистов. Не предлагает комплексное решение.</div><div class="lsq">« Я поняла, я поняла. Ну, тогда желаю вам удачи. » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">02:39</span></div><div class="lsr"><b>Рекомендация:</b> После решения вопроса со сменой названия добавить: &#x27;Дмитрий, кстати, при смене названия могут потребоваться и другие документы — СПК, если вы работаете с юрлицами, или аттестаты ваших специалистов. Когда я уточню процедуру переоформления аттестата, я также подготовлю полный чек-лист для вашей компании. Отправлю вам?&#x27;</div></div><div class="low-score-block"><div class="lsh">Распознавание возражения — 6.0/10</div><div>Менеджер распознаёт возражение &#x27;не актуально&#x27; (&#x27;Я понимаю, сейчас пока не особо актуально&#x27;), но не обозначает его явно и не использует скрипт отработки. Просто переводит разговор на техническую часть.</div><div class="lsq">« Я понимаю, сейчас пока не особо актуально, сейчас вот все... мне много людей обучать » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">00:38</span></div><div class="lsr"><b>Рекомендация:</b> Явно назвать возражение и отработать по скрипту: &#x27;Дмитрий, я слышу, что сейчас вы занимаетесь обучением и много работы. Это означает, что работы начинают прибывать — что-то срочное? Потому что когда появится крупный объект или тендер, документы должны уже быть готовы, а на аттестацию уходит 6 недель.&#x27;</div></div><div class="low-score-block"><div class="lsh">Качество отработки возражений — 3.0/10</div><div>Менеджер не отрабатывает возражение по скрипту. Не говорит о том, что: 1) обучение — это признак роста, 2) при росте нужны документы, 3) на аттестацию уходит 6 недель, 4) вопрос со сменой названия можно решить сейчас. Просто переходит к деталям.</div><div class="lsq">« Я понимаю, но в любом случае вы же помните, что мы организация, которая помогает. » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">01:08</span></div><div class="lsr"><b>Рекомендация:</b> Использовать скрипт из ТЗ: &#x27;Я понимаю. Сейчас не актуально, потому что работы не выполняете? Или вопрос в том, что нет времени? Потому что я рекомендую начать сейчас — даже если объект появится через месяц, вы просто не успеете получить аттестат и документы. На аттестацию очередь 6 недель. Лучше сделаем сейчас, пока есть затишье?&#x27;</div></div><div class="low-score-block"><div class="lsh">Попытка закрытия / продвижение сделки — 2.0/10</div><div>Менеджер не делает попытку закрытия. После того, как обещает уточнить вопрос о смене названия, не говорит: &#x27;Когда я вам позвоню с ответом, вы готовы начинать работу?&#x27; или &#x27;После того, как я уточню, давайте встретимся или созвонимся и я покажу вам расчёт?&#x27;. Просто заканчивает разговор.</div><div class="lsq">« Я поняла, я поняла. Ну, тогда желаю вам удачи. » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">02:39</span></div><div class="lsr"><b>Рекомендация:</b> Добавить попытку закрытия: &#x27;Дмитрий, я уточню все вопросы и завтра к 14:00 вам позвоню с готовым расчётом, с информацией по смене названия и полным чек-листом документов. Вы тогда будете готовы принять решение?&#x27;</div></div><div class="low-score-block"><div class="lsh">Фиксация следующего шага и даты связи — 0.0/10</div><div>Полное отсутствие. Менеджер обещает &#x27;уточнить у коллег&#x27;, но не называет дату следующей связи, не договаривается о звонке или встречи. Клиент говорит &#x27;обязательно обратимся&#x27;, но это не конкретно.</div><div class="lsq">« Ну, давайте я уточню. Я уточню у коллег... Обязательно обращайтесь, будем очень рады. » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">01:53</span></div><div class="lsr"><b>Рекомендация:</b> Всегда фиксировать дату: &#x27;Я уточню у коллег в течение дня. Я вам позвоню завтра в 14:00 с полной информацией. Это вам подходит? Или в 10:00 удобнее?&#x27;</div></div><div class="low-score-block"><div class="lsh">Выполнение обещаний и связь с CRM — 5.0/10</div><div>Менеджер обещает уточнить вопрос, но не ясно, будет ли это залито в CRM, будет ли напоминание о перезвоне клиенту, будет ли отправлен КП или расчёт. Обещание размыто.</div><div class="lsq">« вам нужно будет подать заявление в стройцентр и оплатить в госпожленную дурс-стройцентр » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">01:56</span></div><div class="lsr"><b>Рекомендация:</b> Проговорить обещание чётко: &#x27;Я уточню у наших экспертов процедуру и все затраты, создам для вас КП специально под смену названия, и завтра в 14:00 позвоню вам с полной информацией. Я залью все в вашу карточку в CRM, чтобы ничего не потерялось.&#x27;</div></div><div class="low-score-block"><div class="lsh">Речь и эмоциональный фон — 5.0/10</div><div>Речь может быть результатом транскрибирования (Whisper искажает), но даже с учётом этого видны недочёты: фраза &#x27;более пожаркой&#x27; вместо &#x27;более пожарной/пожарными работами&#x27;, механический тон, отсутствие энергии и уверенности. Фон скорее нейтральный или слегка апатичный.</div><div class="lsq">« занимаемся более пожаркой » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">02:33</span></div><div class="lsr"><b>Рекомендация:</b> Следить за ясностью речи, избегать фраз типа &#x27;сугу работой&#x27;, проверять понимание клиента. Добавить энергии и уверенности при упоминании решений.</div></div><div class="low-score-block"><div class="lsh">Корректное завершение разговора — 3.0/10</div><div>Менеджер завершает разговор без итогового резюме договорённостей. Не говорит: &#x27;Итак, я уточню информацию по смене названия организации, завтра позвоню вам в 14:00. Вы свободны?&#x27; Просто: &#x27;Желаю вам удачи&#x27; и &#x27;До свидания&#x27;.</div><div class="lsq">« Я поняла, я поняла. Ну, тогда желаю вам удачи... До свидания. » <span class="timecode" style="font-size:10px;color:var(--brand-medium);">02:39</span></div><div class="lsr"><b>Рекомендация:</b> Завершать звонок по скрипту: &#x27;Дмитрий, итак, я уточню у коллег и позвоню завтра в 14:00. Я отправлю вам также по email КП и чек-лист документов, которые нужны при смене названия. Хорошего дня!&#x27;</div></div><div class="trigger-list"><div class="panel-head"><h3>⚠️ Триггеры</h3><span class="hint">7 шт</span></div><div class="trigger-row"><div class="trigger-marker"></div><div class="trigger-text">Не зафиксирован следующий шаг<span class="timecode">01:53</span><div class="sub">Менеджер обещает уточнить информацию, но не называет конкретную дату и время следующей связи. Нет договорённости, когда менеджер перезвонит.</div></div></div><div class="trigger-row"><div class="trigger-marker"></div><div class="trigger-text">Не зафиксирована дата следующего контакта<span class="timecode">02:55</span><div class="sub">Клиент говорит &#x27;обязательно обращайтесь&#x27;, но это не конкретная дата. Нет уточнения: завтра, послезавтра, через неделю?</div></div></div><div class="trigger-row"><div class="trigger-marker"></div><div class="trigger-text">Упущена допродажа<span class="timecode">02:39</span><div class="sub">Менеджер не упоминает другие услуги (СПК, СРО, аттестация специалистов), которые также потребуются при смене названия организации.</div></div></div><div class="trigger-row"><div class="trigger-marker"></div><div class="trigger-text">Не задал уточняющие вопросы<span class="timecode">00:51</span><div class="sub">Менеджер не выясняет: когда планируется смена названия, какие работы будут выполняться, на каких объектах, есть ли тендеры на горизонте, сколько специалистов, какие виды работ.</div></div></div><div class="trigger-row"><div class="trigger-marker"></div><div class="trigger-text">Звонок завершился без понятного результата<span class="timecode">03:01</span><div class="sub">Разговор заканчивается без ясного итога: нет договорённости о дате следующей связи, нет результата (продажа, отказ, перенос), остаётся в подвешенном состоянии.</div></div></div><div class="trigger-row"><div class="trigger-marker"></div><div class="trigger-text">Менеджер не управляет структурой диалога<span class="timecode">00:38</span><div class="sub">Менеджер идёт за клиентом, а не ведёт разговор. Когда клиент говорит &#x27;не актуально&#x27;, менеджер не структурирует возражение по скрипту, а просто переходит к новой теме.</div></div></div><div class="trigger-row"><div class="trigger-marker"></div><div class="trigger-text">Не отработано возражение &#x27;дорого&#x27;<span class="timecode">00:19</span><div class="sub">Это возражение не звучит, но менеджер также не проактивно говорит о цене и экономии, хотя клиент упоминает &#x27;много работы&#x27; (намёк на ограниченный бюджет).</div></div></div></div><div class="recommendation"><div class="label">💡 Рекомендация менеджеру</div><div class="text">Все звонки должны заканчиваться с четкой договорённостью о следующем шаге и датой. Используйте скрипт отработки возражений из ТЗ — когда клиент говорит &#x27;не актуально&#x27;, структурируйте это и предложите обоснование необходимости документов. Не забывайте про допродажу и полный чек-лист услуг.</div></div><div class="modal-backdrop" id="editModal"><div class="modal"><h3>Изменить оценку звонка №421352</h3><label>Новая оценка (0–10)</label><input type="number" step="0.1" min="0" max="10" id="newScore" value="3.2"><label>Комментарий (опционально)</label><textarea id="newComment" placeholder="Почему изменена оценка..."></textarea><div class="instruction"><b>Как сохранить:</b><br>1. Нажмите «Скопировать» — JSON попадёт в буфер обмена<br>2. Откройте <code>manual_corrections.json</code> в GitHub<br>3. Вставьте содержимое (или объедините с существующим)<br>4. Commit changes — оценка обновится при следующем запуске<br><a href="https://github.com/mavisgroupiishki-alt/sales-analytics/edit/main/manual_corrections.json" target="_blank" style="display:inline-block; margin-top:8px; color:var(--brand-dark); font-weight:600;">→ Открыть файл в GitHub</a></div><div class="actions"><button class="btn-cancel" onclick="closeEditModal()">Отмена</button><button class="btn-save" onclick="copyCorrection()">📋 Скопировать JSON</button></div></div></div><script>function openEditModal() { document.getElementById("editModal").classList.add("active"); }function closeEditModal() { document.getElementById("editModal").classList.remove("active"); }function copyCorrection() {  var score = parseFloat(document.getElementById("newScore").value);  var comment = document.getElementById("newComment").value;  var obj = {};  obj["421352"] = { overall_score: score, comment: comment };  var json = JSON.stringify(obj, null, 2);  navigator.clipboard.writeText(json).then(function() {    alert("Скопировано! Откройте manual_corrections.json в GitHub и вставьте.");    closeEditModal();  }).catch(function() {    prompt("Скопируйте вручную:", json);  });}</script></div>
+  <div class="footer-note">
+    <div class="footer-brand">MAVIS GROUP</div>
+    <div class="footer-divider"></div>
+    <div>Sales Analytics · Автоматический анализ звонков отдела продаж</div>
+    <div style="margin-top:6px; font-size:11px;">Bitrix24 · GitHub Actions · Claude Haiku · © 2026</div>
+  </div>
+</body>
+</html>
