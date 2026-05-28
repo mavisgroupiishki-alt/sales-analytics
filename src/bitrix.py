@@ -1,18 +1,21 @@
 """
-Bitrix24 модуль.
-- Забирает звонки за сутки
-- Скачивает аудио в audio_temp/ + docs/audio/ на 3 дня
-- Автоочистка старых MP3
+Основной модуль работы с Bitrix24.
+Забирает звонки за сутки, скачивает аудио,
+вычисляет длительность из START_TIME / END_TIME / DURATION.
+
+ФИКС менеджеров (28.05.2026):
+В звонках через Asterisk-интеграцию Bitrix24 автоматически подставляет
+RESPONSIBLE_ID как "ответственного за компанию", что не соответствует реальному
+звонящему. Теперь приоритет: AUTHOR_ID (тот, кто реально создал звонок).
 """
 
 import os
 import re
 import json
 import logging
-import shutil
 import requests
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -21,14 +24,18 @@ ACTIVITY_TYPE_CALL = 2
 DEFAULT_REQUEST_TIMEOUT = 60
 MIN_AUDIO_SIZE_BYTES = 10_000
 DEFAULT_AUDIO_DOWNLOAD_LIMIT = 0
-MIN_DURATION_SEC = 40  # Анализируем звонки от 40 сек
-AUDIO_KEEP_DAYS = 3
+MIN_DURATION_SEC = 40  # ТЗ: анализируем только звонки ≥ 40 секунд
 
+# Имена менеджеров для фильтрации (приведём к lower при сравнении)
 ALLOWED_MANAGERS = [
     "Роман Авсеенко",
     "Екатерина Халько",
     "Ирина Богомольцева",
 ]
+
+# ID менеджеров для надёжной фильтрации (если имя в Bitrix отличается)
+# По данным из логов: Роман=1286, Екатерина=2154, Ирина=2100
+ALLOWED_MANAGER_IDS = [1286, 2154, 2100]
 
 
 class Bitrix24Client:
@@ -154,22 +161,9 @@ def download_audio(client: Bitrix24Client, file_id: int, save_to: Path) -> Path:
     return save_path
 
 
-def cleanup_old_audio(audio_dir: Path, keep_days: int = AUDIO_KEEP_DAYS) -> int:
-    if not audio_dir.exists():
-        return 0
-    cutoff = datetime.now(timezone.utc).timestamp() - keep_days * 86400
-    deleted = 0
-    for f in audio_dir.glob("*.mp3"):
-        try:
-            if f.stat().st_mtime < cutoff:
-                f.unlink()
-                deleted += 1
-        except Exception as e:
-            logger.warning(f"Не удалось удалить {f.name}: {e}")
-    return deleted
-
-
 def compute_duration_sec(activity: Dict[str, Any]) -> Optional[int]:
+    """Считает длительность звонка из доступных полей."""
+    # Способ 1: явное поле DURATION (от телефонии)
     duration = activity.get("DURATION")
     if duration:
         try:
@@ -178,6 +172,8 @@ def compute_duration_sec(activity: Dict[str, Any]) -> Optional[int]:
                 return d
         except (TypeError, ValueError):
             pass
+
+    # Способ 2: START_TIME + END_TIME
     start = activity.get("START_TIME")
     end = activity.get("END_TIME")
     if start and end:
@@ -189,7 +185,47 @@ def compute_duration_sec(activity: Dict[str, Any]) -> Optional[int]:
                 return d
         except Exception:
             pass
+
     return None
+
+
+def determine_real_manager_id(activity: Dict[str, Any]) -> int:
+    """
+    Определяет ID реального менеджера, который вёл звонок.
+    
+    Приоритет (от самого надёжного к менее надёжному):
+    1. AUTHOR_ID — кто инициировал/создал звонок (обычно реальный звонящий)
+    2. CREATED_BY_ID / CREATED_BY — кто создал запись активности
+    3. RESPONSIBLE_ID — ответственный (часто подменяется автоматически на ответственного за компанию)
+    
+    Если хотя бы один из приоритетных полей совпадает с разрешённым менеджером — используем его.
+    """
+    author_id = activity.get("AUTHOR_ID")
+    created_by_id = activity.get("CREATED_BY_ID") or activity.get("CREATED_BY")
+    responsible_id = activity.get("RESPONSIBLE_ID")
+
+    # Приводим к int
+    def to_int(val):
+        try:
+            return int(val) if val else 0
+        except (TypeError, ValueError):
+            return 0
+
+    author_id = to_int(author_id)
+    created_by_id = to_int(created_by_id)
+    responsible_id = to_int(responsible_id)
+
+    # Приоритет 1: AUTHOR_ID, если он в списке наших менеджеров
+    if author_id and author_id in ALLOWED_MANAGER_IDS:
+        return author_id
+    # Приоритет 2: CREATED_BY_ID
+    if created_by_id and created_by_id in ALLOWED_MANAGER_IDS:
+        return created_by_id
+    # Приоритет 3: AUTHOR_ID даже если не в списке (для логирования)
+    if author_id:
+        return author_id
+    # Запасной: RESPONSIBLE_ID
+    return responsible_id
 
 
 def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str, Any]:
@@ -204,13 +240,24 @@ def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str
     ).strip() or settings.get("COMPANY_TITLE", "Неизвестный клиент")
     company = settings.get("COMPANY_TITLE", "")
 
-    manager_id = int(activity.get("RESPONSIBLE_ID") or 0)
+    # ⭐ ФИКС: определяем реального менеджера через AUTHOR_ID
+    manager_id = determine_real_manager_id(activity)
     manager_data = users.get(manager_id, {"id": manager_id, "name": f"User {manager_id}"})
     manager = {
         "id": manager_data["id"],
         "name": manager_data["name"],
         "email": manager_data.get("email", ""),
         "avatar_file": manager_data.get("avatar_file", ""),
+    }
+
+    # Сохраняем для диагностики все поля «ответственных»
+    responsibility_debug = {
+        "author_id": int(activity.get("AUTHOR_ID") or 0),
+        "created_by_id": int(activity.get("CREATED_BY_ID") or activity.get("CREATED_BY") or 0),
+        "responsible_id": int(activity.get("RESPONSIBLE_ID") or 0),
+        "used_field": "author" if int(activity.get("AUTHOR_ID") or 0) == manager_id else (
+            "created_by" if int(activity.get("CREATED_BY_ID") or activity.get("CREATED_BY") or 0) == manager_id else "responsible"
+        ),
     }
 
     direction_code = int(activity.get("DIRECTION") or 0)
@@ -227,6 +274,7 @@ def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str
         "direction": direction,
         "subject": activity.get("SUBJECT", ""),
         "manager": manager,
+        "manager_debug": responsibility_debug,
         "client": {
             "name": client_name,
             "company": company,
@@ -252,10 +300,6 @@ def _mask_phone(phone: str) -> str:
     return phone[:4] + "***" + phone[-4:]
 
 
-def get_bitrix_call_url(activity_id: str) -> str:
-    return f"https://mavisgroup.bitrix24.by/crm/timeline/?activityId={activity_id}"
-
-
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -272,10 +316,19 @@ def main():
         Path("calls_data.json").write_text("[]", encoding="utf-8")
         return
 
+    # Собираем ВСЕ возможные ID менеджеров (AUTHOR + CREATED_BY + RESPONSIBLE)
     print(f"\nИнфо о менеджерах...")
-    manager_ids = list(set(int(c.get("RESPONSIBLE_ID") or 0) for c in raw_calls))
-    users = fetch_users(client, manager_ids)
-    print(f"   Загружено: {len(users)}")
+    all_manager_ids = set()
+    for c in raw_calls:
+        for field in ("AUTHOR_ID", "CREATED_BY_ID", "CREATED_BY", "RESPONSIBLE_ID"):
+            uid = c.get(field)
+            if uid:
+                try:
+                    all_manager_ids.add(int(uid))
+                except (TypeError, ValueError):
+                    pass
+    users = fetch_users(client, list(all_manager_ids))
+    print(f"   Загружено пользователей: {len(users)}")
 
     print(f"\nФото менеджеров...")
     download_user_avatars(users, Path("docs") / "avatars")
@@ -283,45 +336,70 @@ def main():
     print(f"\nНормализуем...")
     all_results = [normalize_call(raw, users) for raw in raw_calls]
 
-    if ALLOWED_MANAGERS:
-        allowed_lower = [name.lower().strip() for name in ALLOWED_MANAGERS]
-        before = len(all_results)
-        results = [r for r in all_results if r["manager"]["name"].lower().strip() in allowed_lower]
-        print(f"   Фильтр по менеджерам: {before} → {len(results)}")
-    else:
-        results = all_results
+    # ====== ДИАГНОСТИКА: сколько звонков имеют расхождения ======
+    print(f"\nДиагностика полей ответственности:")
+    diff_count = 0
+    for r in all_results:
+        d = r.get("manager_debug", {})
+        if d.get("author_id") and d.get("responsible_id") and d["author_id"] != d["responsible_id"]:
+            diff_count += 1
+    print(f"   Звонков с AUTHOR_ID != RESPONSIBLE_ID: {diff_count} из {len(all_results)}")
+    if diff_count > 0:
+        print(f"   ⚠️  Это значит, что Bitrix подменял ответственного автоматически.")
+        print(f"   Теперь берём AUTHOR_ID (реального звонящего).")
 
+    # ====== ФИЛЬТР: по ID + по имени (двойная защита) ======
+    allowed_lower = [name.lower().strip() for name in ALLOWED_MANAGERS]
+    before = len(all_results)
+    results = [
+        r for r in all_results
+        if r["manager"]["id"] in ALLOWED_MANAGER_IDS
+        or r["manager"]["name"].lower().strip() in allowed_lower
+    ]
+    print(f"\n   Фильтр по менеджерам: {before} → {len(results)} звонков")
+
+    # Покажем, кого отфильтровали
+    filtered_out = [r for r in all_results if r not in results]
+    if filtered_out:
+        excluded_managers = {}
+        for r in filtered_out:
+            m = r["manager"]["name"]
+            excluded_managers[m] = excluded_managers.get(m, 0) + 1
+        print(f"   Исключены звонки от:")
+        for m, cnt in sorted(excluded_managers.items(), key=lambda x: -x[1]):
+            print(f"      - {m}: {cnt}")
+
+    # Кто остался — для проверки
+    print(f"\n   Распределение по нашим менеджерам:")
+    by_mgr = {}
     for r in results:
-        r["bitrix_url"] = get_bitrix_call_url(r["activity_id"])
+        m = r["manager"]["name"]
+        by_mgr[m] = by_mgr.get(m, 0) + 1
+    for m, cnt in sorted(by_mgr.items(), key=lambda x: -x[1]):
+        print(f"      ✓ {m}: {cnt}")
 
+    # Статистика по длительности
     with_duration = [r for r in results if r.get("duration_sec") is not None]
     long_enough = [r for r in results if r.get("duration_sec") and r["duration_sec"] >= MIN_DURATION_SEC]
     print(f"\nДлительность:")
     print(f"   С известной длительностью: {len(with_duration)}/{len(results)}")
     print(f"   ≥ {MIN_DURATION_SEC} сек: {len(long_enough)}")
 
+    # Скачивание аудио
     audio_limit = int(os.environ.get("DOWNLOAD_AUDIO_COUNT", DEFAULT_AUDIO_DOWNLOAD_LIMIT))
     print(f"\nDOWNLOAD_AUDIO_COUNT = {audio_limit}")
 
-    if audio_limit != 0:
-        docs_audio = Path("docs") / "audio"
-        deleted = cleanup_old_audio(docs_audio, AUDIO_KEEP_DAYS)
-        if deleted:
-            print(f"\nУдалено старых MP3 (>{AUDIO_KEEP_DAYS} дней): {deleted}")
+    if audio_limit > 0 or audio_limit == -1:
+        audio_dir = Path("audio_temp")
+        audio_dir.mkdir(exist_ok=True)
 
-        audio_temp = Path("audio_temp")
-        audio_temp.mkdir(exist_ok=True)
-        docs_audio.mkdir(parents=True, exist_ok=True)
-
-        # Кандидаты: ТОЛЬКО с известной длительностью ≥ MIN_DURATION_SEC
-        # и сортируем от старых к новым (у новых аудио может ещё не быть на диске Bitrix)
+        # Кандидаты: длинные (≥ 40 сек) + неизвестной длительности
         candidates = [
             r for r in results
             if r.get("audio") and r["audio"].get("file_id")
-            and r.get("duration_sec") is not None
-            and r["duration_sec"] >= MIN_DURATION_SEC
+            and (r.get("duration_sec") is None or r["duration_sec"] >= MIN_DURATION_SEC)
         ]
-        candidates.sort(key=lambda x: x.get("created", ""), reverse=False)
+        candidates.sort(key=lambda x: x.get("created", ""), reverse=True)
 
         to_download = candidates if audio_limit == -1 else candidates[:audio_limit]
         print(f"\nКандидатов: {len(candidates)}, скачиваем: {len(to_download)}")
@@ -329,36 +407,25 @@ def main():
         downloaded = 0
         for i, call in enumerate(to_download, 1):
             file_id = call["audio"]["file_id"]
-            activity_id = call["activity_id"]
             dur = call.get("duration_sec")
             dur_str = f"{dur} сек" if dur else "неизв."
-            print(f"\n[{i}/{len(to_download)}] {activity_id} ({call['manager']['name']}, {dur_str}):")
+            print(f"\n[{i}/{len(to_download)}] {call['activity_id']} ({call['manager']['name']}, {dur_str}):")
             try:
-                temp_path = download_audio(client, file_id, audio_temp)
-                size = temp_path.stat().st_size
+                path = download_audio(client, file_id, audio_dir)
+                size = path.stat().st_size
                 if size < MIN_AUDIO_SIZE_BYTES:
                     print(f"   ⚠ Слишком маленький ({size} б), пропускаем")
-                    temp_path.unlink()
+                    path.unlink()
                     continue
-
-                public_path = docs_audio / f"{activity_id}.mp3"
-                shutil.copy2(temp_path, public_path)
-
-                call["audio"]["local_path"] = str(temp_path)
-                call["audio"]["public_path"] = f"audio/{activity_id}.mp3"
+                call["audio"]["local_path"] = str(path)
                 call["audio"]["size_bytes"] = size
                 downloaded += 1
-                print(f"   ✅ {temp_path.name} → {public_path.name} ({size:,} б)")
+                print(f"   ✅ {path.name} ({size:,} б)")
             except Exception as e:
                 print(f"   ❌ {e}")
                 call["audio"]["error"] = str(e)
 
         print(f"\nИтого скачано: {downloaded}/{len(to_download)}")
-
-        if docs_audio.exists():
-            total_size = sum(f.stat().st_size for f in docs_audio.glob("*.mp3"))
-            file_count = len(list(docs_audio.glob("*.mp3")))
-            print(f"\nВсего в docs/audio/: {file_count} файлов, {total_size / 1024 / 1024:.1f} МБ")
 
     out_file = Path("calls_data.json")
     out_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
