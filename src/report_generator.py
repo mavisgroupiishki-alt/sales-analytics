@@ -562,14 +562,17 @@ a { color: inherit; text-decoration: none; }
 # ============================================================
 
 def page_template(title: str, body: str, active_nav: str, generated_at: str,
-                  critical_count: int = 0, base_path: str = "") -> str:
+                  critical_count: int = 0, base_path: str = "", extra_head: str = "") -> str:
     nav_items = [
         ("dashboard", "index.html", "Сводка"),
         ("rop", "rop-report.html", "Отчёт РОПа"),
         ("managers", "managers.html", "Менеджеры"),
+        ("compare", "compare.html", "Сравнение"),
         ("calls", "all-calls.html", "Все звонки"),
         ("critical", "critical.html", f"Срочно{' (' + str(critical_count) + ')' if critical_count else ''}"),
         ("triggers", "triggers.html", "Триггеры"),
+        ("objections", "objections.html", "Возражения"),
+        ("best", "best-calls.html", "Лучшие звонки"),
     ]
     nav_html = ""
     for key, href, label in nav_items:
@@ -589,6 +592,7 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{esc(title)} — {esc(COMPANY_NAME)} Sales Analytics</title>
   <style>{CSS}</style>
+  {extra_head}
 </head>
 <body>
   <div class="topbar">
@@ -607,7 +611,7 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
     <div class="footer-brand">{esc(COMPANY_NAME).upper()}</div>
     <div class="footer-divider"></div>
     <div>Sales Analytics · Автоматический анализ звонков отдела продаж</div>
-    <div style="margin-top:6px; font-size:11px;">Bitrix24 · GitHub Actions · Claude Haiku · © {year}</div>
+    <div style="margin-top:6px; font-size:11px;">Bitrix24 · GitHub Actions · BitrixGPT · © {year}</div>
   </div>
 </body>
 </html>"""
@@ -957,13 +961,14 @@ def render_manager_page(manager: Dict, analyses: Dict, generated_at: str, critic
                        '<div class="dr-block"><div class="label">Частые триггеры</div><div class="dr-list">' + trig_html + '</div></div>'
                        '</div>')
 
+    growth_chart = render_growth_chart(manager["id"], manager["name"], manager["calls"], analyses)
     body = ('<div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../managers.html">Менеджеры</a> › ' + esc(manager['name']) + '</div>'
             '<div class="page-head">'
             '<div style="display:flex; align-items:center; gap:18px;">'
             '<div class="m-avatar ' + avatar_class + '" style="width:64px; height:64px; font-size:20px;">' + manager_avatar_html(manager, base_path="../") + '</div>'
             '<div><h1>' + esc(manager['name']) + '</h1><div class="sub">' + COMPANY_NAME + ' · ' + str(manager['count']) + ' звонков</div></div>'
             '</div></div>'
-            + kpis + daily_html +
+            + kpis + daily_html + growth_chart +
             '<div class="panel"><div class="panel-head"><h3>Все звонки</h3>'
             '<span class="hint">' + str(len(calls)) + ' штук</span></div>' + rows + '</div>')
     return page_template(manager["name"], body, "managers", generated_at, critical_count, base_path="../")
@@ -1103,14 +1108,25 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
     else:
         rest_html = ""
 
-        # Резюме
+        # Цель звонка + резюме + итог
+        summary_parts = []
+        if analysis.get("call_goal"):
+            summary_parts.append('<div class="label">🎯 Цель звонка</div><div class="text" style="font-weight:600;">' + esc(analysis["call_goal"]) + '</div>')
         if analysis.get("summary"):
-            rest_html += ('<div class="ai-summary">'
-                          '<div class="label">📋 Резюме</div>'
-                          '<div class="text">' + esc(analysis["summary"]) + '</div>'
+            summary_parts.append('<div class="label" style="margin-top:10px;">📋 Резюме</div><div class="text">' + esc(analysis["summary"]) + '</div>')
+        if analysis.get("outcome"):
+            summary_parts.append('<div class="label" style="margin-top:10px;">✅ Итог</div><div class="text">' + esc(analysis["outcome"]) + '</div>')
+        if summary_parts:
+            rest_html += ('<div class="ai-summary">' + "".join(summary_parts) + '</div>')
+
+        # Объяснение оценки
+        if analysis.get("score_explanation"):
+            rest_html += ('<div class="recommendation" style="border-color:var(--brand-medium);">'
+                          '<div class="label">💬 Почему такая оценка</div>'
+                          '<div class="text">' + esc(analysis["score_explanation"]) + '</div>'
                           '</div>')
 
-        # Основная проблема
+        # Основная проблема (старый формат)
         if analysis.get("main_problem"):
             rest_html += ('<div class="main-problem">'
                           '<div class="label">⚠️ Основная проблема</div>'
@@ -1118,19 +1134,43 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
                           '</div>')
 
         # Сильные / Слабые стороны
-        strengths = analysis.get("strengths") or []
-        weaknesses = analysis.get("weaknesses") or []
-        if strengths or weaknesses:
+        # Поддержка и нового (strengths/improvements) и старого (strengths/weaknesses) формата
+        strengths_raw = analysis.get("strengths") or []
+        improvements_raw = analysis.get("improvements") or []
+        weaknesses_raw = analysis.get("weaknesses") or []
+
+        # Нормализуем: новый формат strengths — список dict {text, time}, старый — список строк
+        def norm_list(items):
+            result = []
+            for item in items:
+                if isinstance(item, dict):
+                    t = item.get("text", "")
+                    tc = item.get("time", "") or item.get("quote", "")
+                    result.append((t, tc))
+                elif isinstance(item, str):
+                    result.append((item, ""))
+            return result
+
+        strengths = norm_list(strengths_raw)
+        improvements = norm_list(improvements_raw) or norm_list(weaknesses_raw)
+
+        if strengths or improvements:
             sw_html = '<div class="strengths-weaknesses">'
             if strengths:
-                st_items = "".join('<li>' + esc(s) + '</li>' for s in strengths)
+                st_items = "".join(
+                    '<li>' + esc(t) + (('<span class="timecode" style="margin-left:6px;font-size:10px;color:var(--brand-medium);">' + esc(tc) + '</span>') if tc else '') + '</li>'
+                    for t, tc in strengths
+                )
                 sw_html += ('<div class="sw-box strong">'
                             '<div class="label">✅ Сильные стороны</div>'
                             '<ul>' + st_items + '</ul></div>')
-            if weaknesses:
-                wk_items = "".join('<li>' + esc(w) + '</li>' for w in weaknesses)
+            if improvements:
+                wk_items = "".join(
+                    '<li>' + esc(t) + (('<span class="timecode" style="margin-left:6px;font-size:10px;color:var(--brand-medium);">' + esc(tc) + '</span>') if tc else '') + '</li>'
+                    for t, tc in improvements
+                )
                 sw_html += ('<div class="sw-box weak">'
-                            '<div class="label">⚠️ Слабые стороны</div>'
+                            '<div class="label">⚠️ Что улучшить</div>'
                             '<ul>' + wk_items + '</ul></div>')
             sw_html += '</div>'
             rest_html += sw_html
@@ -1152,7 +1192,17 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
         next_contact = analysis.get("next_contact") or {}
         nc_text = ""
         if isinstance(next_contact, dict):
-            if next_contact.get("date"):
+            # Новый формат: date_or_period, time, initiator, context
+            if next_contact.get("date_or_period"):
+                nc_text = "📅 " + esc(next_contact["date_or_period"])
+                if next_contact.get("time"):
+                    nc_text += " в " + esc(next_contact["time"])
+                if next_contact.get("context"):
+                    nc_text += " — " + esc(next_contact["context"])
+                if next_contact.get("initiator"):
+                    nc_text += ' <span style="font-size:11px;opacity:0.7;">(' + esc(next_contact["initiator"]) + ' звонит)</span>'
+            # Старый формат
+            elif next_contact.get("date"):
                 nc_text = "📅 " + esc(next_contact["date"])
                 if next_contact.get("action"):
                     nc_text += " — " + esc(next_contact["action"])
@@ -1286,6 +1336,33 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
                           '<span class="hint">' + str(len(triggers)) + ' шт</span></div>'
                           + items + '</div>')
 
+        # Флаги (новый формат)
+        flags = analysis.get("flags") or {}
+        flag_items = []
+        if flags.get("missed_deal"):
+            flag_items.append('🚨 <b>Упущенная сделка</b> — клиент был готов купить, но менеджер не закрыл')
+        if flags.get("no_next_step"):
+            flag_items.append('⏰ <b>Нет следующего шага</b> — важный звонок завершился без договорённости')
+        if flag_items:
+            rest_html += ('<div class="main-problem">'
+                          '<div class="label">🚩 Флаги</div>'
+                          + "".join('<div class="text" style="margin-top:6px;">' + f + '</div>' for f in flag_items) +
+                          '</div>')
+
+
+        # Флаги (новый формат)
+        flags = analysis.get("flags") or {}
+        flag_items = []
+        if flags.get("missed_deal"):
+            flag_items.append('🚨 <b>Упущенная сделка</b> — клиент был готов купить, но менеджер не закрыл')
+        if flags.get("no_next_step"):
+            flag_items.append('⏰ <b>Нет следующего шага</b> — важный звонок завершился без договорённости')
+        if flag_items:
+            rest_html += ('<div class="main-problem">'
+                          '<div class="label">🚩 Флаги</div>'
+                          + "".join('<div class="text" style="margin-top:6px;">' + f + '</div>' for f in flag_items) +
+                          '</div>')
+
         # Рекомендация
         if analysis.get("recommendation"):
             rest_html += ('<div class="recommendation">'
@@ -1296,9 +1373,17 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
     # Модалка для ручной правки
     modal_html = build_edit_modal(activity_id, analysis.get("overall_score", ""))
 
+    # AI чат-виджет
+    ai_chat_html = ""
+    if has_ai:
+        ai_chat_html = build_ai_chat_widget(call, analysis)
+
+    # Мета-тег с ключом API для чата (читается из env через шаблон page_template)
+    vibe_key = __import__("os").environ.get("VIBE_API_KEY", "")
+    meta_key = '<meta name="vibe-key" content="' + esc(vibe_key) + '">'
     body = ('<div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../all-calls.html">Звонки</a> › Звонок №' + esc(activity_id) + '</div>'
-            + head_html + correction_note_html + audio_html + rest_html + modal_html)
-    return page_template("Звонок №" + str(activity_id), body, "calls", generated_at, critical_count, base_path="../")
+            + head_html + correction_note_html + audio_html + rest_html + modal_html + ai_chat_html)
+    return page_template("Звонок №" + str(activity_id), body, "calls", generated_at, critical_count, base_path="../", extra_head=meta_key)
 
 
 def build_edit_modal(activity_id: str, current_score) -> str:
@@ -1557,6 +1642,20 @@ def generate(calls_json_path: str = "calls_data.json",
         render_critical_page(calls, analyses, generated_at, crit), encoding="utf-8")
     (out_dir / "triggers.html").write_text(
         render_triggers_page(calls, analyses, generated_at, crit), encoding="utf-8")
+    # Новые страницы
+    (out_dir / "compare.html").write_text(
+        render_compare_page(stats, calls, analyses, generated_at), encoding="utf-8")
+    (out_dir / "objections.html").write_text(
+        render_objections_page(calls, analyses, generated_at, crit), encoding="utf-8")
+    (out_dir / "best-calls.html").write_text(
+        render_best_calls_page(calls, analyses, generated_at, crit), encoding="utf-8")
+    # Новые страницы
+    (out_dir / "compare.html").write_text(
+        render_compare_page(stats, calls, analyses, generated_at), encoding="utf-8")
+    (out_dir / "objections.html").write_text(
+        render_objections_page(calls, analyses, generated_at, crit), encoding="utf-8")
+    (out_dir / "best-calls.html").write_text(
+        render_best_calls_page(calls, analyses, generated_at, crit), encoding="utf-8")
 
     # Страницы менеджеров
     for m in stats["managers"]:
@@ -1581,3 +1680,546 @@ def generate(calls_json_path: str = "calls_data.json",
 
 if __name__ == "__main__":
     generate()
+
+
+# ============================================================
+# ВСПОМОГАТЕЛЬНЫЕ ДАННЫЕ ДЛЯ НОВЫХ СТРАНИЦ
+# ============================================================
+
+def get_weekly_scores(manager_id: int, calls: List[Dict], analyses: Dict) -> List[Dict]:
+    """Возвращает среднюю оценку по неделям для динамики роста."""
+    from collections import defaultdict
+    week_scores = defaultdict(list)
+    for c in calls:
+        if c.get("manager", {}).get("id") != manager_id:
+            continue
+        a = analyses.get(c["activity_id"])
+        if not a:
+            continue
+        score = a.get("analysis", {}).get("overall_score")
+        if score is None:
+            continue
+        try:
+            dt = datetime.fromisoformat(c.get("created", ""))
+            week_key = dt.strftime("%Y-W%W")
+            week_scores[week_key].append(float(score))
+        except Exception:
+            pass
+    result = []
+    for week, scores in sorted(week_scores.items()):
+        result.append({"week": week, "avg": round(sum(scores)/len(scores), 1), "count": len(scores)})
+    return result
+
+
+def get_objections_stats(analyses: Dict) -> List[Dict]:
+    """Частота возражений из текста триггеров и анализов."""
+    objection_keywords = [
+        "дорого", "подумаю", "не сейчас", "посоветуюсь", "не уверен",
+        "нет бюджета", "уже есть", "не актуально", "перезвоните", "занят",
+        "не интересно", "конкурент", "сравниваем", "руководство решает",
+    ]
+    counter = Counter()
+    for a_data in analyses.values():
+        an = a_data.get("analysis", {})
+        text_sources = []
+        # из transcript_split
+        for msg in an.get("transcript_split", []) or []:
+            if msg.get("speaker") == "client":
+                text_sources.append(msg.get("text", "").lower())
+        # из key_quotes
+        for kq in an.get("key_quotes", []) or []:
+            text_sources.append(kq.get("text", "").lower())
+        # из improvements
+        for imp in an.get("improvements", []) or []:
+            if isinstance(imp, dict):
+                text_sources.append(imp.get("text", "").lower())
+                text_sources.append(imp.get("quote", "").lower())
+        combined = " ".join(text_sources)
+        for kw in objection_keywords:
+            if kw in combined:
+                counter[kw] += 1
+    return [{"name": k, "count": v} for k, v in counter.most_common(10)]
+
+
+def get_best_calls(calls: List[Dict], analyses: Dict, n: int = 10) -> List[tuple]:
+    """Лучшие звонки за всё время по оценке."""
+    scored = []
+    for c in calls:
+        a = analyses.get(c["activity_id"])
+        if not a:
+            continue
+        score = a.get("analysis", {}).get("overall_score")
+        if score is None:
+            continue
+        try:
+            scored.append((float(score), c, a))
+        except (TypeError, ValueError):
+            pass
+    scored.sort(key=lambda x: -x[0])
+    return [(c, a, sc) for sc, c, a in scored[:n]]
+
+
+# ============================================================
+# СРАВНЕНИЕ МЕНЕДЖЕРОВ
+# ============================================================
+
+def render_compare_page(stats: Dict, calls: List[Dict], analyses: Dict, generated_at: str) -> str:
+    managers = [m for m in stats["managers"] if m.get("analyzed", 0) > 0]
+    crit = stats["critical_count"]
+
+    if len(managers) < 2:
+        body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Сравнение</div>'
+                '<div class="page-head"><div><h1>📊 Сравнение менеджеров</h1></div></div>'
+                '<div class="notice">Нужно минимум 2 менеджера с анализами для сравнения.</div>')
+        return page_template("Сравнение", body, "compare", generated_at, crit)
+
+    # Цвета для менеджеров
+    colors = ["var(--brand-olive)", "var(--brand-terracotta)", "var(--brand-gold)", "var(--blue)"]
+
+    # KPI карточки по каждому менеджеру
+    kpi_html = '<div class="kpi-row">'
+    for i, m in enumerate(managers):
+        color = colors[i % len(colors)]
+        avg = m.get("avg_score", 0) or 0
+        kpi_html += (f'<div class="kpi" style="border-top-color:{color};">'
+                     f'<div class="kpi-label">{esc(m["name"])}</div>'
+                     f'<div class="kpi-value" style="color:{color};">{avg}</div>'
+                     f'<div class="kpi-hint">{m["analyzed"]} разборов · {m["critical"]} критичных</div>'
+                     f'</div>')
+    kpi_html += '</div>'
+
+    # Бар-чарт сравнения оценок через SVG
+    bar_width = 80
+    bar_gap = 40
+    chart_w = len(managers) * (bar_width + bar_gap) + bar_gap
+    chart_h = 200
+    bars_svg = f'<svg viewBox="0 0 {chart_w} {chart_h + 40}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:500px;display:block;margin:0 auto;">'
+    for i, m in enumerate(managers):
+        x = bar_gap + i * (bar_width + bar_gap)
+        avg = float(m.get("avg_score") or 0)
+        bar_h = int(avg / 10 * chart_h)
+        y = chart_h - bar_h
+        color_idx = ["#7C8B6F", "#B86B4F", "#C9A961", "#4A6B8A"][i % 4]
+        bars_svg += (f'<rect x="{x}" y="{y}" width="{bar_width}" height="{bar_h}" fill="{color_idx}" rx="4"/>'
+                     f'<text x="{x + bar_width//2}" y="{y - 6}" text-anchor="middle" font-size="14" font-weight="bold" fill="{color_idx}">{avg}</text>'
+                     f'<text x="{x + bar_width//2}" y="{chart_h + 20}" text-anchor="middle" font-size="11" fill="var(--text-secondary)">{esc(m["name"].split()[0])}</text>')
+    bars_svg += '</svg>'
+
+    # Сравнительная таблица частых проблем
+    manager_issues = {}
+    for m in managers:
+        issues = Counter()
+        for c in m["calls"]:
+            a = analyses.get(c["activity_id"])
+            if a:
+                for imp in a.get("analysis", {}).get("improvements", []) or []:
+                    if isinstance(imp, dict) and imp.get("text"):
+                        issues[imp["text"][:60]] += 1
+                for t in a.get("analysis", {}).get("triggers", []) or []:
+                    issues[t.get("name", "")[:60]] += 1
+        manager_issues[m["id"]] = issues.most_common(5)
+
+    issues_html = '<div class="panel"><div class="panel-head"><h3>Топ проблем по каждому менеджеру</h3></div>'
+    for i, m in enumerate(managers):
+        color = colors[i % len(colors)]
+        issues_html += (f'<div style="padding:14px 20px;border-bottom:1px solid var(--border-soft);">'
+                        f'<div style="font-weight:600;color:{color};margin-bottom:8px;font-family:-apple-system,sans-serif;">{esc(m["name"])}</div>')
+        for issue, cnt in manager_issues.get(m["id"], []):
+            issues_html += (f'<div class="rop-list-item">'
+                            f'<div style="font-size:13px;">{esc(issue)}</div>'
+                            f'<div class="count">{cnt}×</div></div>')
+        if not manager_issues.get(m["id"]):
+            issues_html += '<div class="empty">Проблем не зафиксировано</div>'
+        issues_html += '</div>'
+    issues_html += '</div>'
+
+    # Динамика по дням
+    from collections import defaultdict
+    day_data = defaultdict(lambda: defaultdict(list))
+    for c in calls:
+        a = analyses.get(c["activity_id"])
+        if not a:
+            continue
+        score = a.get("analysis", {}).get("overall_score")
+        mid = c.get("manager", {}).get("id")
+        if score is None or mid is None:
+            continue
+        try:
+            dt = datetime.fromisoformat(c.get("created", ""))
+            day = dt.strftime("%d.%m")
+            day_data[day][mid].append(float(score))
+        except Exception:
+            pass
+
+    days = sorted(day_data.keys())
+    dynamics_html = ""
+    if len(days) >= 2:
+        dynamics_html = '<div class="panel"><div class="panel-head"><h3>📈 Динамика по дням</h3></div><div style="padding:16px 20px;overflow-x:auto;">'
+        table = '<table style="width:100%;border-collapse:collapse;font-family:-apple-system,sans-serif;font-size:13px;">'
+        table += '<tr><th style="text-align:left;padding:6px 12px;color:var(--text-muted);font-weight:600;">Менеджер</th>'
+        for d in days:
+            table += f'<th style="padding:6px 12px;color:var(--text-muted);font-weight:600;text-align:center;">{esc(d)}</th>'
+        table += '</tr>'
+        for i, m in enumerate(managers):
+            color = colors[i % len(colors)]
+            table += f'<tr><td style="padding:8px 12px;font-weight:600;color:{color};">{esc(m["name"].split()[0])}</td>'
+            for d in days:
+                scores_for_day = day_data[d].get(m["id"], [])
+                if scores_for_day:
+                    avg = round(sum(scores_for_day)/len(scores_for_day), 1)
+                    cls = score_color(avg)
+                    bg = {"high": "rgba(124,139,111,0.15)", "mid": "rgba(201,169,97,0.18)", "low": "rgba(184,107,79,0.15)"}[cls]
+                    col = {"high": "var(--brand-olive)", "mid": "var(--brand-gold)", "low": "var(--brand-terracotta)"}[cls]
+                    table += f'<td style="padding:6px 12px;text-align:center;"><span style="background:{bg};color:{col};font-weight:700;padding:3px 8px;border-radius:4px;">{avg}</span></td>'
+                else:
+                    table += '<td style="padding:6px 12px;text-align:center;color:var(--text-muted);">—</td>'
+            table += '</tr>'
+        table += '</table>'
+        dynamics_html += table + '</div></div>'
+
+    body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Сравнение</div>'
+            '<div class="page-head"><div><h1>📊 Сравнение менеджеров</h1>'
+            f'<div class="sub">{len(managers)} менеджера · средние оценки</div></div></div>'
+            + kpi_html
+            + '<div class="panel"><div class="panel-head"><h3>Средняя оценка</h3></div>'
+            + '<div style="padding:24px;">' + bars_svg + '</div></div>'
+            + dynamics_html
+            + issues_html)
+    return page_template("Сравнение менеджеров", body, "compare", generated_at, crit)
+
+
+# ============================================================
+# АНАЛИЗ ВОЗРАЖЕНИЙ
+# ============================================================
+
+def render_objections_page(calls: List[Dict], analyses: Dict, generated_at: str, critical_count: int) -> str:
+    objections = get_objections_stats(analyses)
+
+    # Группируем звонки по типу возражения
+    objection_calls = defaultdict(list)
+    objection_keywords = [o["name"] for o in objections]
+    for c in calls:
+        a = analyses.get(c["activity_id"])
+        if not a:
+            continue
+        an = a.get("analysis", {})
+        text_blob = " ".join([
+            m.get("text", "") for m in (an.get("transcript_split") or []) if m.get("speaker") == "client"
+        ] + [
+            kq.get("text", "") for kq in (an.get("key_quotes") or [])
+        ]).lower()
+        for kw in objection_keywords:
+            if kw in text_blob:
+                objection_calls[kw].append((c, a))
+
+    body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Возражения</div>'
+            '<div class="page-head"><div><h1>💬 Анализ возражений</h1>'
+            '<div class="sub">Какие возражения встречаются чаще всего</div></div></div>')
+
+    if not objections:
+        body += '<div class="notice">Недостаточно данных для анализа возражений.</div>'
+    else:
+        # Визуальный бар-чарт частоты
+        max_count = objections[0]["count"] if objections else 1
+        body += '<div class="panel"><div class="panel-head"><h3>Частота возражений</h3><span class="hint">за весь период</span></div>'
+        for obj in objections:
+            pct = int(obj["count"] / max_count * 100)
+            body += (f'<div style="padding:10px 20px;border-bottom:1px solid var(--border-soft);font-family:-apple-system,sans-serif;">'
+                     f'<div style="display:flex;justify-content:space-between;margin-bottom:4px;">'
+                     f'<span style="font-size:13px;font-weight:600;color:var(--brand-dark);">«{esc(obj["name"])}»</span>'
+                     f'<span style="font-size:13px;font-weight:700;color:var(--brand-terracotta);">{obj["count"]}×</span>'
+                     f'</div>'
+                     f'<div style="height:6px;background:var(--brand-paper);border-radius:3px;">'
+                     f'<div style="width:{pct}%;height:100%;background:var(--brand-terracotta);border-radius:3px;"></div>'
+                     f'</div></div>')
+        body += '</div>'
+
+        # Примеры звонков по каждому возражению
+        for obj in objections[:5]:
+            kw = obj["name"]
+            examples = objection_calls.get(kw, [])[:3]
+            if not examples:
+                continue
+            rows = ""
+            for c, a in examples:
+                an = a.get("analysis", {})
+                score = an.get("overall_score", 0)
+                cls = score_color(score)
+                rows += (f'<a href="calls/{esc(c["activity_id"])}.html" class="row-link">'
+                         f'<div class="call-row">'
+                         f'<div class="call-direction {"in" if c.get("direction")=="incoming" else "out"}">{"↓" if c.get("direction")=="incoming" else "↑"}</div>'
+                         f'<div class="call-info">'
+                         f'<div class="call-client">{esc(c.get("client",{}).get("name",""))}</div>'
+                         f'<div class="call-meta">{esc(c.get("manager",{}).get("name",""))} · {format_time(c.get("created",""))}</div>'
+                         f'</div>'
+                         f'<div class="call-time">{format_date(c.get("created",""))}</div>'
+                         f'<div class="mini-score {cls}">{score}</div>'
+                         f'</div></a>')
+            body += (f'<div class="panel">'
+                     f'<div class="panel-head"><h3>«{esc(kw)}» — {obj["count"]} раз</h3>'
+                     f'<span class="hint">примеры звонков</span></div>'
+                     + rows + '</div>')
+
+    return page_template("Возражения", body, "objections", generated_at, critical_count)
+
+
+# ============================================================
+# ЛУЧШИЕ ЗВОНКИ
+# ============================================================
+
+def render_best_calls_page(calls: List[Dict], analyses: Dict, generated_at: str, critical_count: int) -> str:
+    best = get_best_calls(calls, analyses, n=20)
+
+    body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Лучшие звонки</div>'
+            '<div class="page-head"><div><h1>🏆 Лучшие звонки</h1>'
+            '<div class="sub">Эталонные звонки для обучения</div></div></div>')
+
+    if not best:
+        body += '<div class="notice">Анализов пока нет.</div>'
+    else:
+        body += '<div class="panel"><div class="panel-head"><h3>Топ звонков по оценке</h3></div>'
+        for i, (c, a, score) in enumerate(best, 1):
+            an = a.get("analysis", {})
+            cls = score_color(score)
+            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+            recommendation = an.get("recommendation", "")
+            strengths = an.get("strengths") or []
+            first_strength = ""
+            if strengths:
+                s = strengths[0]
+                first_strength = s.get("text", s) if isinstance(s, dict) else s
+            body += (f'<a href="calls/{esc(c["activity_id"])}.html" class="row-link">'
+                     f'<div style="padding:14px 20px;border-bottom:1px solid var(--border-soft);display:grid;grid-template-columns:30px 1fr auto;gap:14px;align-items:start;font-family:-apple-system,sans-serif;">'
+                     f'<div style="font-size:18px;line-height:1.4;">{medal}</div>'
+                     f'<div>'
+                     f'<div style="font-weight:600;font-size:14px;color:var(--brand-dark);">{esc(c.get("client",{}).get("name",""))} · {esc(c.get("manager",{}).get("name",""))}</div>'
+                     f'<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">{format_datetime(c.get("created",""))} · {format_duration(c.get("duration_sec"))}</div>'
+                     + (f'<div style="font-size:12px;color:var(--brand-olive);margin-top:4px;">✅ {esc(first_strength)}</div>' if first_strength else '') +
+                     f'</div>'
+                     f'<div class="mini-score {cls}" style="font-size:18px;padding:6px 12px;">{score}</div>'
+                     f'</div></a>')
+        body += '</div>'
+
+    return page_template("Лучшие звонки", body, "best", generated_at, critical_count)
+
+
+# ============================================================
+# ДИНАМИКА РОСТА МЕНЕДЖЕРА (обновлённая страница менеджера)
+# ============================================================
+
+def render_growth_chart(manager_id: int, manager_name: str, calls: List[Dict], analyses: Dict) -> str:
+    """SVG-график динамики оценок по дням."""
+    from collections import defaultdict
+    day_scores = defaultdict(list)
+    for c in calls:
+        if c.get("manager", {}).get("id") != manager_id:
+            continue
+        a = analyses.get(c["activity_id"])
+        if not a:
+            continue
+        score = a.get("analysis", {}).get("overall_score")
+        if score is None:
+            continue
+        try:
+            dt = datetime.fromisoformat(c.get("created", ""))
+            day_scores[dt.strftime("%d.%m")].append(float(score))
+        except Exception:
+            pass
+
+    if len(day_scores) < 2:
+        return ""
+
+    days = sorted(day_scores.keys())
+    avgs = [round(sum(day_scores[d])/len(day_scores[d]), 1) for d in days]
+
+    W, H = 500, 120
+    pad_l, pad_r, pad_t, pad_b = 40, 20, 15, 30
+    plot_w = W - pad_l - pad_r
+    plot_h = H - pad_t - pad_b
+    n = len(days)
+
+    def px(i): return pad_l + int(i / max(n - 1, 1) * plot_w)
+    def py(v): return pad_t + int((10 - v) / 10 * plot_h)
+
+    # Линия
+    points = " ".join(f"{px(i)},{py(v)}" for i, v in enumerate(avgs))
+    area_points = f"{px(0)},{pad_t+plot_h} {points} {px(n-1)},{pad_t+plot_h}"
+
+    svg = (f'<svg viewBox="0 0 {W} {H+10}" xmlns="http://www.w3.org/2000/svg" '
+           f'style="width:100%;display:block;margin-top:8px;">')
+
+    # Сетка
+    for v in [3, 5, 7, 10]:
+        y = py(v)
+        svg += (f'<line x1="{pad_l}" y1="{y}" x2="{W-pad_r}" y2="{y}" '
+                f'stroke="var(--border)" stroke-width="1"/>'
+                f'<text x="{pad_l-4}" y="{y+4}" text-anchor="end" font-size="9" fill="var(--text-muted)">{v}</text>')
+
+    # Область
+    svg += f'<polygon points="{area_points}" fill="rgba(124,139,111,0.1)"/>'
+    # Линия
+    svg += f'<polyline points="{points}" fill="none" stroke="var(--brand-olive)" stroke-width="2.5" stroke-linejoin="round"/>'
+
+    # Точки и подписи дат
+    for i, (d, v) in enumerate(zip(days, avgs)):
+        x, y = px(i), py(v)
+        color = {"high": "var(--brand-olive)", "mid": "var(--brand-gold)", "low": "var(--brand-terracotta)"}[score_color(v)]
+        svg += (f'<circle cx="{x}" cy="{y}" r="4" fill="{color}" stroke="#fff" stroke-width="1.5"/>'
+                f'<text x="{x}" y="{H-2}" text-anchor="middle" font-size="9" fill="var(--text-muted)">{esc(d)}</text>')
+        # Значение над точкой
+        if i == 0 or i == n-1 or v == max(avgs) or v == min(avgs):
+            svg += f'<text x="{x}" y="{y-7}" text-anchor="middle" font-size="10" font-weight="bold" fill="{color}">{v}</text>'
+
+    svg += '</svg>'
+    return (f'<div class="panel" style="margin-bottom:16px;">'
+            f'<div class="panel-head"><h3>📈 Динамика оценок</h3>'
+            f'<span class="hint">{len(days)} дней · тренд</span></div>'
+            f'<div style="padding:12px 16px;">{svg}</div>'
+            f'</div>')
+
+
+# ============================================================
+# ЧЁРНЫЙ ЯЩИК — AI ЧАТ ПО ЗВОНКУ
+# ============================================================
+
+def build_ai_chat_widget(call: Dict, analysis: Dict, vibe_api_note: str = "") -> str:
+    """
+    Плавающая кнопка и чат-окно. ИИ знает контекст конкретного звонка.
+    Запросы идут к Vibe Code AI Router через fetch (VIBE_API_KEY передаётся через data-атрибут из env).
+    """
+    import json as _json
+    call_context = _json.dumps({
+        "manager": call.get("manager", {}).get("name", ""),
+        "client": call.get("client", {}).get("name", ""),
+        "company": call.get("client", {}).get("company", ""),
+        "score": analysis.get("overall_score"),
+        "call_type": analysis.get("call_type", {}).get("label", "") if isinstance(analysis.get("call_type"), dict) else "",
+        "summary": (analysis.get("summary") or "")[:300],
+        "score_explanation": (analysis.get("score_explanation") or "")[:300],
+        "main_problem": analysis.get("main_problem", ""),
+        "recommendation": analysis.get("recommendation", ""),
+        "strengths": [
+            (s.get("text", s) if isinstance(s, dict) else s)
+            for s in (analysis.get("strengths") or [])[:3]
+        ],
+        "improvements": [
+            (s.get("text", s) if isinstance(s, dict) else s)
+            for s in (analysis.get("improvements") or analysis.get("weaknesses") or [])[:3]
+        ],
+        "flags": analysis.get("flags", {}),
+    }, ensure_ascii=False)
+
+    safe_context = call_context.replace('\\', '\\\\').replace('`', '\\`').replace('$', '\\$')
+
+    return f'''
+<div id="aiChatBtn" onclick="toggleAiChat()" style="
+  position:fixed; bottom:28px; right:28px; z-index:200;
+  width:52px; height:52px; border-radius:50%;
+  background:var(--brand-dark); color:#fff;
+  display:flex; align-items:center; justify-content:center;
+  font-size:22px; cursor:pointer; box-shadow:0 4px 16px rgba(61,46,31,0.35);
+  border:2px solid var(--brand-gold); transition:transform 0.2s;
+" title="Спросить ИИ про этот звонок">💬</div>
+
+<div id="aiChatPanel" style="
+  display:none; position:fixed; bottom:90px; right:28px; z-index:201;
+  width:360px; max-width:calc(100vw - 40px);
+  background:#fff; border-radius:12px;
+  box-shadow:0 8px 32px rgba(61,46,31,0.25);
+  border:1px solid var(--brand-gold);
+  overflow:hidden; font-family:-apple-system,sans-serif;
+">
+  <div style="background:var(--brand-dark);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;">
+    <div>
+      <div style="font-weight:600;font-size:14px;">💬 Спросить про звонок</div>
+      <div style="font-size:11px;opacity:0.7;margin-top:2px;">ИИ знает контекст этого звонка</div>
+    </div>
+    <button onclick="toggleAiChat()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0 4px;">×</button>
+  </div>
+  <div id="aiChatMessages" style="height:280px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;">
+    <div style="background:var(--brand-paper);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--brand-dark);">
+      Привет! Я знаю этот звонок. Можешь спросить:<br>
+      <span style="color:var(--text-muted);">— Почему такая оценка?<br>— Что конкретно не так с возражением?<br>— Как менеджеру улучшиться?</span>
+    </div>
+  </div>
+  <div style="border-top:1px solid var(--border);padding:10px 12px;display:flex;gap:8px;">
+    <input id="aiChatInput" type="text" placeholder="Задай вопрос..." 
+      style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;"
+      onkeydown="if(event.key==='Enter')sendAiMessage()">
+    <button onclick="sendAiMessage()" style="
+      padding:8px 14px;background:var(--brand-dark);color:#fff;
+      border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;
+    ">→</button>
+  </div>
+</div>
+
+<script>
+var _callCtx = `{safe_context}`;
+var _chatHistory = [];
+
+function toggleAiChat() {{
+  var p = document.getElementById('aiChatPanel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  if (p.style.display === 'block') document.getElementById('aiChatInput').focus();
+}}
+
+function appendMsg(role, text) {{
+  var el = document.createElement('div');
+  el.style.cssText = role === 'user'
+    ? 'background:var(--brand-dark);color:#fff;border-radius:8px 8px 2px 8px;padding:8px 12px;font-size:13px;align-self:flex-end;max-width:85%;'
+    : 'background:var(--brand-paper);border-radius:8px 8px 8px 2px;padding:8px 12px;font-size:13px;color:var(--brand-dark);max-width:90%;';
+  el.textContent = text;
+  var msgs = document.getElementById('aiChatMessages');
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+  return el;
+}}
+
+async function sendAiMessage() {{
+  var input = document.getElementById('aiChatInput');
+  var q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  appendMsg('user', q);
+
+  _chatHistory.push({{"role":"user","content":q}});
+
+  var thinking = appendMsg('assistant', '...');
+
+  var systemPrompt = `Ты — РОП компании Mavis Group. Тебе известен полный анализ конкретного звонка:
+${{_callCtx}}
+
+Отвечай кратко и по делу. Используй контекст этого звонка. Пиши на русском.`;
+
+  var messages = [{{"role":"user","content":systemPrompt + "\\n\\nПользователь: " + q}}];
+  if (_chatHistory.length > 2) {{
+    messages = [{{"role":"user","content":systemPrompt}}];
+    _chatHistory.forEach(function(m) {{ messages.push(m); }});
+  }}
+
+  try {{
+    var apiKey = document.querySelector('meta[name=vibe-key]');
+    var key = apiKey ? apiKey.content : '';
+    if (!key) {{
+      thinking.textContent = 'Ключ API не настроен. Добавь VIBE_API_KEY в переменные окружения.';
+      return;
+    }}
+    var res = await fetch('https://vibecode.bitrix24.tech/v1/ai/chat/completions', {{
+      method: 'POST',
+      headers: {{'Content-Type':'application/json','X-Api-Key':key}},
+      body: JSON.stringify({{
+        model: 'bitrix/bitrixgpt-5.5',
+        max_tokens: 500,
+        messages: messages
+      }})
+    }});
+    var data = await res.json();
+    var answer = (data.choices||[{{message:{{content:'Ошибка ответа'}}}}])[0].message.content;
+    thinking.textContent = answer;
+    _chatHistory.push({{"role":"assistant","content":answer}});
+  }} catch(e) {{
+    thinking.textContent = 'Ошибка: ' + e.message;
+  }}
+}}
+</script>
+'''
