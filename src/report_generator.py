@@ -1365,8 +1365,8 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
         ai_chat_html = build_ai_chat_widget(call, analysis)
 
     # Мета-тег с ключом API для чата (читается из env через шаблон page_template)
-    vibe_key = __import__("os").environ.get("VIBE_API_KEY", "")
-    meta_key = '<meta name="vibe-key" content="' + esc(vibe_key) + '">'
+    proxy_url = __import__("os").environ.get("PROXY_URL", "")
+    meta_key = '<meta name="proxy-url" content="' + esc(proxy_url) + '">'
     body = ('<div class="breadcrumb"><a href="../index.html">Главная</a> › <a href="../all-calls.html">Звонки</a> › Звонок №' + esc(activity_id) + '</div>'
             + head_html + correction_note_html + audio_html + rest_html + modal_html + ai_chat_html)
     return page_template("Звонок №" + str(activity_id), body, "calls", generated_at, critical_count, base_path="../", extra_head=meta_key)
@@ -2090,15 +2090,16 @@ ${{_callCtx}}
   }}
 
   try {{
-    var apiKey = document.querySelector('meta[name=vibe-key]');
-    var key = apiKey ? apiKey.content : '';
-    if (!key) {{
-      thinking.textContent = 'Ключ API не настроен. Добавь VIBE_API_KEY в переменные окружения.';
+    // Запрос идёт через Cloudflare Worker (прокси) — ключ хранится там, не в браузере
+    var proxyUrl = document.querySelector('meta[name=proxy-url]');
+    var url = proxyUrl ? proxyUrl.content : '';
+    if (!url) {{
+      thinking.textContent = 'Прокси не настроен. Укажи PROXY_URL в переменных окружения GitHub.';
       return;
     }}
-    var res = await fetch('https://vibecode.bitrix24.tech/v1/ai/chat/completions', {{
+    var res = await fetch(url, {{
       method: 'POST',
-      headers: {{'Content-Type':'application/json','X-Api-Key':key}},
+      headers: {{'Content-Type':'application/json'}},
       body: JSON.stringify({{
         model: 'bitrix/bitrixgpt-5.5',
         max_tokens: 500,
