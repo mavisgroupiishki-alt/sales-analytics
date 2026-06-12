@@ -1,35 +1,288 @@
 """
-Анализ звонков через Whisper + Claude Haiku — версия по ТЗ.
+Анализ звонков через Whisper + Claude API (HTTP) — версия с типами звонков.
 
-Возможности:
-- 17 критериев по ТЗ (матрица из Таблицы 2)
-- Веса критериев по Таблице 3 → взвешенная оценка
-- Двухосевая классификация (CRM-контекст + цель)
-- Сильные/слабые стороны звонка отдельно
-- Основная проблема разговора
-- Сопоставление со скриптами по этапам (соблюдено/частично/пропущено)
-- При оценке <6 — цитата+таймкод+рекомендация
-- Дата следующего контакта
-- Поддержка ручной правки через manual_corrections.json
+Изменения v2:
+- Убрана зависимость от anthropic SDK → чистые HTTP-запросы (совместимо с любой средой)
+- 11 типов звонков по классификации из ТЗ
+- Для каждого типа — свой эталонный сценарий и критерии успеха
+- Двухэтапный анализ: 1) определить тип → 2) оценить по эталону для этого типа
+- Совместимость с Bitrix Vibe Code (NODE_ENV/webhook среда)
 """
 
 import os
 import json
 import logging
+import requests
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 
-import whisper
-from anthropic import Anthropic
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WHISPER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
-MODEL_CLAUDE = "claude-haiku-4-5-20251001"
+MODEL_CLAUDE = "claude-sonnet-4-6"
 MODEL_WHISPER = "base"
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 
 # ============================================================
-# 17 КРИТЕРИЕВ ПО ТЗ (Таблица 2)
+# 11 ТИПОВ ЗВОНКОВ
+# ============================================================
+CALL_TYPES = {
+    "primary_incoming_new": {
+        "label": "Первичный входящий (новый клиент)",
+        "description": "Клиент позвонил сам первый раз, ранее не работал с компанией",
+        "keywords": ["заявку", "сайта", "нашли", "посоветовали", "первый раз"],
+        "crm_context": "входящий новый лид",
+        "stages": [
+            "Приветствие и установление контакта",
+            "Программирование разговора (задам несколько вопросов)",
+            "Выявление потребности (виды работ, рынок, сроки, тендеры)",
+            "Выявление боли и мотива",
+            "Резюмирование потребности",
+            "Презентация решения через пользу",
+            "Допродажа (ISO, кадры, смежные продукты)",
+            "Работа с вопросами и возражениями",
+            "Попытка закрытия / назначение следующего шага",
+            "Фиксация договорённости и даты обратной связи",
+            "Упоминание реферальной программы / Telegram-канала",
+        ],
+        "critical_stages": [
+            "Выявление потребности (виды работ, рынок, сроки, тендеры)",
+            "Резюмирование потребности",
+            "Попытка закрытия / назначение следующего шага",
+            "Фиксация договорённости и даты обратной связи",
+        ],
+        "success_criteria": "КП отправлено, назначен следующий звонок, зафиксирована дата",
+    },
+    "primary_incoming_existing": {
+        "label": "Первичный входящий (действующий клиент)",
+        "description": "Клиент позвонил сам, ранее уже работал с компанией",
+        "keywords": ["снова", "опять", "уже работали", "в прошлый раз", "продлить"],
+        "crm_context": "исходящий по действующему клиенту",
+        "stages": [
+            "Приветствие и узнавание клиента",
+            "Уточнение текущей ситуации / статуса предыдущего проекта",
+            "Выявление новой потребности",
+            "Презентация следующего шага / нового продукта",
+            "Допродажа смежных услуг",
+            "Закрытие и фиксация договорённости",
+        ],
+        "critical_stages": [
+            "Уточнение текущей ситуации / статуса предыдущего проекта",
+            "Выявление новой потребности",
+            "Закрытие и фиксация договорённости",
+        ],
+        "success_criteria": "Назначен следующий шаг, клиент подтвердил интерес к продолжению",
+    },
+    "cold_new": {
+        "label": "Первичный холодный (новый клиент)",
+        "description": "Менеджер позвонил первым, клиент не знает компанию",
+        "keywords": ["хотел бы предложить", "нашёл вашу компанию", "мы занимаемся", "холодный"],
+        "crm_context": "исходящий по новой сделке",
+        "stages": [
+            "Приветствие и представление компании",
+            "Зацепка / причина звонка (актуальность)",
+            "Квалификация клиента (ЛПР? есть потребность?)",
+            "Выявление потребности и боли",
+            "Краткая презентация ценности (не продавать — заинтересовать)",
+            "Назначение следующего шага (встреча, КП, повторный звонок)",
+            "Фиксация договорённости",
+        ],
+        "critical_stages": [
+            "Зацепка / причина звонка (актуальность)",
+            "Квалификация клиента (ЛПР? есть потребность?)",
+            "Назначение следующего шага (встреча, КП, повторный звонок)",
+        ],
+        "success_criteria": "Клиент согласился на следующий шаг (КП, звонок, встреча)",
+    },
+    "cold_periodika": {
+        "label": "Первичный холодный (периодика, действующий клиент)",
+        "description": "Звонок действующему клиенту по поводу периодического продления/обновления",
+        "keywords": ["периодика", "продление", "срок действия", "истекает", "обновить аттестат"],
+        "crm_context": "исходящий по действующему клиенту",
+        "stages": [
+            "Приветствие и контекст (мы работали по X, срок истекает)",
+            "Напоминание о ценности предыдущей работы",
+            "Предложение продления / переоформления",
+            "Выявление изменений (новые сотрудники, новые виды работ)",
+            "Допродажа смежных продуктов",
+            "Закрытие и фиксация даты",
+        ],
+        "critical_stages": [
+            "Предложение продления / переоформления",
+            "Выявление изменений (новые сотрудники, новые виды работ)",
+            "Закрытие и фиксация даты",
+        ],
+        "success_criteria": "Клиент согласился продлить, назначена дата/оплата",
+    },
+    "cold_reactivation": {
+        "label": "Первичный холодный (давно не было контакта, через пользу)",
+        "description": "Реактивация клиента, с которым давно не было контакта — звонок через пользу/новость",
+        "keywords": ["давно не общались", "давно не виделись", "хотел поделиться", "появилась информация"],
+        "crm_context": "исходящий по действующему клиенту",
+        "stages": [
+            "Приветствие и напоминание о себе (кто звонит)",
+            "Зацепка через пользу / актуальную новость / изменение в законодательстве",
+            "Выяснение текущей ситуации клиента",
+            "Привязка пользы к его ситуации",
+            "Предложение конкретного следующего шага",
+            "Фиксация договорённости",
+        ],
+        "critical_stages": [
+            "Зацепка через пользу / актуальную новость / изменение в законодательстве",
+            "Выяснение текущей ситуации клиента",
+            "Предложение конкретного следующего шага",
+        ],
+        "success_criteria": "Клиент вовлёкся в разговор, назначен следующий шаг",
+    },
+    "kp_defense": {
+        "label": "Защита КП",
+        "description": "Звонок после отправки коммерческого предложения — обсуждение, защита цены и условий",
+        "keywords": ["посмотрели", "получили КП", "коммерческое", "цена", "стоимость", "дорого"],
+        "crm_context": "исходящий по сделке в работе",
+        "stages": [
+            "Уточнение — успел ли клиент посмотреть КП",
+            "Сбор обратной связи по КП (что понравилось, что вопросы)",
+            "Презентация ценности (не цены — результата)",
+            "Отработка возражений по цене или условиям",
+            "Сравнение с альтернативами в пользу компании",
+            "Попытка закрытия или назначение чёткого следующего шага",
+            "Фиксация даты решения",
+        ],
+        "critical_stages": [
+            "Сбор обратной связи по КП (что понравилось, что вопросы)",
+            "Презентация ценности (не цены — результата)",
+            "Попытка закрытия или назначение чёткого следующего шага",
+        ],
+        "success_criteria": "Клиент движется к решению: назначена дата оплаты или следующего контакта",
+    },
+    "kp_feedback": {
+        "label": "Обратная связь по КП",
+        "description": "Звонок для получения обратной связи по отправленному КП",
+        "keywords": ["обратная связь", "как вам", "что думаете", "посмотрели предложение"],
+        "crm_context": "исходящий по сделке в работе",
+        "stages": [
+            "Уточнение — видел ли клиент КП",
+            "Открытый вопрос: что думает, какие вопросы",
+            "Уточнение возражений и сомнений",
+            "Обработка возражений",
+            "Продвижение к решению",
+            "Фиксация следующего шага",
+        ],
+        "critical_stages": [
+            "Открытый вопрос: что думает, какие вопросы",
+            "Продвижение к решению",
+            "Фиксация следующего шага",
+        ],
+        "success_criteria": "Понятна причина промедления, назначен следующий шаг",
+    },
+    "counteroffer": {
+        "label": "Контроффер (особое предложение для клиента)",
+        "description": "Звонок с индивидуальным предложением — скидка, бонус, специальные условия",
+        "keywords": ["специальное предложение", "только для вас", "скидка", "особые условия", "акция"],
+        "crm_context": "исходящий по сделке в работе",
+        "stages": [
+            "Приветствие и причина звонка (есть хорошая новость)",
+            "Презентация особого предложения как ценности, а не уступки",
+            "Ограничение по времени или условию",
+            "Обработка реакции клиента",
+            "Закрытие или фиксация решения",
+        ],
+        "critical_stages": [
+            "Презентация особого предложения как ценности, а не уступки",
+            "Ограничение по времени или условию",
+            "Закрытие или фиксация решения",
+        ],
+        "success_criteria": "Клиент принял предложение или назначена чёткая дата ответа",
+    },
+    "objection_handling": {
+        "label": "Отработка возражений",
+        "description": "Звонок с целью снять возражения клиента (дорого, не сейчас, думаю, и т.д.)",
+        "keywords": ["возражение", "дорого", "подумаю", "не сейчас", "посоветуюсь", "не уверен"],
+        "crm_context": "исходящий по сделке в работе",
+        "stages": [
+            "Присоединение к возражению (не спорить)",
+            "Уточнение истинной причины возражения",
+            "Работа с возражением через пользу или аргумент",
+            "Проверка — снято ли возражение",
+            "Продвижение к следующему шагу",
+            "Фиксация договорённости",
+        ],
+        "critical_stages": [
+            "Уточнение истинной причины возражения",
+            "Работа с возражением через пользу или аргумент",
+            "Продвижение к следующему шагу",
+        ],
+        "success_criteria": "Возражение снято или минимизировано, назначен следующий шаг",
+    },
+    "payment_push": {
+        "label": "Дожим клиента на оплату (через пользу или по итогам договорённостей)",
+        "description": "Звонок для получения оплаты — клиент должен был заплатить но не заплатил",
+        "keywords": ["оплата", "счёт", "оплатить", "перевести", "деньги", "дожим"],
+        "crm_context": "исходящий по сделке в работе",
+        "stages": [
+            "Напоминание о договорённости (не обвинять)",
+            "Уточнение — что мешает оплатить",
+            "Снятие последнего возражения или препятствия",
+            "Напоминание о пользе / срочности (ограничение по времени)",
+            "Конкретный вопрос: когда будет оплата",
+            "Фиксация точной даты/времени оплаты",
+        ],
+        "critical_stages": [
+            "Уточнение — что мешает оплатить",
+            "Конкретный вопрос: когда будет оплата",
+            "Фиксация точной даты/времени оплаты",
+        ],
+        "success_criteria": "Клиент назвал конкретную дату оплаты или оплатил",
+    },
+    "successful_payment": {
+        "label": "Успешная оплата",
+        "description": "Звонок после получения оплаты — подтверждение, благодарность, следующий шаг",
+        "keywords": ["оплатили", "деньги пришли", "поступило", "спасибо за оплату"],
+        "crm_context": "исходящий по действующему клиенту",
+        "stages": [
+            "Подтверждение получения оплаты, благодарность",
+            "Объяснение следующих шагов по проекту",
+            "Установка ожиданий по срокам и процессу",
+            "Допродажа или упоминание смежных продуктов (уместно!)",
+            "Фиксация следующей точки контакта",
+        ],
+        "critical_stages": [
+            "Объяснение следующих шагов по проекту",
+            "Установка ожиданий по срокам и процессу",
+        ],
+        "success_criteria": "Клиент понимает что будет дальше, выращивание лояльности",
+    },
+    "upsell": {
+        "label": "Доп продажа (отдельный звонок)",
+        "description": "Звонок с целью предложить дополнительный продукт действующему клиенту",
+        "keywords": ["дополнительно", "ещё", "также", "расширить", "добавить", "ISO", "кадры"],
+        "crm_context": "исходящий по действующему клиенту",
+        "stages": [
+            "Приветствие и напоминание контекста",
+            "Причина звонка — конкретная польза для клиента",
+            "Презентация нового продукта через боль/выгоду клиента",
+            "Квалификация интереса",
+            "Обработка возражений",
+            "Закрытие или следующий шаг",
+            "Фиксация договорённости",
+        ],
+        "critical_stages": [
+            "Причина звонка — конкретная польза для клиента",
+            "Презентация нового продукта через боль/выгоду клиента",
+            "Закрытие или следующий шаг",
+        ],
+        "success_criteria": "Клиент проявил интерес, назначен следующий шаг по допродаже",
+    },
+}
+
+# ============================================================
+# 17 КРИТЕРИЕВ
 # ============================================================
 CRITERIA_TZ = [
     "Представление и корректное начало",
@@ -51,39 +304,29 @@ CRITERIA_TZ = [
     "Корректное завершение разговора",
 ]
 
-# ============================================================
-# ВЕСА КРИТЕРИЕВ ПО ТЗ (Таблица 3)
-# ============================================================
 CRITERIA_WEIGHTS = {
-    # Выявление потребности и боли — 20%
     "Полнота выявления потребности": 0.10,
     "Глубина уточняющих вопросов": 0.05,
     "Резюмирование потребности": 0.05,
-    # Аргументация и презентация ценности — 20%
     "Презентация решения через пользу": 0.12,
     "Экспертность и уверенность": 0.08,
-    # Работа с возражениями — 20%
     "Распознавание возражения": 0.08,
     "Качество отработки возражений": 0.12,
-    # Попытка закрытия и следующий шаг — 20%
     "Попытка закрытия / продвижение сделки": 0.10,
     "Фиксация следующего шага и даты связи": 0.07,
     "Выполнение обещаний и связь с CRM": 0.03,
-    # Коммуникация — 10%
     "Представление и корректное начало": 0.02,
     "Подготовленность к звонку": 0.02,
     "Четкость цели и рамки разговора": 0.01,
     "Управление диалогом": 0.02,
     "Речь и эмоциональный фон": 0.02,
     "Корректное завершение разговора": 0.01,
-    # Допродажа — 10%
     "Допродажа / расширение решения": 0.10,
 }
-# Проверка суммы (должно быть 1.0)
-assert abs(sum(CRITERIA_WEIGHTS.values()) - 1.0) < 0.001, f"Сумма весов: {sum(CRITERIA_WEIGHTS.values())}"
+assert abs(sum(CRITERIA_WEIGHTS.values()) - 1.0) < 0.001
 
 # ============================================================
-# ТРИГГЕРЫ (раздел 14.2 ТЗ + общие)
+# ТРИГГЕРЫ
 # ============================================================
 TRIGGERS = [
     "Не отработано возражение «дорого»",
@@ -106,12 +349,35 @@ TRIGGERS = [
     "Менеджер не управляет структурой диалога",
     "Менеджер дал спорное обещание клиенту",
     "Эмоциональный фон негативный",
+    "Не использовал тип звонка по эталону",
+    "Пропущены критические стадии для данного типа звонка",
 ]
 
-# Критичность
 CRITICAL_TRIGGER_RUDENESS = "Грубость или непрофессионализм"
 CRITICAL_SCORE_THRESHOLD = 5.0
 CRITICAL_TRIGGERS_COUNT = 2
+
+
+# ============================================================
+# УТИЛИТЫ
+# ============================================================
+
+def format_timecode(seconds: float) -> str:
+    s = int(seconds)
+    return f"{s // 60:02d}:{s % 60:02d}"
+
+
+def compute_weighted_score(scores: Dict[str, float]) -> float:
+    if not scores:
+        return 0.0
+    total = 0.0
+    for crit, weight in CRITERIA_WEIGHTS.items():
+        val = scores.get(crit)
+        try:
+            total += float(val) * weight
+        except (TypeError, ValueError):
+            pass
+    return round(total, 1)
 
 
 def is_critical(analysis: Dict[str, Any]) -> Tuple[bool, str]:
@@ -131,23 +397,10 @@ def is_critical(analysis: Dict[str, Any]) -> Tuple[bool, str]:
     return False, ""
 
 
-def compute_weighted_score(scores: Dict[str, float]) -> float:
-    """Считает взвешенную оценку по весам из ТЗ."""
-    if not scores:
-        return 0.0
-    total = 0.0
-    for crit, weight in CRITERIA_WEIGHTS.items():
-        val = scores.get(crit)
-        try:
-            total += float(val) * weight
-        except (TypeError, ValueError):
-            pass
-    return round(total, 1)
-
-
 # ============================================================
 # СКРИПТЫ
 # ============================================================
+
 def load_scripts() -> Dict[str, Any]:
     p = Path("scripts.json")
     if not p.exists():
@@ -163,7 +416,6 @@ def select_relevant_scripts(transcript: str, scripts: Dict[str, Any]) -> List[Tu
     selected = []
     selected_names = set()
 
-    # Всегда подгружаем базовые
     for name in scripts.get("_always_load", []):
         if name in scripts and isinstance(scripts[name], dict):
             selected.append((name, scripts[name]["text"]))
@@ -183,8 +435,9 @@ def select_relevant_scripts(transcript: str, scripts: Dict[str, Any]) -> List[Tu
 
 
 # ============================================================
-# РУЧНЫЕ ПРАВКИ ОЦЕНОК (manual_corrections.json)
+# РУЧНЫЕ ПРАВКИ
 # ============================================================
+
 def load_manual_corrections() -> Dict[str, Any]:
     p = Path("manual_corrections.json")
     if not p.exists():
@@ -196,7 +449,6 @@ def load_manual_corrections() -> Dict[str, Any]:
 
 
 def apply_manual_corrections(activity_id: str, analysis: Dict[str, Any], corrections: Dict) -> Dict[str, Any]:
-    """Применяет ручную правку оценки, если она есть."""
     if activity_id not in corrections:
         return analysis
     corr = corrections[activity_id]
@@ -214,6 +466,7 @@ def apply_manual_corrections(activity_id: str, analysis: Dict[str, Any], correct
 # ============================================================
 # WHISPER
 # ============================================================
+
 def transcribe_audio(audio_path: Path, model) -> Dict[str, Any]:
     logger.info(f"Транскрибируем {audio_path.name}...")
     result = model.transcribe(str(audio_path), language="ru", verbose=False, fp16=False)
@@ -239,22 +492,115 @@ def transcribe_audio(audio_path: Path, model) -> Dict[str, Any]:
     }
 
 
-def format_timecode(seconds: float) -> str:
-    s = int(seconds)
-    return f"{s // 60:02d}:{s % 60:02d}"
-
-
 # ============================================================
-# CLAUDE — НОВЫЙ ПРОМПТ С ВСЕМИ ТРЕБОВАНИЯМИ ТЗ
+# CLAUDE API — HTTP (без SDK, совместимо с Bitrix Vibe Code)
 # ============================================================
-def get_claude_client() -> Anthropic:
+
+def call_claude_api(prompt: str, max_tokens: int = 10000) -> Tuple[str, Dict]:
+    """Прямой HTTP-вызов Claude API. Не требует anthropic SDK."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY не задан")
-    return Anthropic(api_key=api_key)
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+    payload = {
+        "model": MODEL_CLAUDE,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    response = requests.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=120)
+    response.raise_for_status()
+    data = response.json()
+
+    if "error" in data:
+        raise RuntimeError(f"Claude API error: {data['error']}")
+
+    text = ""
+    for block in data.get("content", []):
+        if block.get("type") == "text":
+            text += block["text"]
+
+    usage = data.get("usage", {})
+    meta = {
+        "model": MODEL_CLAUDE,
+        "input_tokens": usage.get("input_tokens", 0),
+        "output_tokens": usage.get("output_tokens", 0),
+        "approx_cost_usd": round(
+            usage.get("input_tokens", 0) * 3.0 / 1_000_000 +
+            usage.get("output_tokens", 0) * 15.0 / 1_000_000, 4
+        ),
+    }
+    return text.strip(), meta
 
 
-def build_analysis_prompt(transcript_with_timecodes: str, call_meta: Dict, scripts: List[Tuple[str, str]]) -> str:
+# ============================================================
+# ОПРЕДЕЛЕНИЕ ТИПА ЗВОНКА
+# ============================================================
+
+def detect_call_type(transcript: str, call_meta: Dict) -> str:
+    """
+    Определяет тип звонка из 11 возможных через Claude.
+    Возвращает ключ из CALL_TYPES.
+    """
+    direction = "входящий" if call_meta.get("direction") == "incoming" else "исходящий"
+    crm_context = call_meta.get("crm", {}).get("owner_type", "")
+
+    types_list = "\n".join(
+        f'- "{key}": {info["label"]} — {info["description"]}'
+        for key, info in CALL_TYPES.items()
+    )
+
+    prompt = f"""Ты — эксперт по анализу продаж. Определи тип звонка из списка ниже.
+
+ИНФОРМАЦИЯ О ЗВОНКЕ:
+- Направление: {direction}
+- CRM-контекст: {crm_context}
+
+ТРАНСКРИПТ (первые 2000 символов):
+---
+{transcript[:2000]}
+---
+
+ВОЗМОЖНЫЕ ТИПЫ ЗВОНКОВ:
+{types_list}
+
+Ответь ТОЛЬКО ключом из списка (например "primary_incoming_new"), без объяснений, без кавычек, без пробелов.
+Выбери наиболее подходящий тип. Если не уверен — выбери ближайший по смыслу."""
+
+    try:
+        text, _ = call_claude_api(prompt, max_tokens=50)
+        text = text.strip().strip('"\'').lower().replace(" ", "_")
+        if text in CALL_TYPES:
+            return text
+        # Fallback: поиск ключа в ответе
+        for key in CALL_TYPES:
+            if key in text:
+                return key
+    except Exception as e:
+        logger.warning(f"Ошибка определения типа звонка: {e}")
+
+    # Эвристика по метаданным
+    if call_meta.get("direction") == "incoming":
+        return "primary_incoming_new"
+    return "cold_new"
+
+
+# ============================================================
+# ПРОМПТ АНАЛИЗА С УЧЁТОМ ТИПА ЗВОНКА
+# ============================================================
+
+def build_analysis_prompt(
+    transcript_with_timecodes: str,
+    call_meta: Dict,
+    scripts: List[Tuple[str, str]],
+    call_type_key: str,
+) -> str:
+    call_type = CALL_TYPES.get(call_type_key, CALL_TYPES["primary_incoming_new"])
+
     call_info = (
         f"- Менеджер: {call_meta.get('manager', {}).get('name', 'неизвестно')}\n"
         f"- Клиент: {call_meta.get('client', {}).get('name', 'неизвестно')}\n"
@@ -262,30 +608,33 @@ def build_analysis_prompt(transcript_with_timecodes: str, call_meta: Dict, scrip
         f"- Направление: {'входящий' if call_meta.get('direction') == 'incoming' else 'исходящий'}\n"
         f"- Время: {call_meta.get('created', '')}\n"
         f"- В CRM связано с: {call_meta.get('crm', {}).get('owner_type', 'неизвестно')}\n"
+        f"- ТИП ЗВОНКА: {call_type['label']}\n"
     )
 
     criteria_list = "\n".join(f"   - {c}" for c in CRITERIA_TZ)
     scores_template = ",\n".join(f'    "{c}": 0.0' for c in CRITERIA_TZ)
     triggers_list = "\n".join(f"   - {t}" for t in TRIGGERS)
 
+    # Эталонный сценарий для этого типа звонка
+    stages_list = "\n".join(f"   {i+1}. {s}" for i, s in enumerate(call_type["stages"]))
+    critical_stages_list = "\n".join(f"   - {s}" for s in call_type["critical_stages"])
+    stages_template = ",\n".join(
+        f'    {{"stage": "{s}", "status": "соблюдено|частично|пропущено", "evidence": "...", "time": "MM:SS"}}'
+        for s in call_type["stages"]
+    )
+
     scripts_block = ""
-    scripts_stages_template = ""
     if scripts:
-        scripts_block = "\n\nСКРИПТЫ MAVIS GROUP (используй для сопоставления звонка):\n"
+        scripts_block = "\n\nСКРИПТЫ MAVIS GROUP (используй для сопоставления):\n"
         for name, text in scripts:
             scripts_block += f"\n=== {name} ===\n{text}\n"
-        scripts_block += "\n"
-        scripts_stages_template = """
-  "scripts_alignment": [
-    {"stage": "название стадии из скрипта", "status": "соблюдено|частично|пропущено", "evidence": "цитата или объяснение", "time": "MM:SS"}
-  ],"""
 
     prompt = f"""Ты — эксперт по качеству продаж в компании Mavis Group (Беларусь, услуги по СРО, ISO, ГОСТ, СПК, аттестация специалистов в строительстве).
 
-Проанализируй транскрипт звонка и дай структурированный разбор по техническому заданию.
+Проанализируй транскрипт звонка и дай структурированный разбор.
 
-ВАЖНО: транскрипт получен через Whisper, в нём могут быть искажения слов. Понимай смысл.
-В транскрипте таймкоды [MM:SS] — используй их в цитатах и оценках.
+ВАЖНО: транскрипт получен через Whisper, могут быть искажения слов. Понимай смысл.
+В транскрипте таймкоды [MM:SS] — используй их в цитатах.
 
 ИНФОРМАЦИЯ О ЗВОНКЕ:
 {call_info}
@@ -295,79 +644,78 @@ def build_analysis_prompt(transcript_with_timecodes: str, call_meta: Dict, scrip
 {transcript_with_timecodes}
 ---
 
-ТВОЯ ЗАДАЧА:
+═══════════════════════════════════════════════
+ТИП ЗВОНКА: {call_type['label'].upper()}
+Описание: {call_type['description']}
+Критерий успеха: {call_type['success_criteria']}
+═══════════════════════════════════════════════
+
+ЭТАЛОННЫЙ СЦЕНАРИЙ ДЛЯ ЭТОГО ТИПА ЗВОНКА:
+{stages_list}
+
+КРИТИЧЕСКИ ВАЖНЫЕ СТАДИИ (обязательны для этого типа):
+{critical_stages_list}
+
+ТВОЯ ЗАДАЧА — ОЦЕНИТЬ ЗВОНОК С УЧЁТОМ ТИПА:
 
 1. РАЗДЕЛИ транскрипт на реплики менеджера и клиента (с таймкодами).
 
-2. ДВУХОСЕВАЯ КЛАССИФИКАЦИЯ (ОБЕ ОСИ обязательно):
-   
-   А. Категория по CRM-контексту:
-      - входящий новый лид
-      - исходящий по новой сделке
-      - исходящий по сделке в работе
-      - исходящий по действующему клиенту
-      - иное
-   
-   Б. Цель разговора (можно 1-2):
-      - первичная консультация
-      - допродажа
-      - защита коммерческого предложения
-      - отработка возражений
-      - дожим на оплату
-      - согласование следующего шага
-      - уточнение информации
-      - сервисный/организационный звонок
-      - иное
+2. ДВУХОСЕВАЯ КЛАССИФИКАЦИЯ:
+   А. Категория по CRM-контексту (подтверди или уточни):
+      входящий новый лид / исходящий по новой сделке / исходящий по сделке в работе / исходящий по действующему клиенту / иное
+   Б. Цель разговора (1-2 из списка):
+      первичная консультация / допродажа / защита КП / отработка возражений / дожим на оплату / согласование шага / уточнение информации / сервисный звонок / иное
 
-3. КРАТКОЕ РЕЗЮМЕ разговора (2-3 предложения).
+3. КРАТКОЕ РЕЗЮМЕ (2-3 предложения).
 
-4. ИТОГ РАЗГОВОРА — конкретный результат: договорились о N, отказ, перенос, оплата.
+4. ИТОГ РАЗГОВОРА — конкретный результат.
 
-5. КЛЮЧЕВЫЕ ЦИТАТЫ КЛИЕНТА (1-2) — то, что раскрывает потребность/возражение.
+5. КЛЮЧЕВЫЕ ЦИТАТЫ КЛИЕНТА (1-2) — потребность или возражение.
 
-6. ОЦЕНКА ПО 17 КРИТЕРИЯМ (0-10) ПО МАТРИЦЕ ТЗ:
+6. ОЦЕНКА ПО 17 КРИТЕРИЯМ (0-10) с учётом типа звонка:
 {criteria_list}
 
-7. ПО КАЖДОМУ КРИТЕРИЮ С ОЦЕНКОЙ <6 — обязательно укажи:
-   - проблему
-   - цитату из разговора
-   - таймкод
-   - рекомендацию
+ВАЖНО ПРИ ОЦЕНКЕ:
+- Критерии "Полнота выявления потребности" и "Резюмирование потребности" могут быть N/A (оценка 7) для типов дожима/оплаты
+- Критерий "Допродажа" обязателен для типов: primary_incoming_new, successful_payment, upsell
+- Критерий "Распознавание возражения" критичен для: objection_handling, kp_defense, payment_push
 
-8. ТРИГГЕРЫ (выбери из списка ВСЕ, что сработали):
+7. ПО КАЖДОМУ КРИТЕРИЮ С ОЦЕНКОЙ <6 — обязательно:
+   - проблема, цитата, таймкод, рекомендация
+
+8. СОПОСТАВЛЕНИЕ С ЭТАЛОННЫМ СЦЕНАРИЕМ ТИПА "{call_type['label']}":
+Для каждой из {len(call_type['stages'])} стадий укажи статус и доказательство.
+Критические стадии (пропуск = триггер "Пропущены критические стадии"):
+{critical_stages_list}
+
+9. ТРИГГЕРЫ (из списка, все сработавшие):
 {triggers_list}
 
-9. СИЛЬНЫЕ СТОРОНЫ ЗВОНКА (1-3 пункта) — что менеджер сделал хорошо.
+10. СИЛЬНЫЕ СТОРОНЫ (1-3 пункта).
 
-10. СЛАБЫЕ СТОРОНЫ ЗВОНКА (1-3 пункта) — что нужно улучшить.
+11. СЛАБЫЕ СТОРОНЫ (1-3 пункта).
 
-11. ОСНОВНАЯ ПРОБЛЕМА разговора — главное, что помешало успеху, ОДНОЙ фразой.
+12. ОСНОВНАЯ ПРОБЛЕМА — одной фразой.
 
-12. РЕКОМЕНДАЦИЯ МЕНЕДЖЕРУ (1-2 предложения).
+13. РЕКОМЕНДАЦИЯ МЕНЕДЖЕРУ (1-2 предложения).
 
-13. ДАТА СЛЕДУЮЩЕГО КОНТАКТА — если в разговоре звучала договорённость о следующей связи, извлеки:
-    - дату или срок (например "до 15 июня", "через 2 недели", "после праздников")
-    - время если указано
-    - кто должен инициировать
-    - контекст договорённости
-    Если не звучало — поставь null.
+14. ДАТА СЛЕДУЮЩЕГО КОНТАКТА (если упоминалась в разговоре).
 
-14. СОПОСТАВЛЕНИЕ СО СКРИПТАМИ (если скрипты приложены выше):
-    Для каждой стадии скрипта (Установление контакта, Квалификация, Презентация и т.д.) укажи:
-    - status: "соблюдено" / "частично" / "пропущено"
-    - evidence: цитата из транскрипта или объяснение
-    - time: таймкод
-
-ОТВЕТ СТРОГО В JSON, БЕЗ ОБЁРТКИ ```json, БЕЗ КОММЕНТАРИЕВ ДО ИЛИ ПОСЛЕ:
+ОТВЕТ СТРОГО В JSON, БЕЗ ОБЁРТКИ ```json:
 
 {{
+  "call_type": {{
+    "key": "{call_type_key}",
+    "label": "{call_type['label']}",
+    "confirmed": true
+  }},
   "transcript_split": [
     {{"speaker": "manager|client", "time": "MM:SS", "text": "..."}}
   ],
   "classification": {{
-    "crm_context": "входящий новый лид|исходящий по новой сделке|...",
-    "goals": ["первичная консультация", "допродажа"],
-    "funnel_stage": "квалификация|презентация|возражения|закрытие|..."
+    "crm_context": "...",
+    "goals": ["..."],
+    "funnel_stage": "..."
   }},
   "summary": "...",
   "outcome": "...",
@@ -380,42 +728,54 @@ def build_analysis_prompt(transcript_with_timecodes: str, call_meta: Dict, scrip
   "low_score_details": [
     {{"criterion": "...", "score": 4.0, "problem": "...", "quote": "...", "time": "MM:SS", "recommendation": "..."}}
   ],
+  "call_type_alignment": [
+    {stages_template}
+  ],
+  "critical_stages_missed": [],
   "triggers": [
-    {{"name": "название из списка", "description": "...", "time": "MM:SS"}}
+    {{"name": "...", "description": "...", "time": "MM:SS"}}
   ],
   "strengths": ["...", "..."],
   "weaknesses": ["...", "..."],
-  "main_problem": "одна фраза",
+  "main_problem": "...",
   "recommendation": "...",
   "next_contact": {{
-    "date_or_period": "до 15 июня",
+    "date_or_period": null,
     "time": null,
     "initiator": "менеджер|клиент",
-    "context": "..."
-  }},{scripts_stages_template}
-  "scripts_used": []
-}}
-"""
-    prompt = prompt.replace('"scripts_used": []', f'"scripts_used": {json.dumps([n for n, _ in scripts], ensure_ascii=False)}')
+    "context": null
+  }},
+  "scripts_used": {json.dumps([n for n, _ in scripts], ensure_ascii=False)}
+}}"""
     return prompt
 
 
-def analyze_transcript(transcription: Dict, call_meta: Dict, scripts_db: Dict, claude_client: Anthropic) -> Dict[str, Any]:
+# ============================================================
+# ОСНОВНАЯ ФУНКЦИЯ АНАЛИЗА
+# ============================================================
+
+def analyze_transcript(
+    transcription: Dict,
+    call_meta: Dict,
+    scripts_db: Dict,
+) -> Dict[str, Any]:
     transcript_text = transcription["text"]
     transcript_tc = transcription.get("text_with_timecodes") or transcript_text
     relevant_scripts = select_relevant_scripts(transcript_text, scripts_db)
+
     if relevant_scripts:
         logger.info(f"   Скрипты: {', '.join(n for n, _ in relevant_scripts)}")
 
-    prompt = build_analysis_prompt(transcript_tc, call_meta, relevant_scripts)
+    # Шаг 1: определяем тип звонка
+    logger.info("   Определяем тип звонка...")
+    call_type_key = detect_call_type(transcript_text, call_meta)
+    logger.info(f"   Тип: {CALL_TYPES[call_type_key]['label']}")
 
-    response = claude_client.messages.create(
-        model=MODEL_CLAUDE,
-        max_tokens=10000,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    # Шаг 2: полный анализ с учётом типа
+    prompt = build_analysis_prompt(transcript_tc, call_meta, relevant_scripts, call_type_key)
+    text, meta = call_claude_api(prompt, max_tokens=10000)
 
-    text = response.content[0].text.strip()
+    # Парсим JSON
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
@@ -425,36 +785,53 @@ def analyze_transcript(transcription: Dict, call_meta: Dict, scripts_db: Dict, c
     decoder = json.JSONDecoder()
     result, _ = decoder.raw_decode(text)
 
-    # Считаем взвешенную оценку
+    # Взвешенная оценка
     weighted = compute_weighted_score(result.get("scores", {}))
     result["overall_score"] = weighted
     result["overall_score_method"] = "weighted_by_tz"
+
+    # Критические стадии
+    ct = CALL_TYPES.get(call_type_key, {})
+    critical = ct.get("critical_stages", [])
+    alignment = result.get("call_type_alignment", [])
+    missed_critical = []
+    for stage_data in alignment:
+        if stage_data.get("stage") in critical and stage_data.get("status") == "пропущено":
+            missed_critical.append(stage_data["stage"])
+    result["critical_stages_missed"] = missed_critical
+
+    # Добавляем триггер если пропущены критические стадии
+    if missed_critical:
+        triggers = result.get("triggers", [])
+        triggers.append({
+            "name": "Пропущены критические стадии для данного типа звонка",
+            "description": f"Пропущено: {', '.join(missed_critical)}",
+            "time": "00:00",
+        })
+        result["triggers"] = triggers
 
     # Критичность
     is_crit, crit_reason = is_critical(result)
     result["is_critical"] = is_crit
     result["critical_reason"] = crit_reason
 
-    result["_meta"] = {
-        "model": MODEL_CLAUDE,
-        "input_tokens": response.usage.input_tokens,
-        "output_tokens": response.usage.output_tokens,
-        "approx_cost_usd": round(
-            response.usage.input_tokens * 1.0 / 1_000_000 +
-            response.usage.output_tokens * 5.0 / 1_000_000, 4
-        ),
-    }
+    result["_meta"] = meta
     return result
 
 
 # ============================================================
 # CLI
 # ============================================================
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     print("=" * 60)
-    print(f"Анализ (Whisper-{MODEL_WHISPER} + {MODEL_CLAUDE}) — версия ТЗ")
+    print(f"Анализ звонков (Whisper-{MODEL_WHISPER} + {MODEL_CLAUDE}) — v2 с типами звонков")
     print("=" * 60)
+
+    if not WHISPER_AVAILABLE:
+        print("⚠️  whisper не установлен. Установите: pip install openai-whisper")
+        return
 
     audio_dir = Path("audio_temp")
     if not audio_dir.exists():
@@ -473,8 +850,8 @@ def main():
     print(f"Ручных правок: {len(corrections)}")
 
     print(f"\nЗагружаем Whisper '{MODEL_WHISPER}'...")
-    whisper_model = whisper.load_model(MODEL_WHISPER)
-    claude_client = get_claude_client()
+    import whisper as whisper_module
+    whisper_model = whisper_module.load_model(MODEL_WHISPER)
 
     analyses_path = Path("analyses.json")
     if analyses_path.exists():
@@ -486,6 +863,7 @@ def main():
     success = 0
     failed = 0
     critical_count = 0
+    type_stats = {}
 
     for i, audio_path in enumerate(audio_files, 1):
         print(f"\n{'='*60}")
@@ -495,14 +873,14 @@ def main():
         file_id_str = audio_path.name.split("_")[0]
         call_meta = next(
             (c for c in calls if c.get("audio") and str(c["audio"].get("file_id")) == file_id_str),
-            None
+            None,
         )
         if not call_meta:
             print(f"   ⚠ Метаданные не найдены")
             failed += 1
             continue
-        activity_id = call_meta["activity_id"]
 
+        activity_id = call_meta["activity_id"]
         if activity_id in analyses:
             print(f"   ⏭ Уже проанализирован, пропускаем")
             continue
@@ -512,25 +890,32 @@ def main():
 
         try:
             transcription = transcribe_audio(audio_path, whisper_model)
-            print(f"   Транскрипт: {len(transcription['text'])} симв, {transcription['duration_sec']} сек")
+            print(f"   Транскрипт: {len(transcription['text'])} символов, {transcription['duration_sec']} сек")
             if len(transcription["text"]) < 50:
                 print(f"   ⚠ Слишком короткий, пропускаем")
                 failed += 1
                 continue
 
-            analysis = analyze_transcript(transcription, call_meta, scripts_db, claude_client)
-            
-            # Применяем ручную правку если есть
+            analysis = analyze_transcript(transcription, call_meta, scripts_db)
             analysis = apply_manual_corrections(activity_id, analysis, corrections)
-            
+
             cost = analysis["_meta"]["approx_cost_usd"]
             total_cost += cost
             score = analysis.get("overall_score", 0)
+            call_type_label = analysis.get("call_type", {}).get("label", "неизвестно")
+
+            type_stats[call_type_label] = type_stats.get(call_type_label, 0) + 1
+
             crit_mark = ""
             if analysis.get("is_critical"):
                 critical_count += 1
                 crit_mark = f" 🔴 КРИТИЧНО ({analysis['critical_reason']})"
-            print(f"   ✅ Оценка: {score}/10, стоимость: ${cost:.4f}{crit_mark}")
+
+            missed = analysis.get("critical_stages_missed", [])
+            missed_str = f" ⚠️  Пропущены: {', '.join(missed[:2])}" if missed else ""
+
+            print(f"   ✅ Тип: {call_type_label}")
+            print(f"   ✅ Оценка: {score}/10, стоимость: ${cost:.4f}{crit_mark}{missed_str}")
 
             analyses[activity_id] = {
                 "call_meta": call_meta,
@@ -543,8 +928,11 @@ def main():
             if success % 10 == 0:
                 analyses_path.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
                 print(f"   💾 Промежуточное сохранение ({success})")
+
         except Exception as e:
             print(f"   ❌ {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             failed += 1
 
     analyses_path.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -555,6 +943,10 @@ def main():
     print(f"   🔴 Критичных: {critical_count}")
     print(f"   💰 Общая стоимость: ${total_cost:.4f}")
     print(f"   📊 Анализов в базе: {len(analyses)}")
+    if type_stats:
+        print(f"\nРаспределение по типам звонков:")
+        for t, cnt in sorted(type_stats.items(), key=lambda x: -x[1]):
+            print(f"   - {t}: {cnt}")
 
 
 if __name__ == "__main__":
