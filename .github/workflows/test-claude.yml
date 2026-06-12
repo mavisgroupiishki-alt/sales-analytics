@@ -50,7 +50,7 @@ jobs:
 
       - name: Генерируем HTML
         env:
-          VIBE_API_KEY: ${{ secrets.VIBE_API_KEY }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: python src/report_generator.py
 
       - name: Публикуем
