@@ -1349,20 +1349,6 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
                           + "".join('<div class="text" style="margin-top:6px;">' + f + '</div>' for f in flag_items) +
                           '</div>')
 
-
-        # Флаги (новый формат)
-        flags = analysis.get("flags") or {}
-        flag_items = []
-        if flags.get("missed_deal"):
-            flag_items.append('🚨 <b>Упущенная сделка</b> — клиент был готов купить, но менеджер не закрыл')
-        if flags.get("no_next_step"):
-            flag_items.append('⏰ <b>Нет следующего шага</b> — важный звонок завершился без договорённости')
-        if flag_items:
-            rest_html += ('<div class="main-problem">'
-                          '<div class="label">🚩 Флаги</div>'
-                          + "".join('<div class="text" style="margin-top:6px;">' + f + '</div>' for f in flag_items) +
-                          '</div>')
-
         # Рекомендация
         if analysis.get("recommendation"):
             rest_html += ('<div class="recommendation">'
@@ -1586,100 +1572,6 @@ def render_triggers_page(calls: List[Dict], analyses: Dict, generated_at: str, c
                          + rows + '</div>')
         body = body_top + sections
     return page_template("Триггеры", body, "triggers", generated_at, critical_count)
-
-
-# ============================================================
-# ОСНОВНАЯ ГЕНЕРАЦИЯ
-# ============================================================
-
-def generate(calls_json_path: str = "calls_data.json",
-             analyses_json_path: str = "analyses.json",
-             corrections_json_path: str = "manual_corrections.json",
-             output_dir: str = "docs"):
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-    out_dir = Path(output_dir)
-    out_dir.mkdir(exist_ok=True)
-    (out_dir / "managers").mkdir(exist_ok=True)
-    (out_dir / "calls").mkdir(exist_ok=True)
-
-    # Загрузка данных
-    calls = []
-    if Path(calls_json_path).exists():
-        calls = json.loads(Path(calls_json_path).read_text(encoding="utf-8"))
-
-    analyses = {}
-    if Path(analyses_json_path).exists():
-        analyses = json.loads(Path(analyses_json_path).read_text(encoding="utf-8"))
-
-    corrections = {}
-    if Path(corrections_json_path).exists():
-        try:
-            corrections = json.loads(Path(corrections_json_path).read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            logger.warning(f"Не удалось прочитать {corrections_json_path}, игнорируем")
-
-    # Применяем ручные правки
-    if corrections:
-        analyses = apply_manual_corrections(analyses, corrections)
-        logger.info(f"Применено ручных правок: {len(corrections)}")
-
-    logger.info(f"Звонков: {len(calls)}, анализов: {len(analyses)}")
-    stats = compute_stats(calls, analyses)
-    generated_at = datetime.now().isoformat()
-    crit = stats["critical_count"]
-
-    # Главные страницы (в корне docs/)
-    (out_dir / "index.html").write_text(
-        render_index(calls, stats, analyses, generated_at), encoding="utf-8")
-    (out_dir / "rop-report.html").write_text(
-        render_rop_report(calls, stats, analyses, generated_at), encoding="utf-8")
-    (out_dir / "managers.html").write_text(
-        render_managers_list(stats, generated_at), encoding="utf-8")
-    (out_dir / "all-calls.html").write_text(
-        render_all_calls(calls, analyses, generated_at, crit), encoding="utf-8")
-    (out_dir / "critical.html").write_text(
-        render_critical_page(calls, analyses, generated_at, crit), encoding="utf-8")
-    (out_dir / "triggers.html").write_text(
-        render_triggers_page(calls, analyses, generated_at, crit), encoding="utf-8")
-    # Новые страницы
-    (out_dir / "compare.html").write_text(
-        render_compare_page(stats, calls, analyses, generated_at), encoding="utf-8")
-    (out_dir / "objections.html").write_text(
-        render_objections_page(calls, analyses, generated_at, crit), encoding="utf-8")
-    (out_dir / "best-calls.html").write_text(
-        render_best_calls_page(calls, analyses, generated_at, crit), encoding="utf-8")
-    # Новые страницы
-    (out_dir / "compare.html").write_text(
-        render_compare_page(stats, calls, analyses, generated_at), encoding="utf-8")
-    (out_dir / "objections.html").write_text(
-        render_objections_page(calls, analyses, generated_at, crit), encoding="utf-8")
-    (out_dir / "best-calls.html").write_text(
-        render_best_calls_page(calls, analyses, generated_at, crit), encoding="utf-8")
-
-    # Страницы менеджеров
-    for m in stats["managers"]:
-        (out_dir / "managers" / f"{m['id']}.html").write_text(
-            render_manager_page(m, analyses, generated_at, crit), encoding="utf-8")
-
-    # Страницы звонков
-    for call in calls:
-        analysis_data = analyses.get(call["activity_id"])
-        (out_dir / "calls" / f"{call['activity_id']}.html").write_text(
-            render_call_page(call, analysis_data, generated_at, crit), encoding="utf-8")
-
-    (out_dir / ".nojekyll").write_text("", encoding="utf-8")
-
-    print("")
-    print("✅ Сайт сгенерирован")
-    print(f"   Звонков: {len(calls)}")
-    print(f"   С ИИ-анализом: {len(analyses)}")
-    print(f"   Критичных: {crit}")
-    print(f"   Ручных правок: {len(corrections)}")
-
-
-if __name__ == "__main__":
-    generate()
 
 
 # ============================================================
@@ -2223,3 +2115,92 @@ ${{_callCtx}}
 }}
 </script>
 '''
+
+
+
+
+# ============================================================
+# ОСНОВНАЯ ГЕНЕРАЦИЯ
+# ============================================================
+
+def generate(calls_json_path: str = "calls_data.json",
+             analyses_json_path: str = "analyses.json",
+             corrections_json_path: str = "manual_corrections.json",
+             output_dir: str = "docs"):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(exist_ok=True)
+    (out_dir / "managers").mkdir(exist_ok=True)
+    (out_dir / "calls").mkdir(exist_ok=True)
+
+    # Загрузка данных
+    calls = []
+    if Path(calls_json_path).exists():
+        calls = json.loads(Path(calls_json_path).read_text(encoding="utf-8"))
+
+    analyses = {}
+    if Path(analyses_json_path).exists():
+        analyses = json.loads(Path(analyses_json_path).read_text(encoding="utf-8"))
+
+    corrections = {}
+    if Path(corrections_json_path).exists():
+        try:
+            corrections = json.loads(Path(corrections_json_path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            logger.warning(f"Не удалось прочитать {corrections_json_path}, игнорируем")
+
+    # Применяем ручные правки
+    if corrections:
+        analyses = apply_manual_corrections(analyses, corrections)
+        logger.info(f"Применено ручных правок: {len(corrections)}")
+
+    logger.info(f"Звонков: {len(calls)}, анализов: {len(analyses)}")
+    stats = compute_stats(calls, analyses)
+    generated_at = datetime.now().isoformat()
+    crit = stats["critical_count"]
+
+    # Главные страницы (в корне docs/)
+    (out_dir / "index.html").write_text(
+        render_index(calls, stats, analyses, generated_at), encoding="utf-8")
+    (out_dir / "rop-report.html").write_text(
+        render_rop_report(calls, stats, analyses, generated_at), encoding="utf-8")
+    (out_dir / "managers.html").write_text(
+        render_managers_list(stats, generated_at), encoding="utf-8")
+    (out_dir / "all-calls.html").write_text(
+        render_all_calls(calls, analyses, generated_at, crit), encoding="utf-8")
+    (out_dir / "critical.html").write_text(
+        render_critical_page(calls, analyses, generated_at, crit), encoding="utf-8")
+    (out_dir / "triggers.html").write_text(
+        render_triggers_page(calls, analyses, generated_at, crit), encoding="utf-8")
+    # Новые страницы
+    (out_dir / "compare.html").write_text(
+        render_compare_page(stats, calls, analyses, generated_at), encoding="utf-8")
+    (out_dir / "objections.html").write_text(
+        render_objections_page(calls, analyses, generated_at, crit), encoding="utf-8")
+    (out_dir / "best-calls.html").write_text(
+        render_best_calls_page(calls, analyses, generated_at, crit), encoding="utf-8")
+
+    # Страницы менеджеров
+    for m in stats["managers"]:
+        (out_dir / "managers" / f"{m['id']}.html").write_text(
+            render_manager_page(m, analyses, generated_at, crit), encoding="utf-8")
+
+    # Страницы звонков
+    for call in calls:
+        analysis_data = analyses.get(call["activity_id"])
+        (out_dir / "calls" / f"{call['activity_id']}.html").write_text(
+            render_call_page(call, analysis_data, generated_at, crit), encoding="utf-8")
+
+    (out_dir / ".nojekyll").write_text("", encoding="utf-8")
+
+    print("")
+    print("✅ Сайт сгенерирован")
+    print(f"   Звонков: {len(calls)}")
+    print(f"   С ИИ-анализом: {len(analyses)}")
+    print(f"   Критичных: {crit}")
+    print(f"   Ручных правок: {len(corrections)}")
+
+
+if __name__ == "__main__":
+    generate()
