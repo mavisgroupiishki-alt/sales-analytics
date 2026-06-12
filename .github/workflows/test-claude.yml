@@ -1,4 +1,4 @@
-name: Full Analysis (Haiku)
+name: Full Analysis (BitrixGPT)
 
 on:
   # Ручной запуск с выбором количества звонков
@@ -51,9 +51,9 @@ jobs:
           DOWNLOAD_AUDIO_COUNT: ${{ github.event.inputs.limit || '-1' }}
         run: python src/bitrix.py
 
-      - name: Whisper + Claude Haiku анализ
+      - name: Whisper + BitrixGPT анализ
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VIBE_API_KEY: ${{ secrets.VIBE_API_KEY }}
         run: python src/claude_analyzer.py
 
       - name: Генерируем HTML
