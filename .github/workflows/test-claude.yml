@@ -49,6 +49,8 @@ jobs:
         run: python src/claude_analyzer.py
 
       - name: Генерируем HTML
+        env:
+          VIBE_API_KEY: ${{ secrets.VIBE_API_KEY }}
         run: python src/report_generator.py
 
       - name: Публикуем
