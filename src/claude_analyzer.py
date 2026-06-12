@@ -25,9 +25,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-MODEL_CLAUDE = "claude-sonnet-4-6"
+MODEL_CLAUDE = "bitrix/bitrixgpt-5.5"   # бесплатная модель Vibe Code; замени на "auto" для автовыбора
 MODEL_WHISPER = "base"
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+VIBE_AI_URL = "https://vibecode.bitrix24.tech/v1/ai/chat/completions"
 
 # ============================================================
 # 11 ТИПОВ ЗВОНКОВ
@@ -497,42 +497,42 @@ def transcribe_audio(audio_path: Path, model) -> Dict[str, Any]:
 # ============================================================
 
 def call_claude_api(prompt: str, max_tokens: int = 10000) -> Tuple[str, Dict]:
-    """Прямой HTTP-вызов Claude API. Не требует anthropic SDK."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    """
+    Запрос к AI Router Vibe Code (OpenAI-совместимый формат).
+    Авторизация: заголовок X-Api-Key с ключом Vibe Code (VIBE_API_KEY).
+    Никакой Anthropic/OpenAI подписки не нужно — модели бесплатные.
+    """
+    api_key = os.environ.get("VIBE_API_KEY")
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY не задан")
+        raise RuntimeError("VIBE_API_KEY не задан. Возьми ключ в Vibe Code → API-ключи.")
 
     headers = {
         "Content-Type": "application/json",
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
+        "X-Api-Key": api_key,
     }
     payload = {
         "model": MODEL_CLAUDE,
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
     }
-    response = requests.post(ANTHROPIC_API_URL, headers=headers, json=payload, timeout=120)
+    response = requests.post(VIBE_AI_URL, headers=headers, json=payload, timeout=120)
     response.raise_for_status()
     data = response.json()
 
     if "error" in data:
-        raise RuntimeError(f"Claude API error: {data['error']}")
+        raise RuntimeError(f"Vibe AI error: {data['error']}")
 
+    # OpenAI-совместимый формат ответа
     text = ""
-    for block in data.get("content", []):
-        if block.get("type") == "text":
-            text += block["text"]
+    for choice in data.get("choices", []):
+        text += choice.get("message", {}).get("content", "")
 
     usage = data.get("usage", {})
     meta = {
         "model": MODEL_CLAUDE,
-        "input_tokens": usage.get("input_tokens", 0),
-        "output_tokens": usage.get("output_tokens", 0),
-        "approx_cost_usd": round(
-            usage.get("input_tokens", 0) * 3.0 / 1_000_000 +
-            usage.get("output_tokens", 0) * 15.0 / 1_000_000, 4
-        ),
+        "input_tokens": usage.get("prompt_tokens", 0),
+        "output_tokens": usage.get("completion_tokens", 0),
+        "approx_cost_usd": 0.0,  # бесплатно через Vibe Code
     }
     return text.strip(), meta
 
