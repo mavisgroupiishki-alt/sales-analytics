@@ -464,32 +464,68 @@ def apply_manual_corrections(activity_id: str, analysis: Dict[str, Any], correct
 
 
 # ============================================================
-# WHISPER
+# ТРАНСКРИБАЦИЯ — Vibe Code Whisper Large v3 Turbo (бесплатно)
 # ============================================================
 
-def transcribe_audio(audio_path: Path, model) -> Dict[str, Any]:
-    logger.info(f"Транскрибируем {audio_path.name}...")
-    result = model.transcribe(str(audio_path), language="ru", verbose=False, fp16=False)
-    full_text = result["text"].strip()
+VIBE_WHISPER_MODEL = "bitrix/deepdml/faster-whisper-large-v3-turbo-ct2"
+VIBE_WHISPER_URL = "https://vibecode.bitrix24.tech/v1/audio/transcriptions"
+
+def transcribe_audio(audio_path: Path, model=None) -> Dict[str, Any]:
+    """
+    Транскрибация через Vibe Code AI Router (Whisper Large v3 Turbo).
+    Параметр model оставлен для обратной совместимости, не используется.
+    """
+    logger.info(f"Транскрибируем {audio_path.name} через Vibe Code Whisper...")
+
+    api_key = os.environ.get("VIBE_API_KEY")
+    if not api_key:
+        raise RuntimeError("VIBE_API_KEY не задан")
+
+    with open(audio_path, "rb") as f:
+        response = requests.post(
+            VIBE_WHISPER_URL,
+            headers={"X-Api-Key": api_key},
+            files={"file": (audio_path.name, f, "audio/mpeg")},
+            data={
+                "model": VIBE_WHISPER_MODEL,
+                "language": "ru",
+                "response_format": "verbose_json",
+                "timestamp_granularities[]": "segment",
+            },
+            timeout=300,
+        )
+
+    response.raise_for_status()
+    result = response.json()
+
+    full_text = result.get("text", "").strip()
     duration_sec = 0
     segments = []
-    if result.get("segments"):
-        for seg in result["segments"]:
-            segments.append({
-                "start": round(seg.get("start", 0), 1),
-                "end": round(seg.get("end", 0), 1),
-                "text": seg.get("text", "").strip(),
-            })
-        duration_sec = result["segments"][-1].get("end", 0)
+
+    for seg in result.get("segments", []):
+        segments.append({
+            "start": round(float(seg.get("start", 0)), 1),
+            "end": round(float(seg.get("end", 0)), 1),
+            "text": seg.get("text", "").strip(),
+        })
+
+    if segments:
+        duration_sec = segments[-1]["end"]
+
     text_with_timecodes = "\n".join(
         f"[{format_timecode(s['start'])}] {s['text']}" for s in segments
     )
+
+    if not segments and full_text:
+        text_with_timecodes = full_text
+
     return {
         "text": full_text,
         "text_with_timecodes": text_with_timecodes,
         "segments": segments,
         "duration_sec": round(duration_sec, 1),
     }
+
 
 
 # ============================================================
@@ -590,7 +626,7 @@ def detect_call_type(transcript: str, call_meta: Dict) -> str:
 
 
 # ============================================================
-# ПРОМПТ АНАЛИЗА С УЧЁТОМ ТИПА ЗВОНКА
+# ПРОМПТ АНАЛИЗА — ЖИВАЯ ОЦЕНКА КАК РОП
 # ============================================================
 
 def build_analysis_prompt(
@@ -607,143 +643,116 @@ def build_analysis_prompt(
         f"- Компания клиента: {call_meta.get('client', {}).get('company', 'неизвестно')}\n"
         f"- Направление: {'входящий' if call_meta.get('direction') == 'incoming' else 'исходящий'}\n"
         f"- Время: {call_meta.get('created', '')}\n"
-        f"- В CRM связано с: {call_meta.get('crm', {}).get('owner_type', 'неизвестно')}\n"
         f"- ТИП ЗВОНКА: {call_type['label']}\n"
-    )
-
-    criteria_list = "\n".join(f"   - {c}" for c in CRITERIA_TZ)
-    scores_template = ",\n".join(f'    "{c}": 0.0' for c in CRITERIA_TZ)
-    triggers_list = "\n".join(f"   - {t}" for t in TRIGGERS)
-
-    # Эталонный сценарий для этого типа звонка
-    stages_list = "\n".join(f"   {i+1}. {s}" for i, s in enumerate(call_type["stages"]))
-    critical_stages_list = "\n".join(f"   - {s}" for s in call_type["critical_stages"])
-    stages_template = ",\n".join(
-        f'    {{"stage": "{s}", "status": "соблюдено|частично|пропущено", "evidence": "...", "time": "MM:SS"}}'
-        for s in call_type["stages"]
+        f"- Цель звонка: {call_type['description']}\n"
     )
 
     scripts_block = ""
     if scripts:
-        scripts_block = "\n\nСКРИПТЫ MAVIS GROUP (используй для сопоставления):\n"
+        scripts_block = "\nСКРИПТЫ MAVIS GROUP (ориентир, не чеклист):\n"
         for name, text in scripts:
-            scripts_block += f"\n=== {name} ===\n{text}\n"
+            scripts_block += f"\n=== {name} ===\n{text[:800]}\n"
 
-    prompt = f"""Ты — эксперт по качеству продаж в компании Mavis Group (Беларусь, услуги по СРО, ISO, ГОСТ, СПК, аттестация специалистов в строительстве).
+    stages_list = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(call_type["stages"]))
 
-Проанализируй транскрипт звонка и дай структурированный разбор.
+    prompt = f"""Ты — опытный руководитель отдела продаж (РОП) компании Mavis Group (Беларусь).
+Компания продаёт: СРО, ISO, ГОСТ, СПК, аттестация специалистов в строительстве.
 
-ВАЖНО: транскрипт получен через Whisper, могут быть искажения слов. Понимай смысл.
-В транскрипте таймкоды [MM:SS] — используй их в цитатах.
+Твоя задача — прослушать звонок и дать честный, объективный разбор как живой человек, а не робот по чеклисту.
+
+ПРАВИЛА ОЦЕНКИ:
+- Оценивай реальный разговор, а не соответствие скрипту
+- Скрипт — это ориентир, менеджер не обязан следовать ему дословно
+- Короткий звонок (уточнение, перенос, быстрый ответ) — оценивай по его реальной цели, не требуй всех этапов
+- Оценка 7/10 = хороший рабочий звонок, 8-9 = отличный, 10 = идеальный
+- Оценка 5-6 = есть замечания но в целом нормально, ниже 5 = серьёзные проблемы
+- НЕ снижай оценку если менеджер не сделал допродажу в коротком техническом звонке
+- НЕ снижай оценку за "не использовал все этапы скрипта" если цель звонка была узкой
+- СНИЖАЙ оценку за: грубость, потерю клиента, отсутствие следующего шага в важном звонке, неотработанное возражение когда клиент был готов купить
 
 ИНФОРМАЦИЯ О ЗВОНКЕ:
 {call_info}
 {scripts_block}
+ТИП ЗВОНКА: {call_type["label"]}
+Типичные стадии для этого типа (ориентир):
+{stages_list}
+Критерий успеха: {call_type["success_criteria"]}
+
 ТРАНСКРИПТ:
 ---
 {transcript_with_timecodes}
 ---
 
-═══════════════════════════════════════════════
-ТИП ЗВОНКА: {call_type['label'].upper()}
-Описание: {call_type['description']}
-Критерий успеха: {call_type['success_criteria']}
-═══════════════════════════════════════════════
+ВАЖНО: транскрипт получен через Whisper — могут быть небольшие искажения слов, понимай по смыслу.
+Таймкоды [MM:SS] используй в цитатах.
 
-ЭТАЛОННЫЙ СЦЕНАРИЙ ДЛЯ ЭТОГО ТИПА ЗВОНКА:
-{stages_list}
+ТВОЙ РАЗБОР:
 
-КРИТИЧЕСКИ ВАЖНЫЕ СТАДИИ (обязательны для этого типа):
-{critical_stages_list}
+1. Раздели реплики на менеджера и клиента с таймкодами.
 
-ТВОЯ ЗАДАЧА — ОЦЕНИТЬ ЗВОНОК С УЧЁТОМ ТИПА:
+2. Определи реальную цель этого конкретного звонка (1 предложение).
 
-1. РАЗДЕЛИ транскрипт на реплики менеджера и клиента (с таймкодами).
+3. Краткое резюме — что произошло в звонке (2-3 предложения).
 
-2. ДВУХОСЕВАЯ КЛАССИФИКАЦИЯ:
-   А. Категория по CRM-контексту (подтверди или уточни):
-      входящий новый лид / исходящий по новой сделке / исходящий по сделке в работе / исходящий по действующему клиенту / иное
-   Б. Цель разговора (1-2 из списка):
-      первичная консультация / допродажа / защита КП / отработка возражений / дожим на оплату / согласование шага / уточнение информации / сервисный звонок / иное
+4. Итог — чем завершился звонок, конкретный результат.
 
-3. КРАТКОЕ РЕЗЮМЕ (2-3 предложения).
+5. Ключевые цитаты клиента (1-2 штуки) — самое важное что сказал клиент.
 
-4. ИТОГ РАЗГОВОРА — конкретный результат.
+6. ОЦЕНКА 1-10 и объяснение почему именно такая оценка (2-3 предложения).
+   Оценивай по реальному результату и качеству общения, не по чеклисту.
 
-5. КЛЮЧЕВЫЕ ЦИТАТЫ КЛИЕНТА (1-2) — потребность или возражение.
+7. Что сделано хорошо (1-3 конкретных момента с таймкодом).
 
-6. ОЦЕНКА ПО 17 КРИТЕРИЯМ (0-10) с учётом типа звонка:
-{criteria_list}
+8. Что улучшить (1-3 конкретных момента с таймкодом и цитатой).
+   Только реальные проблемы которые повлияли на результат звонка.
 
-ВАЖНО ПРИ ОЦЕНКЕ:
-- Критерии "Полнота выявления потребности" и "Резюмирование потребности" могут быть N/A (оценка 7) для типов дожима/оплаты
-- Критерий "Допродажа" обязателен для типов: primary_incoming_new, successful_payment, upsell
-- Критерий "Распознавание возражения" критичен для: objection_handling, kp_defense, payment_push
+9. Главная рекомендация — одно конкретное действие которое больше всего улучшит следующий звонок.
 
-7. ПО КАЖДОМУ КРИТЕРИЮ С ОЦЕНКОЙ <6 — обязательно:
-   - проблема, цитата, таймкод, рекомендация
+10. Следующий контакт — если в разговоре договорились о дате/времени следующего звонка.
 
-8. СОПОСТАВЛЕНИЕ С ЭТАЛОННЫМ СЦЕНАРИЕМ ТИПА "{call_type['label']}":
-Для каждой из {len(call_type['stages'])} стадий укажи статус и доказательство.
-Критические стадии (пропуск = триггер "Пропущены критические стадии"):
-{critical_stages_list}
-
-9. ТРИГГЕРЫ (из списка, все сработавшие):
-{triggers_list}
-
-10. СИЛЬНЫЕ СТОРОНЫ (1-3 пункта).
-
-11. СЛАБЫЕ СТОРОНЫ (1-3 пункта).
-
-12. ОСНОВНАЯ ПРОБЛЕМА — одной фразой.
-
-13. РЕКОМЕНДАЦИЯ МЕНЕДЖЕРУ (1-2 предложения).
-
-14. ДАТА СЛЕДУЮЩЕГО КОНТАКТА (если упоминалась в разговоре).
+11. Флаги — только если реально есть (не придумывай):
+    - "critical": true если грубость, скандал, потеря клиента по вине менеджера
+    - "missed_deal": true если клиент был готов купить а менеджер не закрыл
+    - "no_next_step": true если важный звонок завершился без договорённости о следующем шаге
 
 ОТВЕТ СТРОГО В JSON, БЕЗ ОБЁРТКИ ```json:
 
 {{
   "call_type": {{
     "key": "{call_type_key}",
-    "label": "{call_type['label']}",
+    "label": "{call_type["label"]}",
     "confirmed": true
   }},
   "transcript_split": [
-    {{"speaker": "manager|client", "time": "MM:SS", "text": "..."}}
+    {{"speaker": "manager", "time": "MM:SS", "text": "..."}},
+    {{"speaker": "client", "time": "MM:SS", "text": "..."}}
   ],
-  "classification": {{
-    "crm_context": "...",
-    "goals": ["..."],
-    "funnel_stage": "..."
-  }},
+  "call_goal": "...",
   "summary": "...",
   "outcome": "...",
   "key_quotes": [
     {{"speaker": "client", "time": "MM:SS", "text": "..."}}
   ],
-  "scores": {{
-{scores_template}
-  }},
-  "low_score_details": [
-    {{"criterion": "...", "score": 4.0, "problem": "...", "quote": "...", "time": "MM:SS", "recommendation": "..."}}
+  "overall_score": 7.0,
+  "score_explanation": "...",
+  "strengths": [
+    {{"text": "...", "time": "MM:SS"}}
   ],
-  "call_type_alignment": [
-    {stages_template}
+  "improvements": [
+    {{"text": "...", "quote": "...", "time": "MM:SS"}}
   ],
-  "critical_stages_missed": [],
-  "triggers": [
-    {{"name": "...", "description": "...", "time": "MM:SS"}}
-  ],
-  "strengths": ["...", "..."],
-  "weaknesses": ["...", "..."],
-  "main_problem": "...",
   "recommendation": "...",
   "next_contact": {{
     "date_or_period": null,
     "time": null,
-    "initiator": "менеджер|клиент",
+    "initiator": null,
     "context": null
+  }},
+  "flags": {{
+    "critical": false,
+    "critical_reason": null,
+    "missed_deal": false,
+    "no_next_step": false
   }},
   "scripts_used": {json.dumps([n for n, _ in scripts], ensure_ascii=False)}
 }}"""
@@ -785,33 +794,21 @@ def analyze_transcript(
     decoder = json.JSONDecoder()
     result, _ = decoder.raw_decode(text)
 
-    # Взвешенная оценка
-    weighted = compute_weighted_score(result.get("scores", {}))
-    result["overall_score"] = weighted
-    result["overall_score_method"] = "weighted_by_tz"
+    # Оценка берётся напрямую от модели (живая, не взвешенная)
+    try:
+        result["overall_score"] = float(result.get("overall_score", 0))
+    except (TypeError, ValueError):
+        result["overall_score"] = 0.0
+    result["overall_score_method"] = "rop_judgement"
 
-    # Критические стадии
-    ct = CALL_TYPES.get(call_type_key, {})
-    critical = ct.get("critical_stages", [])
-    alignment = result.get("call_type_alignment", [])
-    missed_critical = []
-    for stage_data in alignment:
-        if stage_data.get("stage") in critical and stage_data.get("status") == "пропущено":
-            missed_critical.append(stage_data["stage"])
-    result["critical_stages_missed"] = missed_critical
-
-    # Добавляем триггер если пропущены критические стадии
-    if missed_critical:
-        triggers = result.get("triggers", [])
-        triggers.append({
-            "name": "Пропущены критические стадии для данного типа звонка",
-            "description": f"Пропущено: {', '.join(missed_critical)}",
-            "time": "00:00",
-        })
-        result["triggers"] = triggers
-
-    # Критичность
-    is_crit, crit_reason = is_critical(result)
+    # Критичность — из флагов которые поставила модель
+    flags = result.get("flags", {})
+    is_crit = bool(flags.get("critical", False))
+    crit_reason = flags.get("critical_reason") or ""
+    # Дополнительно: оценка ниже 4 = критично
+    if result["overall_score"] < 4.0:
+        is_crit = True
+        crit_reason = crit_reason or f"Низкая оценка ({result['overall_score']}/10)"
     result["is_critical"] = is_crit
     result["critical_reason"] = crit_reason
 
@@ -826,12 +823,8 @@ def analyze_transcript(
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     print("=" * 60)
-    print(f"Анализ звонков (Whisper-{MODEL_WHISPER} + {MODEL_CLAUDE}) — v2 с типами звонков")
+    print(f"Анализ звонков (Vibe Whisper + {MODEL_CLAUDE}) — v2 с типами звонков")
     print("=" * 60)
-
-    if not WHISPER_AVAILABLE:
-        print("⚠️  whisper не установлен. Установите: pip install openai-whisper")
-        return
 
     audio_dir = Path("audio_temp")
     if not audio_dir.exists():
@@ -849,9 +842,8 @@ def main():
     print(f"Скриптов в базе: {len([k for k in scripts_db if not k.startswith('_')])}")
     print(f"Ручных правок: {len(corrections)}")
 
-    print(f"\nЗагружаем Whisper '{MODEL_WHISPER}'...")
-    import whisper as whisper_module
-    whisper_model = whisper_module.load_model(MODEL_WHISPER)
+    print(f"\nТранскрибация: Vibe Code {VIBE_WHISPER_MODEL}")
+    print(f"Анализ: {MODEL_CLAUDE}\n")
 
     analyses_path = Path("analyses.json")
     if analyses_path.exists():
@@ -889,7 +881,7 @@ def main():
         print(f"   Клиент: {call_meta['client']['name']}")
 
         try:
-            transcription = transcribe_audio(audio_path, whisper_model)
+            transcription = transcribe_audio(audio_path)
             print(f"   Транскрипт: {len(transcription['text'])} символов, {transcription['duration_sec']} сек")
             if len(transcription["text"]) < 50:
                 print(f"   ⚠ Слишком короткий, пропускаем")
