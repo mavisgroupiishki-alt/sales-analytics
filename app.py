@@ -11,15 +11,21 @@ from pathlib import Path
 from datetime import datetime
 from functools import wraps
 from flask import Flask, request, redirect, url_for, session, abort, Response, jsonify
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)) if "__file__" in dir() else ".")
 from admin import admin_bp
-from admin import admin_bp
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 
 # Добавляем src/ в путь чтобы импортировать report_generator
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mavis-secret-2026")
-app.register_blueprint(admin_bp)
 app.register_blueprint(admin_bp)
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
