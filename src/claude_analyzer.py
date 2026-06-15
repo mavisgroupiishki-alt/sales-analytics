@@ -710,6 +710,11 @@ def build_analysis_prompt(
 
 10. Следующий контакт — если в разговоре договорились о дате/времени следующего звонка.
 
+11. КЛЮЧЕВЫЕ МОМЕНТЫ звонка (3-5 штук) — самые важные эпизоды:
+    - positive: что менеджер сделал особенно хорошо (с таймкодом)
+    - negative: критическая ошибка или упущение (с таймкодом)
+    - neutral: важный факт или поворотный момент разговора
+
 11. Флаги — только если реально есть (не придумывай):
     - "critical": true если грубость, скандал, потеря клиента по вине менеджера
     - "missed_deal": true если клиент был готов купить а менеджер не закрыл
@@ -754,6 +759,9 @@ def build_analysis_prompt(
     "missed_deal": false,
     "no_next_step": false
   }},
+  "key_moments": [
+    {{"type": "positive|negative|neutral", "time": "MM:SS", "text": "Краткое описание момента", "detail": "Цитата или пояснение"}}
+  ],
   "scripts_used": {json.dumps([n for n, _ in scripts], ensure_ascii=False)}
 }}"""
     return prompt
