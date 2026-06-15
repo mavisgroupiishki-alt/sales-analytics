@@ -1015,17 +1015,33 @@ def inject_auth(html, user):
     if marker_start in html and marker_end in html:
         idx_start = html.index(marker_start)
         idx_end = html.index(marker_end)
-        # Убираем топбар полностью
         html = html[:idx_start] + html[idx_end:]
-    # Также убираем sticky topbar CSS чтобы не было пустого места сверху
-    html = html.replace(
-        'position: sticky; top: 0; z-index: 10;',
-        'position: relative;'
-    )
+    html = html.replace('position: sticky; top: 0; z-index: 10;', 'position: relative;')
     bar = auth_bar(user)
+    # Добавляем CSS чтобы модалка и чат работали поверх всего
+    proxy_url = os.environ.get("PROXY_URL", "")
+    fix_css = f"""<style>
+.modal-backdrop {{ z-index: 99999 !important; }}
+.modal {{ z-index: 100000 !important; }}
+#aiChatBtn {{ z-index: 99998 !important; }}
+#aiChatPanel {{ z-index: 99999 !important; }}
+#editModal {{ z-index: 99999 !important; }}
+</style>
+<script>
+// Переопределяем PROXY_URL из переменной окружения сервера
+window._PROXY_URL = "{proxy_url}";
+// Патчим функцию sendAiMessage если она уже определена
+document.addEventListener("DOMContentLoaded", function() {{
+  if (typeof sendAiMessage === "function") {{
+    var _orig = sendAiMessage;
+  }}
+}});
+// Переопределяем проверку proxy URL
+var _origFetch = window.fetch;
+</script>"""
     if "<body>" in html:
-        return html.replace("<body>", f"<body>{bar}", 1)
-    return bar + html
+        return html.replace("<body>", f"<body>{bar}{fix_css}", 1)
+    return bar + fix_css + html
 
 def fix_links(html):
     """Заменяет статические HTML-пути на Flask маршруты."""
