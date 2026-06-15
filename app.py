@@ -126,7 +126,7 @@ def auth_bar(user):
         <a href="/managers" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Менеджеры</a>
         """
     return f"""
-<div style="background:#1a1208;color:#fff;padding:6px 16px;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,sans-serif;font-size:12px;gap:16px;flex-wrap:wrap">
+<div style="background:#1a1208;color:#fff;padding:6px 16px;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,sans-serif;font-size:12px;gap:16px;flex-wrap:wrap;position:relative;z-index:50">
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     <span style="color:#C9A961;font-weight:700">{role_badge}: {user['name']}</span>
     {extra_links}
@@ -142,13 +142,18 @@ def auth_bar(user):
 
 def inject_auth(html, user):
     """Убирает оригинальный топбар report_generator и вставляет наш с авторизацией."""
-    # Удаляем всё от <div class="topbar"> до <div class="container"> (включая вложенные div)
     marker_start = '<div class="topbar">'
     marker_end = '<div class="container">'
     if marker_start in html and marker_end in html:
         idx_start = html.index(marker_start)
         idx_end = html.index(marker_end)
+        # Убираем топбар полностью
         html = html[:idx_start] + html[idx_end:]
+    # Также убираем sticky topbar CSS чтобы не было пустого места сверху
+    html = html.replace(
+        'position: sticky; top: 0; z-index: 10;',
+        'position: relative;'
+    )
     bar = auth_bar(user)
     if "<body>" in html:
         return html.replace("<body>", f"<body>{bar}", 1)
