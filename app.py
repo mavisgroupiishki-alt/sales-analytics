@@ -141,11 +141,86 @@ def auth_bar(user):
 """
 
 def inject_auth(html, user):
-    """Вставляет полоску авторизации в готовый HTML."""
+    """Убирает оригинальный топбар report_generator и вставляет наш с авторизацией."""
+    import re
+    # Удаляем оригинальный топбар (div.topbar) который генерирует report_generator
+    html = re.sub(r'<div class="topbar">.*?</div>', '', html, count=1, flags=re.DOTALL)
     bar = auth_bar(user)
     if "<body>" in html:
         return html.replace("<body>", f"<body>{bar}", 1)
     return bar + html
+
+def fix_links(html):
+    """Заменяет статические HTML-пути на Flask маршруты."""
+    replacements = [
+        ('href="index.html"',       'href="/"'),
+        ('href="../index.html"',    'href="/"'),
+        ('href="rop-report.html"',  'href="/rop"'),
+        ('href="../rop-report.html"','href="/rop"'),
+        ('href="managers.html"',    'href="/managers"'),
+        ('href="../managers.html"', 'href="/managers"'),
+        ('href="all-calls.html"',   'href="/calls"'),
+        ('href="../all-calls.html"','href="/calls"'),
+        ('href="critical.html"',    'href="/critical"'),
+        ('href="../critical.html"', 'href="/critical"'),
+        ('href="triggers.html"',    'href="/triggers"'),
+        ('href="../triggers.html"', 'href="/triggers"'),
+        ('href="compare.html"',     'href="/compare"'),
+        ('href="../compare.html"',  'href="/compare"'),
+        ('href="objections.html"',  'href="/objections"'),
+        ('href="../objections.html"','href="/objections"'),
+        ('href="best-calls.html"',  'href="/best"'),
+        ('href="../best-calls.html"','href="/best"'),
+        ('href="calls/',            'href="/calls/'),
+        ('href="../calls/',         'href="/calls/'),
+        ('href="managers/',         'href="/managers/'),
+        ('href="../managers/',      'href="/managers/'),
+        ('src="../',                'src="/'),
+        ('src="avatars/',           'src="/static/avatars/'),
+        ('src="logo.png"',          'src="/static/logo.png"'),
+        ('src="../logo.png"',       'src="/static/logo.png"'),
+    ]
+    for old_str, new_str in replacements:
+        return html
+
+def inject_and_fix(html, user):
+    html = fix_links(html)
+    return inject_auth(html, user)
+
+
+def fix_links(html):
+    """Заменяет статические HTML-пути на Flask маршруты."""
+    replacements = [
+        ('href="index.html"',        'href="/"'),
+        ('href="../index.html"',     'href="/"'),
+        ('href="rop-report.html"',   'href="/rop"'),
+        ('href="../rop-report.html"','href="/rop"'),
+        ('href="managers.html"',     'href="/managers"'),
+        ('href="../managers.html"',  'href="/managers"'),
+        ('href="all-calls.html"',    'href="/calls"'),
+        ('href="../all-calls.html"', 'href="/calls"'),
+        ('href="critical.html"',     'href="/critical"'),
+        ('href="../critical.html"',  'href="/critical"'),
+        ('href="triggers.html"',     'href="/triggers"'),
+        ('href="../triggers.html"',  'href="/triggers"'),
+        ('href="compare.html"',      'href="/compare"'),
+        ('href="../compare.html"',   'href="/compare"'),
+        ('href="objections.html"',   'href="/objections"'),
+        ('href="../objections.html"','href="/objections"'),
+        ('href="best-calls.html"',   'href="/best"'),
+        ('href="../best-calls.html"','href="/best"'),
+        ('href="calls/',             'href="/calls/'),
+        ('href="../calls/',          'href="/calls/'),
+        ('href="managers/',          'href="/managers/'),
+        ('href="../managers/',       'href="/managers/'),
+        ('src="../avatars/',         'src="/static/avatars/'),
+        ('src="avatars/',            'src="/static/avatars/'),
+        ('src="../logo.png"',        'src="/static/logo.png"'),
+        ('src="logo.png"',           'src="/static/logo.png"'),
+    ]
+    for o, n in replacements:
+        html = html.replace(o, n)
+    return html
 
 def html_response(html):
     return Response(html, mimetype="text/html; charset=utf-8")
@@ -197,7 +272,7 @@ def index():
     from report_generator import render_index, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_index(calls, stats, analyses, datetime.now().isoformat())
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/calls")
 @login_required
@@ -207,7 +282,7 @@ def all_calls():
     from report_generator import render_all_calls, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_all_calls(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/calls/<activity_id>")
 @login_required
@@ -224,12 +299,7 @@ def call_detail(activity_id):
     os.environ["PROXY_URL"] = os.environ.get("PROXY_URL", "")
     html = render_call_page(call, analyses.get(activity_id), datetime.now().isoformat(), stats["critical_count"])
     # Фиксируем относительные пути calls/ → /calls/
-    html = html.replace('href="calls/', 'href="/calls/').replace('href="../calls/', 'href="/calls/')
-    html = html.replace('href="managers/', 'href="/managers/').replace('href="../managers/', 'href="/managers/')
-    html = html.replace('href="index.html"', 'href="/"').replace('href="../index.html"', 'href="/"')
-    html = html.replace('href="all-calls.html"', 'href="/calls"').replace('href="../all-calls.html"', 'href="/calls"')
-    html = html.replace('src="../', 'src="/').replace('src="../', 'src="/')
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/rop")
 @rop_required
@@ -239,7 +309,7 @@ def rop_report():
     from report_generator import render_rop_report, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_rop_report(calls, stats, analyses, datetime.now().isoformat())
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/managers")
 @rop_required
@@ -249,8 +319,7 @@ def managers():
     from report_generator import render_managers_list, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_managers_list(stats, datetime.now().isoformat())
-    html = html.replace('href="managers/', 'href="/managers/')
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/managers/<int:manager_id>")
 @login_required
@@ -265,10 +334,7 @@ def manager_detail(manager_id):
     manager = next((m for m in stats["managers"] if m["id"] == manager_id), None)
     if not manager: abort(404)
     html = render_manager_page(manager, analyses, datetime.now().isoformat(), stats["critical_count"])
-    html = html.replace('href="../calls/', 'href="/calls/').replace('href="../managers/', 'href="/managers/')
-    html = html.replace('href="../index.html"', 'href="/').replace('href="../managers.html"', 'href="/managers"')
-    html = html.replace('src="../', 'src="/')
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/critical")
 @login_required
@@ -278,8 +344,7 @@ def critical():
     from report_generator import render_critical_page, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_critical_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
-    html = html.replace('href="calls/', 'href="/calls/').replace('href="index.html"', 'href="/"')
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/triggers")
 @login_required
@@ -289,8 +354,7 @@ def triggers():
     from report_generator import render_triggers_page, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_triggers_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
-    html = html.replace('href="calls/', 'href="/calls/').replace('href="index.html"', 'href="/"')
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/compare")
 @rop_required
@@ -300,8 +364,7 @@ def compare():
     from report_generator import render_compare_page, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_compare_page(stats, calls, analyses, datetime.now().isoformat())
-    html = html.replace('href="managers/', 'href="/managers/').replace('href="index.html"', 'href="/"')
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/objections")
 @login_required
@@ -311,8 +374,7 @@ def objections():
     from report_generator import render_objections_page, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_objections_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
-    html = html.replace('href="calls/', 'href="/calls/').replace('href="index.html"', 'href="/"')
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/best")
 @login_required
@@ -322,8 +384,7 @@ def best_calls():
     from report_generator import render_best_calls_page, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_best_calls_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
-    html = html.replace('href="calls/', 'href="/calls/').replace('href="index.html"', 'href="/"')
-    return html_response(inject_auth(html, user))
+    return html_response(inject_and_fix(html, user))
 
 # ============================================================
 # API
