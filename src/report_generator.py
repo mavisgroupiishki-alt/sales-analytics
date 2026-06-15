@@ -1226,21 +1226,22 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
     public_path = audio.get("public_path")
     bitrix_call_url = call.get("bitrix_url", "") or (bitrix_link if bitrix_link else "")
     audio_html = ""
-    # Прямой URL аудио из Bitrix (работает и на GitHub Pages и на Render)
+    # Аудио через прокси /audio/<id> (работает на Render)
+    # или через прямой URL Bitrix (для GitHub Pages)
     audio_direct_url = (call.get('audio') or {}).get('url', '')
-    if audio_direct_url:
+    use_proxy = __import__('os').environ.get('RENDER', '') or __import__('os').environ.get('USE_AUDIO_PROXY', '')
+    if audio_direct_url or public_path:
         bitrix_btn = ""
         if bitrix_call_url:
             bitrix_btn = '<a href="' + esc(bitrix_call_url) + '" target="_blank" class="bitrix-link">Открыть в Bitrix24</a>'
+        if use_proxy and audio_direct_url:
+            audio_src = '/audio/' + esc(activity_id)
+        elif audio_direct_url:
+            audio_src = esc(audio_direct_url)
+        else:
+            audio_src = '../' + esc(public_path)
         audio_html = ('<div class="audio-player">'
-                      '<audio controls preload="metadata" src="' + esc(audio_direct_url) + '" id="callAudio"></audio>'
-                      + bitrix_btn + '</div>')
-    elif public_path:
-        bitrix_btn = ""
-        if bitrix_call_url:
-            bitrix_btn = '<a href="' + esc(bitrix_call_url) + '" target="_blank" class="bitrix-link">Открыть в Bitrix24</a>'
-        audio_html = ('<div class="audio-player">'
-                      '<audio controls preload="metadata" src="../' + esc(public_path) + '" id="callAudio"></audio>'
+                      '<audio controls preload="metadata" src="' + audio_src + '" id="callAudio"></audio>'
                       + bitrix_btn + '</div>')
     elif bitrix_call_url:
         audio_html = ('<div class="audio-missing">'
