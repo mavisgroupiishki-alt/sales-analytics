@@ -424,6 +424,85 @@ def api_correct():
     p.write_text(json.dumps(corrections, ensure_ascii=False, indent=2), encoding="utf-8")
     return jsonify({"ok": True})
 
+@app.route("/audio/<activity_id>")
+@login_required
+def serve_audio(activity_id):
+    """Проксирует аудио с Bitrix через наш сервер."""
+    import requests as _req
+    from flask import Response as _Resp, stream_with_context
+
+    calls = load_calls()
+    call = next((c for c in calls if c["activity_id"] == activity_id), None)
+    if not call:
+        abort(404)
+
+    # Защита — менеджер не слушает чужие звонки
+    user = current_user()
+    if user["role"] == "manager" and call.get("manager",{}).get("id") != user["manager_id"]:
+        abort(403)
+
+    audio = call.get("audio") or {}
+    audio_url = audio.get("url") or ""
+    if not audio_url:
+        abort(404)
+
+    # Добавляем авторизацию Bitrix через webhook
+    webhook = os.environ.get("BITRIX_WEBHOOK_URL", "").rstrip("/")
+    # URL уже содержит auth= параметр из Bitrix
+    try:
+        r = _req.get(audio_url, stream=True, timeout=30)
+        r.raise_for_status()
+        content_type = r.headers.get("Content-Type", "audio/mpeg")
+        return _Resp(
+            stream_with_context(r.iter_content(chunk_size=8192)),
+            status=200,
+            headers={
+                "Content-Type": content_type,
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "private, max-age=3600",
+            }
+        )
+    except Exception as e:
+        abort(502)
+
+
+
+@app.route("/audio/<activity_id>")
+@login_required
+def serve_audio(activity_id):
+    """Проксирует аудио с Bitrix через наш сервер."""
+    import requests as _req
+    from flask import Response as _Resp, stream_with_context
+
+    calls = load_calls()
+    call = next((c for c in calls if c["activity_id"] == activity_id), None)
+    if not call:
+        abort(404)
+
+    user = current_user()
+    if user["role"] == "manager" and call.get("manager",{}).get("id") != user["manager_id"]:
+        abort(403)
+
+    audio_url = (call.get("audio") or {}).get("url", "")
+    if not audio_url:
+        abort(404)
+
+    try:
+        r = _req.get(audio_url, stream=True, timeout=30)
+        r.raise_for_status()
+        ctype = r.headers.get("Content-Type", "audio/mpeg")
+        return _Resp(
+            stream_with_context(r.iter_content(chunk_size=8192)),
+            status=200,
+            headers={
+                "Content-Type": ctype,
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "private, max-age=3600",
+            }
+        )
+    except Exception:
+        abort(502)
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "time": datetime.now().isoformat()})
