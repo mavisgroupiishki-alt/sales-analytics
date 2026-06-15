@@ -504,7 +504,7 @@ a { color: inherit; text-decoration: none; }
 .placeholder-panel p { font-size: 13px; color: var(--brand-medium); font-family: -apple-system, sans-serif; }
 .correction-note { background: var(--blue-soft); border: 1px solid var(--blue); border-radius: 6px; padding: 12px 18px; margin-bottom: 14px; font-family: -apple-system, sans-serif; font-size: 13px; color: var(--blue); }
 .correction-note b { font-weight: 700; }
-.modal-backdrop { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(61,46,31,0.6); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+.modal-backdrop { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(61,46,31,0.6); z-index: 9999; align-items: center; justify-content: center; padding: 20px; }
 .modal-backdrop.active { display: flex; }
 .modal { background: #fff; border-radius: 8px; padding: 24px; max-width: 540px; width: 100%; box-shadow: 0 8px 32px rgba(61,46,31,0.3); font-family: -apple-system, sans-serif; max-height: 90vh; overflow-y: auto; }
 .modal h3 { font-size: 18px; margin-bottom: 14px; color: var(--brand-dark); }
@@ -1226,12 +1226,21 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
     public_path = audio.get("public_path")
     bitrix_call_url = call.get("bitrix_url", "") or (bitrix_link if bitrix_link else "")
     audio_html = ""
-    if public_path:
+    # Прямой URL аудио из Bitrix (работает и на GitHub Pages и на Render)
+    audio_direct_url = (call.get('audio') or {}).get('url', '')
+    if audio_direct_url:
         bitrix_btn = ""
         if bitrix_call_url:
             bitrix_btn = '<a href="' + esc(bitrix_call_url) + '" target="_blank" class="bitrix-link">Открыть в Bitrix24</a>'
         audio_html = ('<div class="audio-player">'
-                      '<audio controls preload="metadata" src="../' + esc(public_path) + '"></audio>'
+                      '<audio controls preload="metadata" src="' + esc(audio_direct_url) + '" id="callAudio"></audio>'
+                      + bitrix_btn + '</div>')
+    elif public_path:
+        bitrix_btn = ""
+        if bitrix_call_url:
+            bitrix_btn = '<a href="' + esc(bitrix_call_url) + '" target="_blank" class="bitrix-link">Открыть в Bitrix24</a>'
+        audio_html = ('<div class="audio-player">'
+                      '<audio controls preload="metadata" src="../' + esc(public_path) + '" id="callAudio"></audio>'
                       + bitrix_btn + '</div>')
     elif bitrix_call_url:
         audio_html = ('<div class="audio-missing">'
@@ -1402,7 +1411,7 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
             transcript_js = (
                 '<script>'
                 'function seekAudio(tc){'
-                'var a=document.querySelector("audio");'
+                'var a=document.getElementById("callAudio")||document.querySelector("audio");'
                 'if(!a)return;'
                 'var p=tc.split(":"),s=parseInt(p[0])*60+(p[1]?parseInt(p[1]):0);'
                 'a.currentTime=s;a.play();}'
@@ -2183,7 +2192,7 @@ def build_ai_chat_widget(call: Dict, analysis: Dict, vibe_api_note: str = "") ->
 
     return f'''
 <div id="aiChatBtn" onclick="toggleAiChat()" style="
-  position:fixed; bottom:28px; right:28px; z-index:200;
+  position:fixed; bottom:28px; right:28px; z-index:1000;
   width:52px; height:52px; border-radius:50%;
   background:var(--brand-dark); color:#fff;
   display:flex; align-items:center; justify-content:center;
@@ -2192,7 +2201,7 @@ def build_ai_chat_widget(call: Dict, analysis: Dict, vibe_api_note: str = "") ->
 " title="Спросить ИИ про этот звонок">💬</div>
 
 <div id="aiChatPanel" style="
-  display:none; position:fixed; bottom:90px; right:28px; z-index:201;
+  display:none; position:fixed; bottom:90px; right:28px; z-index:1001;
   width:360px; max-width:calc(100vw - 40px);
   background:#fff; border-radius:12px;
   box-shadow:0 8px 32px rgba(61,46,31,0.25);
