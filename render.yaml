@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: mavis-sales-analytics
+    runtime: python
+    buildCommand: pip install -r requirements-web.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ROP_PASSWORD
+        sync: false
+      - key: ROMAN_PASSWORD
+        sync: false
+      - key: IRINA_PASSWORD
+        sync: false
+      - key: PROXY_URL
+        sync: false
+      - key: DATA_DIR
+        value: .
+    autoDeploy: true
