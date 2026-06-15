@@ -1267,6 +1267,48 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
         if summary_parts:
             rest_html += ('<div class="ai-summary">' + "".join(summary_parts) + '</div>')
 
+        # Ключевые моменты звонка
+        key_moments = analysis.get("key_moments") or []
+        if key_moments:
+            m_html = ''
+            for km in key_moments:
+                if not isinstance(km, dict): continue
+                ktype = km.get('type','neutral')
+                kcolor = {'positive':'var(--brand-olive)','negative':'var(--red)','neutral':'var(--brand-gold)'}.get(ktype,'var(--brand-gold)')
+                kicon = {'positive':'✅','negative':'⚠️','neutral':'💡'}.get(ktype,'💡')
+                ktc = km.get('time','')
+                ktc_html = ('<span class="tc-link" onclick="seekAudio(\'' + esc(ktc) + '\')" style="margin-left:6px;">' + esc(ktc) + '</span>') if ktc else ''
+                kdetail = esc(km.get('detail',''))
+                m_html += ('<div style="padding:10px 0;border-bottom:1px solid var(--border-soft);font-family:-apple-system,sans-serif;">'
+                           '<div style="font-size:13px;color:' + kcolor + ';font-weight:600;">' + kicon + ' ' + esc(km.get('text','')) + ktc_html + '</div>'
+                           + ('<div style="font-size:12px;color:var(--text-muted);margin-top:3px;">' + kdetail + '</div>' if kdetail else '') +
+                           '</div>')
+            rest_html += ('<div class="panel" style="margin-bottom:16px;">'
+                          '<div class="panel-head"><h3>⚡ Ключевые моменты</h3>'
+                          '<span class="hint">' + str(len(key_moments)) + ' эпизодов</span></div>'
+                          '<div style="padding:0 20px;">' + m_html + '</div></div>')
+
+        # Ключевые моменты звонка
+        key_moments = analysis.get("key_moments") or []
+        if key_moments:
+            m_html = ""
+            for km in key_moments:
+                if not isinstance(km, dict): continue
+                ktype = km.get("type", "neutral")
+                kcolor = {"positive": "var(--brand-olive)", "negative": "var(--red)", "neutral": "var(--brand-gold)"}.get(ktype, "var(--brand-gold)")
+                kicon = {"positive": "✅", "negative": "⚠️", "neutral": "💡"}.get(ktype, "💡")
+                ktc = km.get("time", "")
+                ktc_html = ("<span class=\"tc-link\" onclick=\"seekAudio(\'"+esc(ktc)+"\')\">"+esc(ktc)+"</span>") if ktc else ""
+                kdetail = esc(km.get("detail", ""))
+                m_html += ("<div style=\"padding:10px 0;border-bottom:1px solid var(--border-soft);font-family:-apple-system,sans-serif;\">"
+                           "<div style=\"font-size:13px;color:"+kcolor+";font-weight:600;\">"+kicon+" "+esc(km.get("text",""))+ktc_html+"</div>"
+                           +("<div style=\"font-size:12px;color:var(--text-muted);margin-top:3px;\">"+kdetail+"</div>" if kdetail else "")+
+                           "</div>")
+            rest_html += ("<div class=\"panel\" style=\"margin-bottom:16px;\">"
+                          "<div class=\"panel-head\"><h3>⚡ Ключевые моменты</h3>"
+                          "<span class=\"hint\">"+str(len(key_moments))+" эпизодов</span></div>"
+                          "<div style=\"padding:0 20px;\">"+m_html+"</div></div>")
+
         # Объяснение оценки
         if analysis.get("score_explanation"):
             rest_html += ('<div class="recommendation" style="border-color:var(--brand-medium);">'
