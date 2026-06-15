@@ -1,75 +1,44 @@
 """
 Flask веб-приложение для Sales Analytics с авторизацией.
-- РОП видит всё
-- Менеджер видит только свои звонки
-- Данные читаются из analyses.json и calls_data.json (обновляются GitHub Actions)
+Использует существующий report_generator.py для генерации HTML.
 """
 
 import json
 import os
 import hashlib
+import sys
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
-from flask import Flask, render_template, request, redirect, url_for, session, abort, jsonify
+from flask import Flask, request, redirect, url_for, session, abort, Response, jsonify
+
+# Добавляем src/ в путь чтобы импортировать report_generator
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production")
+app.secret_key = os.environ.get("SECRET_KEY", "mavis-secret-2026")
+
+DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
 
 # ============================================================
 # ПОЛЬЗОВАТЕЛИ
-# Хранятся в переменных окружения Render
-# Формат: USERS_JSON = [{"username":"rop","password_hash":"...","role":"rop","manager_id":null},...]
 # ============================================================
 
-def get_users():
-    raw = os.environ.get("USERS_JSON", "")
-    if raw:
-        try:
-            return json.loads(raw)
-        except Exception:
-            pass
-    # Дефолтные пользователи если USERS_JSON не задан
-    return [
-        {
-            "username": "rop",
-            "password_hash": hash_password(os.environ.get("ROP_PASSWORD", "rop123")),
-            "role": "rop",
-            "name": "Руководитель",
-            "manager_id": None,
-        },
-        {
-            "username": "roman",
-            "password_hash": hash_password(os.environ.get("ROMAN_PASSWORD", "roman123")),
-            "role": "manager",
-            "name": "Роман Авсеенко",
-            "manager_id": 1286,
-        },
-        {
-            "username": "irina",
-            "password_hash": hash_password(os.environ.get("IRINA_PASSWORD", "irina123")),
-            "role": "manager",
-            "name": "Ирина Богомольцева",
-            "manager_id": 2100,
-        },
-    ]
+def hash_pw(p): return hashlib.sha256(p.encode()).hexdigest()
 
+USERS = [
+    {"username": "rop",    "password_hash": hash_pw(os.environ.get("ROP_PASSWORD",   "rop123")),   "role": "rop",     "name": "Руководитель",       "manager_id": None},
+    {"username": "roman",  "password_hash": hash_pw(os.environ.get("ROMAN_PASSWORD", "roman123")), "role": "manager", "name": "Роман Авсеенко",     "manager_id": 1286},
+    {"username": "irina",  "password_hash": hash_pw(os.environ.get("IRINA_PASSWORD", "irina123")), "role": "manager", "name": "Ирина Богомольцева", "manager_id": 2100},
+]
 
-def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+def find_user(username, password):
+    ph = hash_pw(password)
+    return next((u for u in USERS if u["username"] == username and u["password_hash"] == ph), None)
 
-
-def find_user(username: str, password: str):
-    ph = hash_password(password)
-    for u in get_users():
-        if u["username"] == username and u["password_hash"] == ph:
-            return u
-    return None
-
-
-# ============================================================
-# ДЕКОРАТОРЫ АВТОРИЗАЦИИ
-# ============================================================
+def current_user():
+    return {"username": session.get("username",""), "role": session.get("role",""),
+            "name": session.get("name",""), "manager_id": session.get("manager_id")}
 
 def login_required(f):
     @wraps(f)
@@ -79,67 +48,31 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
-
 def rop_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if "username" not in session:
-            return redirect(url_for("login"))
-        if session.get("role") != "rop":
-            abort(403)
+        if "username" not in session: return redirect(url_for("login"))
+        if session.get("role") != "rop": abort(403)
         return f(*args, **kwargs)
     return decorated
 
-
-def current_user():
-    return {
-        "username": session.get("username", ""),
-        "role": session.get("role", ""),
-        "name": session.get("name", ""),
-        "manager_id": session.get("manager_id"),
-    }
-
-
 # ============================================================
-# ЗАГРУЗКА ДАННЫХ
+# ДАННЫЕ
 # ============================================================
-
-DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
-
 
 def load_calls():
     p = DATA_DIR / "calls_data.json"
-    if not p.exists():
-        return []
-    return json.loads(p.read_text(encoding="utf-8"))
-
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
 
 def load_analyses():
     p = DATA_DIR / "analyses.json"
-    if not p.exists():
-        return {}
-    return json.loads(p.read_text(encoding="utf-8"))
-
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 def load_corrections():
     p = DATA_DIR / "manual_corrections.json"
-    if not p.exists():
-        return {}
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def filter_calls_for_user(calls, user):
-    """Менеджер видит только свои звонки."""
-    if user["role"] == "rop":
-        return calls
-    mid = user["manager_id"]
-    if mid is None:
-        return []
-    return [c for c in calls if c.get("manager", {}).get("id") == mid]
-
+    if not p.exists(): return {}
+    try: return json.loads(p.read_text(encoding="utf-8"))
+    except: return {}
 
 def apply_corrections(analyses, corrections):
     for aid, corr in corrections.items():
@@ -152,31 +85,70 @@ def apply_corrections(analyses, corrections):
                 ad["correction_comment"] = corr["comment"]
     return analyses
 
-
 def get_data(user=None):
-    """Загружает и фильтрует данные для текущего пользователя."""
     calls = load_calls()
     analyses = load_analyses()
     corrections = load_corrections()
     analyses = apply_corrections(analyses, corrections)
-
-    if user:
-        calls = filter_calls_for_user(calls, user)
-
+    if user and user.get("role") == "manager" and user.get("manager_id"):
+        calls = [c for c in calls if c.get("manager",{}).get("id") == user["manager_id"]]
     return calls, analyses
 
+# ============================================================
+# ИНЪЕКЦИЯ НАВИГАЦИИ В HTML
+# ============================================================
 
-def score_color(score):
-    try:
-        s = float(score)
-    except (TypeError, ValueError):
-        return "mid"
-    if s >= 7.5:
-        return "high"
-    if s >= 5.0:
-        return "mid"
-    return "low"
+LOGIN_CSS = """
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Segoe UI",sans-serif;background:#FAF7F2;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-box{background:#fff;border:1px solid #E8DFD0;border-radius:10px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 4px 24px rgba(61,46,31,.08)}
+.brand{font-family:Georgia,serif;font-size:20px;font-weight:700;color:#3D2E1F;letter-spacing:1px;text-align:center}
+.sub{font-size:11px;letter-spacing:3px;color:#C9A961;text-transform:uppercase;margin-top:4px;text-align:center}
+.divider{width:40px;height:2px;background:#C9A961;margin:16px auto 24px}
+label{display:block;font-size:12px;font-weight:600;color:#A39686;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;margin-top:16px}
+input{width:100%;padding:11px 14px;border:1px solid #E8DFD0;border-radius:6px;font-size:14px;font-family:inherit;background:#FAF7F2;color:#2A1F15}
+input:focus{outline:none;border-color:#C9A961;background:#fff}
+.error{background:#FFE5DC;border:1px solid #A0432B;border-radius:6px;padding:10px 14px;font-size:13px;color:#A0432B;margin-bottom:16px;text-align:center}
+button{width:100%;padding:12px;background:#3D2E1F;color:#fff;border:none;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer;margin-top:24px;font-family:inherit}
+button:hover{background:#6B5544}
+</style>
+"""
 
+def auth_bar(user):
+    """Полоска авторизации которая вставляется в существующий HTML."""
+    role_badge = "РОП" if user["role"] == "rop" else "Менеджер"
+    extra_links = ""
+    if user["role"] == "rop":
+        extra_links = """
+        <a href="/rop" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Отчёт РОПа</a>
+        <a href="/compare" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Сравнение</a>
+        <a href="/managers" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Менеджеры</a>
+        """
+    return f"""
+<div style="background:#1a1208;color:#fff;padding:6px 16px;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,sans-serif;font-size:12px;gap:16px;flex-wrap:wrap">
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <span style="color:#C9A961;font-weight:700">{role_badge}: {user['name']}</span>
+    {extra_links}
+    <a href="/" style="color:rgba(255,255,255,.7);text-decoration:none">Сводка</a>
+    <a href="/calls" style="color:rgba(255,255,255,.7);text-decoration:none">Все звонки</a>
+    <a href="/critical" style="color:rgba(255,255,255,.7);text-decoration:none">🔴 Срочно</a>
+    <a href="/best" style="color:rgba(255,255,255,.7);text-decoration:none">🏆 Лучшие</a>
+    <a href="/objections" style="color:rgba(255,255,255,.7);text-decoration:none">💬 Возражения</a>
+  </div>
+  <a href="/logout" style="color:#C9A961;text-decoration:none;font-weight:600;white-space:nowrap">Выйти →</a>
+</div>
+"""
+
+def inject_auth(html, user):
+    """Вставляет полоску авторизации в готовый HTML."""
+    bar = auth_bar(user)
+    if "<body>" in html:
+        return html.replace("<body>", f"<body>{bar}", 1)
+    return bar + html
+
+def html_response(html):
+    return Response(html, mimetype="text/html; charset=utf-8")
 
 # ============================================================
 # МАРШРУТЫ АВТОРИЗАЦИИ
@@ -186,29 +158,35 @@ def score_color(score):
 def login():
     error = None
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        user = find_user(username, password)
+        user = find_user(request.form.get("username","").strip(), request.form.get("password",""))
         if user:
-            session["username"] = user["username"]
-            session["role"] = user["role"]
-            session["name"] = user["name"]
-            session["manager_id"] = user["manager_id"]
-            next_url = request.args.get("next") or url_for("index")
-            return redirect(next_url)
-        else:
-            error = "Неверный логин или пароль"
-    return render_template("login.html", error=error)
-
+            session.update({"username": user["username"], "role": user["role"],
+                           "name": user["name"], "manager_id": user["manager_id"]})
+            return redirect(request.args.get("next") or "/")
+        error = "Неверный логин или пароль"
+    err_html = f'<div class="error">{error}</div>' if error else ""
+    return html_response(f"""<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Вход — Mavis Group</title>{LOGIN_CSS}</head><body>
+<div class="login-box">
+  <div class="brand">MAVIS GROUP</div>
+  <div class="sub">Sales Analytics</div>
+  <div class="divider"></div>
+  {err_html}
+  <form method="POST">
+    <label>Логин</label><input name="username" placeholder="Введите логин" autofocus required>
+    <label>Пароль</label><input type="password" name="password" placeholder="Введите пароль" required>
+    <button type="submit">Войти →</button>
+  </form>
+</div></body></html>""")
 
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("login"))
-
+    return redirect("/login")
 
 # ============================================================
-# ОСНОВНЫЕ МАРШРУТЫ
+# ОСНОВНЫЕ МАРШРУТЫ — используем report_generator
 # ============================================================
 
 @app.route("/")
@@ -216,188 +194,170 @@ def logout():
 def index():
     user = current_user()
     calls, analyses = get_data(user)
-    from src.report_generator import compute_stats
+    from report_generator import render_index, compute_stats
     stats = compute_stats(calls, analyses)
-    generated_at = datetime.now().isoformat()
-
-    # Данные для JS фильтрации по периоду
-    calls_json = json.dumps([{
-        "id": c["activity_id"],
-        "created": c.get("created", ""),
-        "direction": c.get("direction", ""),
-        "client": c.get("client", {}).get("name", ""),
-        "manager": c.get("manager", {}).get("name", ""),
-        "duration": c.get("duration_sec", 0),
-        "score": analyses.get(c["activity_id"], {}).get("analysis", {}).get("overall_score"),
-        "is_critical": bool(analyses.get(c["activity_id"], {}).get("analysis", {}).get("is_critical", False)),
-    } for c in sorted(calls, key=lambda x: x.get("created", ""), reverse=True)], ensure_ascii=False)
-
-    return render_template("index.html",
-        user=user, stats=stats, calls=calls, analyses=analyses,
-        generated_at=generated_at, calls_json=calls_json)
-
+    html = render_index(calls, stats, analyses, datetime.now().isoformat())
+    return html_response(inject_auth(html, user))
 
 @app.route("/calls")
 @login_required
 def all_calls():
     user = current_user()
     calls, analyses = get_data(user)
-    sorted_calls = sorted(calls, key=lambda x: x.get("created", ""), reverse=True)
-    return render_template("all_calls.html",
-        user=user, calls=sorted_calls, analyses=analyses)
-
+    from report_generator import render_all_calls, compute_stats
+    stats = compute_stats(calls, analyses)
+    html = render_all_calls(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
+    return html_response(inject_auth(html, user))
 
 @app.route("/calls/<activity_id>")
 @login_required
 def call_detail(activity_id):
     user = current_user()
     calls, analyses = get_data(user)
-
     call = next((c for c in calls if c["activity_id"] == activity_id), None)
-    if not call:
-        abort(404)
-
-    # Менеджер не может смотреть чужие звонки
-    if user["role"] == "manager":
-        if call.get("manager", {}).get("id") != user["manager_id"]:
-            abort(403)
-
-    analysis_data = analyses.get(activity_id)
-    proxy_url = os.environ.get("PROXY_URL", "")
-
-    return render_template("call_detail.html",
-        user=user, call=call, analysis_data=analysis_data, proxy_url=proxy_url)
-
-
-@app.route("/managers")
-@rop_required
-def managers():
-    user = current_user()
-    calls, analyses = get_data(user)
-    from src.report_generator import compute_stats
-    stats = compute_stats(calls, analyses)
-    return render_template("managers.html", user=user, stats=stats)
-
-
-@app.route("/managers/<int:manager_id>")
-@login_required
-def manager_detail(manager_id):
-    user = current_user()
-    # Менеджер может смотреть только свою страницу
-    if user["role"] == "manager" and user["manager_id"] != manager_id:
+    if not call: abort(404)
+    if user["role"] == "manager" and call.get("manager",{}).get("id") != user["manager_id"]:
         abort(403)
-
-    calls, analyses = get_data({"role": "rop"})  # все данные для расчёта статистики
-    from src.report_generator import compute_stats
+    from report_generator import render_call_page, compute_stats
     stats = compute_stats(calls, analyses)
-    manager = next((m for m in stats["managers"] if m["id"] == manager_id), None)
-    if not manager:
-        abort(404)
-    return render_template("manager_detail.html", user=user, manager=manager, analyses=analyses)
-
+    # Передаём PROXY_URL через env
+    os.environ["PROXY_URL"] = os.environ.get("PROXY_URL", "")
+    html = render_call_page(call, analyses.get(activity_id), datetime.now().isoformat(), stats["critical_count"])
+    # Фиксируем относительные пути calls/ → /calls/
+    html = html.replace('href="calls/', 'href="/calls/').replace('href="../calls/', 'href="/calls/')
+    html = html.replace('href="managers/', 'href="/managers/').replace('href="../managers/', 'href="/managers/')
+    html = html.replace('href="index.html"', 'href="/"').replace('href="../index.html"', 'href="/"')
+    html = html.replace('href="all-calls.html"', 'href="/calls"').replace('href="../all-calls.html"', 'href="/calls"')
+    html = html.replace('src="../', 'src="/').replace('src="../', 'src="/')
+    return html_response(inject_auth(html, user))
 
 @app.route("/rop")
 @rop_required
 def rop_report():
     user = current_user()
     calls, analyses = get_data(user)
-    from src.report_generator import compute_stats, get_objections_stats
+    from report_generator import render_rop_report, compute_stats
     stats = compute_stats(calls, analyses)
-    objections = get_objections_stats(analyses)
-    return render_template("rop_report.html", user=user, stats=stats,
-        analyses=analyses, calls=calls, objections=objections)
+    html = render_rop_report(calls, stats, analyses, datetime.now().isoformat())
+    return html_response(inject_auth(html, user))
 
-
-@app.route("/compare")
+@app.route("/managers")
 @rop_required
-def compare():
+def managers():
     user = current_user()
     calls, analyses = get_data(user)
-    from src.report_generator import compute_stats
+    from report_generator import render_managers_list, compute_stats
     stats = compute_stats(calls, analyses)
-    return render_template("compare.html", user=user, stats=stats, calls=calls, analyses=analyses)
+    html = render_managers_list(stats, datetime.now().isoformat())
+    html = html.replace('href="managers/', 'href="/managers/')
+    return html_response(inject_auth(html, user))
 
+@app.route("/managers/<int:manager_id>")
+@login_required
+def manager_detail(manager_id):
+    user = current_user()
+    if user["role"] == "manager" and user["manager_id"] != manager_id:
+        abort(403)
+    all_calls_data = load_calls()
+    analyses = load_analyses()
+    from report_generator import render_manager_page, compute_stats
+    stats = compute_stats(all_calls_data, analyses)
+    manager = next((m for m in stats["managers"] if m["id"] == manager_id), None)
+    if not manager: abort(404)
+    html = render_manager_page(manager, analyses, datetime.now().isoformat(), stats["critical_count"])
+    html = html.replace('href="../calls/', 'href="/calls/').replace('href="../managers/', 'href="/managers/')
+    html = html.replace('href="../index.html"', 'href="/').replace('href="../managers.html"', 'href="/managers"')
+    html = html.replace('src="../', 'src="/')
+    return html_response(inject_auth(html, user))
 
 @app.route("/critical")
 @login_required
 def critical():
     user = current_user()
     calls, analyses = get_data(user)
-    critical_calls = [
-        (c, analyses[c["activity_id"]])
-        for c in calls
-        if c["activity_id"] in analyses
-        and analyses[c["activity_id"]].get("analysis", {}).get("is_critical")
-    ]
-    critical_calls.sort(key=lambda x: x[0].get("created", ""), reverse=True)
-    return render_template("critical.html", user=user, critical_calls=critical_calls)
-
+    from report_generator import render_critical_page, compute_stats
+    stats = compute_stats(calls, analyses)
+    html = render_critical_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
+    html = html.replace('href="calls/', 'href="/calls/').replace('href="index.html"', 'href="/"')
+    return html_response(inject_auth(html, user))
 
 @app.route("/triggers")
 @login_required
 def triggers():
     user = current_user()
     calls, analyses = get_data(user)
-    return render_template("triggers.html", user=user, calls=calls, analyses=analyses)
+    from report_generator import render_triggers_page, compute_stats
+    stats = compute_stats(calls, analyses)
+    html = render_triggers_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
+    html = html.replace('href="calls/', 'href="/calls/').replace('href="index.html"', 'href="/"')
+    return html_response(inject_auth(html, user))
 
+@app.route("/compare")
+@rop_required
+def compare():
+    user = current_user()
+    calls, analyses = get_data(user)
+    from report_generator import render_compare_page, compute_stats
+    stats = compute_stats(calls, analyses)
+    html = render_compare_page(stats, calls, analyses, datetime.now().isoformat())
+    html = html.replace('href="managers/', 'href="/managers/').replace('href="index.html"', 'href="/"')
+    return html_response(inject_auth(html, user))
 
 @app.route("/objections")
 @login_required
 def objections():
     user = current_user()
     calls, analyses = get_data(user)
-    from src.report_generator import get_objections_stats
-    obj_stats = get_objections_stats(analyses)
-    return render_template("objections.html", user=user, calls=calls,
-        analyses=analyses, objections=obj_stats)
-
+    from report_generator import render_objections_page, compute_stats
+    stats = compute_stats(calls, analyses)
+    html = render_objections_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
+    html = html.replace('href="calls/', 'href="/calls/').replace('href="index.html"', 'href="/"')
+    return html_response(inject_auth(html, user))
 
 @app.route("/best")
 @login_required
 def best_calls():
     user = current_user()
     calls, analyses = get_data(user)
-    from src.report_generator import get_best_calls
-    best = get_best_calls(calls, analyses, n=20)
-    return render_template("best_calls.html", user=user, best=best)
-
+    from report_generator import render_best_calls_page, compute_stats
+    stats = compute_stats(calls, analyses)
+    html = render_best_calls_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
+    html = html.replace('href="calls/', 'href="/calls/').replace('href="index.html"', 'href="/"')
+    return html_response(inject_auth(html, user))
 
 # ============================================================
-# API — ручная правка оценки
+# API
 # ============================================================
 
 @app.route("/api/correct", methods=["POST"])
 @rop_required
 def api_correct():
     data = request.json or {}
-    activity_id = data.get("activity_id")
+    aid = data.get("activity_id")
     score = data.get("score")
     comment = data.get("comment", "")
-
-    if not activity_id or score is None:
+    if not aid or score is None:
         return jsonify({"error": "missing fields"}), 400
-
     p = DATA_DIR / "manual_corrections.json"
     corrections = {}
     if p.exists():
-        try:
-            corrections = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-
-    corrections[activity_id] = {"overall_score": float(score), "comment": comment}
+        try: corrections = json.loads(p.read_text(encoding="utf-8"))
+        except: pass
+    corrections[aid] = {"overall_score": float(score), "comment": comment}
     p.write_text(json.dumps(corrections, ensure_ascii=False, indent=2), encoding="utf-8")
     return jsonify({"ok": True})
-
-
-# ============================================================
-# HEALTH CHECK для Render + UptimeRobot
-# ============================================================
 
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "time": datetime.now().isoformat()})
 
+@app.errorhandler(403)
+def forbidden(e):
+    return html_response("<h2 style='font-family:sans-serif;padding:40px'>403 — Нет доступа. <a href='/'>На главную</a></h2>"), 403
+
+@app.errorhandler(404)
+def not_found(e):
+    return html_response("<h2 style='font-family:sans-serif;padding:40px'>404 — Не найдено. <a href='/'>На главную</a></h2>"), 404
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
