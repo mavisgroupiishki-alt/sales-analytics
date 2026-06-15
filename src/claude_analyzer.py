@@ -917,6 +917,13 @@ def main():
             }
             success += 1
 
+            # Уведомление менеджеру в Bitrix
+            try:
+                from bitrix import send_manager_notifications
+                send_manager_notifications([(call_meta, analysis)])
+            except Exception as _notify_err:
+                logger.debug(f"Уведомление не отправлено: {_notify_err}")
+
             if success % 10 == 0:
                 analyses_path.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
                 print(f"   💾 Промежуточное сохранение ({success})")
