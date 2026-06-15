@@ -15,9 +15,867 @@ import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-import sys as _sys, os as _os
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)) if "__file__" in dir() else ".")
-from admin import admin_bp
+# Admin module (встроен напрямую)
+admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
+
+# ============================================================
+# КОНФИГИ (хранятся в JSON файлах)
+# ============================================================
+
+def load_config(name: str, default: dict) -> dict:
+    p = DATA_DIR / f"config_{name}.json"
+    if not p.exists():
+        return default
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def save_config(name: str, data: dict):
+    p = DATA_DIR / f"config_{name}.json"
+    p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+DEFAULT_CRITERIA = {
+    "criteria": [
+        {"id": "goal", "name": "Представление и цель звонка", "weight": 0.05, "enabled": True},
+        {"id": "need", "name": "Выявление потребности", "weight": 0.12, "enabled": True},
+        {"id": "questions", "name": "Глубина уточняющих вопросов", "weight": 0.08, "enabled": True},
+        {"id": "summary", "name": "Резюмирование потребности", "weight": 0.07, "enabled": True},
+        {"id": "presentation", "name": "Презентация через пользу", "weight": 0.12, "enabled": True},
+        {"id": "expertise", "name": "Экспертность и уверенность", "weight": 0.08, "enabled": True},
+        {"id": "upsell", "name": "Допродажа", "weight": 0.08, "enabled": True},
+        {"id": "objection_detect", "name": "Распознавание возражений", "weight": 0.08, "enabled": True},
+        {"id": "objection_handle", "name": "Качество отработки возражений", "weight": 0.10, "enabled": True},
+        {"id": "closing", "name": "Попытка закрытия", "weight": 0.10, "enabled": True},
+        {"id": "next_step", "name": "Фиксация следующего шага", "weight": 0.07, "enabled": True},
+        {"id": "speech", "name": "Речь и эмоциональный фон", "weight": 0.03, "enabled": True},
+        {"id": "ending", "name": "Корректное завершение", "weight": 0.02, "enabled": True},
+    ]
+}
+
+DEFAULT_TRIGGERS = {
+    "triggers": [
+        {"id": "no_next_step", "name": "Не зафиксирован следующий шаг", "enabled": True, "weight": "high"},
+        {"id": "missed_objection", "name": "Не отработано возражение", "enabled": True, "weight": "high"},
+        {"id": "missed_deal", "name": "Упущенная сделка", "enabled": True, "weight": "critical"},
+        {"id": "no_needs", "name": "Не выявлены потребности", "enabled": True, "weight": "high"},
+        {"id": "discount_no_nego", "name": "Скидка без переговоров", "enabled": True, "weight": "medium"},
+        {"id": "interrupting", "name": "Перебивал клиента", "enabled": True, "weight": "medium"},
+        {"id": "no_name", "name": "Не использовал имя клиента", "enabled": False, "weight": "low"},
+        {"id": "no_deadline", "name": "Не уточнил сроки", "enabled": True, "weight": "medium"},
+        {"id": "bad_emotions", "name": "Негативный эмоциональный фон", "enabled": True, "weight": "critical"},
+        {"id": "no_summary", "name": "Нет резюме договорённостей", "enabled": True, "weight": "medium"},
+        {"id": "no_alternative", "name": "Нет альтернативы при отказе", "enabled": True, "weight": "medium"},
+        {"id": "no_closing", "name": "Звонок без понятного результата", "enabled": True, "weight": "high"},
+    ]
+}
+
+DEFAULT_SCRIPTS = {
+    "scripts": [
+        {
+            "id": "primary_new",
+            "name": "Первичный входящий (новый клиент)",
+            "stages": [
+                "Приветствие и установление контакта",
+                "Программирование разговора",
+                "Выявление потребности",
+                "Выявление боли и мотива",
+                "Резюмирование потребности",
+                "Презентация решения через пользу",
+                "Допродажа",
+                "Работа с возражениями",
+                "Попытка закрытия",
+                "Фиксация договорённости",
+            ],
+            "critical_stages": ["Выявление потребности", "Попытка закрытия", "Фиксация договорённости"],
+            "success_criteria": "КП отправлено, назначен следующий звонок",
+        }
+    ]
+}
+
+# ============================================================
+# AUTH
+# ============================================================
+
+def rop_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "username" not in session:
+            return redirect("/login")
+        if session.get("role") != "rop":
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated
+
+
+def html_r(html):
+    return Response(html, mimetype="text/html; charset=utf-8")
+
+
+def admin_page(title, content_html, active=""):
+    return f"""<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} — Админ</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:-apple-system,"Segoe UI",sans-serif;background:#FAF7F2;color:#2A1F15}}
+.topbar{{background:#3D2E1F;color:#fff;padding:10px 24px;display:flex;align-items:center;gap:20px;border-bottom:3px solid #C9A961}}
+.topbar a{{color:rgba(255,255,255,.75);text-decoration:none;font-size:13px;padding:4px 6px;border-radius:4px}}
+.topbar a:hover,.topbar a.active{{color:#fff;background:rgba(255,255,255,.1)}}
+.topbar .brand{{font-weight:700;font-size:15px;color:#C9A961;margin-right:8px}}
+.container{{max-width:1100px;margin:0 auto;padding:24px}}
+h1{{font-size:24px;font-weight:400;color:#3D2E1F;margin-bottom:20px;font-family:Georgia,serif}}
+h2{{font-size:18px;font-weight:600;color:#3D2E1F;margin:20px 0 12px}}
+.card{{background:#fff;border:1px solid #E8DFD0;border-radius:8px;padding:20px;margin-bottom:16px}}
+.btn{{padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600}}
+.btn-primary{{background:#3D2E1F;color:#fff}}.btn-primary:hover{{background:#6B5544}}
+.btn-danger{{background:#A0432B;color:#fff}}.btn-secondary{{background:#F2EBE0;color:#3D2E1F}}
+input,textarea,select{{width:100%;padding:8px 12px;border:1px solid #E8DFD0;border-radius:4px;font-size:13px;font-family:inherit;background:#FAF7F2}}
+input:focus,textarea:focus,select:focus{{outline:none;border-color:#C9A961}}
+label{{font-size:12px;font-weight:600;color:#A39686;text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px;margin-top:12px}}
+.row{{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid #F0E8DA}}
+.row:last-child{{border-bottom:none}}
+.tag{{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}}
+.tag-high{{background:rgba(184,107,79,.15);color:#B86B4F}}
+.tag-critical{{background:rgba(160,67,43,.15);color:#A0432B}}
+.tag-medium{{background:rgba(201,169,97,.18);color:#C9A961}}
+.tag-low{{background:rgba(124,139,111,.15);color:#7C8B6F}}
+.notice{{background:#FFF8E8;border:1px solid #C9A961;border-radius:6px;padding:12px 16px;font-size:13px;margin-bottom:16px}}
+.stat-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}}
+.stat{{background:#fff;border:1px solid #E8DFD0;border-radius:6px;padding:14px;border-top:3px solid #C9A961}}
+.stat-val{{font-size:28px;font-family:Georgia,serif;color:#3D2E1F}}
+.stat-label{{font-size:11px;color:#A39686;text-transform:uppercase;letter-spacing:1px;margin-top:4px}}
+table{{width:100%;border-collapse:collapse;font-size:13px}}
+th{{text-align:left;padding:8px 12px;color:#A39686;font-size:11px;text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid #E8DFD0}}
+td{{padding:10px 12px;border-bottom:1px solid #F0E8DA}}
+tr:hover td{{background:#FAF7F2}}
+.progress{{height:6px;background:#F0E8DA;border-radius:3px;overflow:hidden}}
+.progress-fill{{height:100%;border-radius:3px}}
+.risk-high{{color:#A0432B;font-weight:700}}
+.risk-medium{{color:#C9A961;font-weight:700}}
+.risk-low{{color:#7C8B6F;font-weight:700}}
+</style></head><body>
+<div class="topbar">
+  <span class="brand">⚙️ Админ</span>
+  <a href="/admin" {"class='active'" if active=='home' else ""}>Главная</a>
+  <a href="/admin/criteria" {"class='active'" if active=='criteria' else ""}>Критерии</a>
+  <a href="/admin/triggers" {"class='active'" if active=='triggers' else ""}>Триггеры</a>
+  <a href="/admin/scripts" {"class='active'" if active=='scripts' else ""}>Скрипты</a>
+  <a href="/admin/learning" {"class='active'" if active=='learning' else ""}>Самообучение</a>
+  <a href="/admin/conversion" {"class='active'" if active=='conversion' else ""}>Конверсия</a>
+  <a href="/admin/forecast" {"class='active'" if active=='forecast' else ""}>Прогноз риска</a>
+  <a href="/" style="margin-left:auto">← На сайт</a>
+</div>
+<div class="container">
+<h1>{title}</h1>
+{content_html}
+</div></body></html>"""
+
+
+# ============================================================
+# ГЛАВНАЯ АДМИНКИ
+# ============================================================
+
+@admin_bp.route("/")
+@rop_required
+def admin_home():
+    criteria_cfg = load_config("criteria", DEFAULT_CRITERIA)
+    triggers_cfg = load_config("triggers", DEFAULT_TRIGGERS)
+    scripts_cfg = load_config("scripts", DEFAULT_SCRIPTS)
+
+    content = f"""
+<div class="notice">⚙️ Здесь настраивается логика оценки звонков. Изменения применяются к новым анализам.</div>
+<div class="stat-grid">
+  <div class="stat"><div class="stat-val">{len(criteria_cfg['criteria'])}</div><div class="stat-label">Критериев оценки</div></div>
+  <div class="stat"><div class="stat-val">{sum(1 for t in triggers_cfg['triggers'] if t['enabled'])}</div><div class="stat-label">Активных триггеров</div></div>
+  <div class="stat"><div class="stat-val">{len(scripts_cfg['scripts'])}</div><div class="stat-label">Скриптов</div></div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+  <a href="/admin/criteria" style="text-decoration:none">
+    <div class="card" style="text-align:center;cursor:pointer">
+      <div style="font-size:32px">📊</div>
+      <div style="font-weight:600;margin-top:8px">Критерии оценки</div>
+      <div style="font-size:12px;color:#A39686;margin-top:4px">Веса и описания критериев</div>
+    </div>
+  </a>
+  <a href="/admin/triggers" style="text-decoration:none">
+    <div class="card" style="text-align:center;cursor:pointer">
+      <div style="font-size:32px">⚠️</div>
+      <div style="font-weight:600;margin-top:8px">Триггеры</div>
+      <div style="font-size:12px;color:#A39686;margin-top:4px">Включить/выключить ошибки</div>
+    </div>
+  </a>
+  <a href="/admin/scripts" style="text-decoration:none">
+    <div class="card" style="text-align:center;cursor:pointer">
+      <div style="font-size:32px">📝</div>
+      <div style="font-weight:600;margin-top:8px">Скрипты и эталоны</div>
+      <div style="font-size:12px;color:#A39686;margin-top:4px">Этапы идеального звонка</div>
+    </div>
+  </a>
+  <a href="/admin/learning" style="text-decoration:none">
+    <div class="card" style="text-align:center;cursor:pointer">
+      <div style="font-size:32px">🧠</div>
+      <div style="font-weight:600;margin-top:8px">Самообучение</div>
+      <div style="font-size:12px;color:#A39686;margin-top:4px">Калибровка на ваших оценках</div>
+    </div>
+  </a>
+  <a href="/admin/conversion" style="text-decoration:none">
+    <div class="card" style="text-align:center;cursor:pointer">
+      <div style="font-size:32px">💰</div>
+      <div style="font-weight:600;margin-top:8px">Конверсия</div>
+      <div style="font-size:12px;color:#A39686;margin-top:4px">Связь качества с оплатами</div>
+    </div>
+  </a>
+  <a href="/admin/forecast" style="text-decoration:none">
+    <div class="card" style="text-align:center;cursor:pointer">
+      <div style="font-size:32px">🔮</div>
+      <div style="font-weight:600;margin-top:8px">Прогноз риска</div>
+      <div style="font-size:12px;color:#A39686;margin-top:4px">Сделки под угрозой потери</div>
+    </div>
+  </a>
+</div>"""
+    return html_r(admin_page("Административные настройки", content, "home"))
+
+
+# ============================================================
+# КРИТЕРИИ
+# ============================================================
+
+@admin_bp.route("/criteria", methods=["GET", "POST"])
+@rop_required
+def admin_criteria():
+    if request.method == "POST":
+        data = request.json or {}
+        save_config("criteria", data)
+        return jsonify({"ok": True})
+
+    cfg = load_config("criteria", DEFAULT_CRITERIA)
+    total_weight = sum(c["weight"] for c in cfg["criteria"] if c["enabled"])
+
+    rows = ""
+    for c in cfg["criteria"]:
+        enabled_check = "checked" if c["enabled"] else ""
+        pct = int(c["weight"] * 100)
+        rows += f"""
+<div class="row" data-id="{c['id']}">
+  <div style="flex:0 0 30px"><input type="checkbox" {enabled_check} onchange="updateCriteria()" data-field="enabled" style="width:auto"></div>
+  <div style="flex:1;font-weight:600;font-size:14px">{c['name']}</div>
+  <div style="flex:0 0 80px">
+    <input type="number" value="{pct}" min="0" max="100" step="1"
+      onchange="updateCriteria()" data-field="weight"
+      style="width:70px;text-align:center"> %
+  </div>
+  <div style="flex:0 0 120px">
+    <div class="progress"><div class="progress-fill" style="width:{min(pct,100)}%;background:{'#7C8B6F' if c['enabled'] else '#E8DFD0'}"></div></div>
+  </div>
+</div>"""
+
+    content = f"""
+<div class="notice">Сумма весов активных критериев должна быть = 100%. Сейчас: <b id="totalWeight">{int(total_weight*100)}%</b></div>
+<div class="card">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <div style="font-size:13px;color:#A39686">Изменения применяются к следующим анализам</div>
+  <button class="btn btn-primary" onclick="saveCriteria()">💾 Сохранить</button>
+</div>
+{rows}
+</div>
+<script>
+var _cfg = {json.dumps(cfg, ensure_ascii=False)};
+function updateCriteria() {{
+  var rows = document.querySelectorAll('[data-id]');
+  var total = 0;
+  rows.forEach(function(row) {{
+    var id = row.dataset.id;
+    var enabled = row.querySelector('[data-field=enabled]').checked;
+    var weight = parseFloat(row.querySelector('[data-field=weight]').value) / 100;
+    var c = _cfg.criteria.find(function(x){{return x.id===id}});
+    if (c) {{ c.enabled = enabled; c.weight = weight; }}
+    if (enabled) total += weight;
+    var bar = row.querySelector('.progress-fill');
+    if (bar) {{ bar.style.width = Math.min(weight*100, 100)+'%'; bar.style.background = enabled ? '#7C8B6F' : '#E8DFD0'; }}
+  }});
+  document.getElementById('totalWeight').textContent = Math.round(total*100)+'%';
+  document.getElementById('totalWeight').style.color = Math.abs(total-1) < 0.01 ? '#7C8B6F' : '#A0432B';
+}}
+function saveCriteria() {{
+  fetch('/admin/criteria', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(_cfg)}})
+  .then(r=>r.json()).then(d=>alert(d.ok ? '✅ Сохранено!' : 'Ошибка'));
+}}
+</script>"""
+    return html_r(admin_page("Критерии оценки", content, "criteria"))
+
+
+# ============================================================
+# ТРИГГЕРЫ
+# ============================================================
+
+@admin_bp.route("/triggers", methods=["GET", "POST"])
+@rop_required
+def admin_triggers():
+    if request.method == "POST":
+        save_config("triggers", request.json or {})
+        return jsonify({"ok": True})
+
+    cfg = load_config("triggers", DEFAULT_TRIGGERS)
+    rows = ""
+    for t in cfg["triggers"]:
+        enabled_check = "checked" if t["enabled"] else ""
+        tag_cls = f"tag-{t.get('weight','medium')}"
+        rows += f"""
+<div class="row" data-id="{t['id']}">
+  <div style="flex:0 0 30px"><input type="checkbox" {enabled_check} onchange="updateTriggers()" data-field="enabled" style="width:auto"></div>
+  <div style="flex:1;font-size:14px">{t['name']}</div>
+  <div style="flex:0 0 120px">
+    <select onchange="updateTriggers()" data-field="weight">
+      <option value="low" {'selected' if t.get('weight')=='low' else ''}>Низкий</option>
+      <option value="medium" {'selected' if t.get('weight')=='medium' else ''}>Средний</option>
+      <option value="high" {'selected' if t.get('weight')=='high' else ''}>Высокий</option>
+      <option value="critical" {'selected' if t.get('weight')=='critical' else ''}>Критичный</option>
+    </select>
+  </div>
+</div>"""
+
+    content = f"""
+<div class="card">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <div style="font-size:13px;color:#A39686">Отключённые триггеры не будут срабатывать при анализе</div>
+  <button class="btn btn-primary" onclick="saveTriggers()">💾 Сохранить</button>
+</div>
+{rows}
+</div>
+<script>
+var _tcfg = {json.dumps(cfg, ensure_ascii=False)};
+function updateTriggers() {{
+  document.querySelectorAll('[data-id]').forEach(function(row) {{
+    var id = row.dataset.id;
+    var t = _tcfg.triggers.find(function(x){{return x.id===id}});
+    if (t) {{
+      t.enabled = row.querySelector('[data-field=enabled]').checked;
+      t.weight = row.querySelector('[data-field=weight]').value;
+    }}
+  }});
+}}
+function saveTriggers() {{
+  fetch('/admin/triggers', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(_tcfg)}})
+  .then(r=>r.json()).then(d=>alert(d.ok ? '✅ Сохранено!' : 'Ошибка'));
+}}
+</script>"""
+    return html_r(admin_page("Настройка триггеров", content, "triggers"))
+
+
+# ============================================================
+# СКРИПТЫ
+# ============================================================
+
+@admin_bp.route("/scripts", methods=["GET", "POST"])
+@rop_required
+def admin_scripts():
+    if request.method == "POST":
+        save_config("scripts", request.json or {})
+        return jsonify({"ok": True})
+
+    cfg = load_config("scripts", DEFAULT_SCRIPTS)
+    scripts_html = ""
+    for s in cfg["scripts"]:
+        stages_text = "\n".join(s.get("stages", []))
+        critical_text = "\n".join(s.get("critical_stages", []))
+        scripts_html += f"""
+<div class="card" data-script-id="{s['id']}">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="font-weight:700;font-size:16px">{s['name']}</div>
+    <button class="btn btn-primary" onclick="saveScript('{s['id']}')">💾 Сохранить</button>
+  </div>
+  <label>Название</label>
+  <input type="text" value="{s['name']}" data-field="name">
+  <label>Этапы эталонного разговора (каждый с новой строки)</label>
+  <textarea rows="10" data-field="stages" style="font-size:12px">{stages_text}</textarea>
+  <label>Критические этапы (обязательные, каждый с новой строки)</label>
+  <textarea rows="4" data-field="critical_stages" style="font-size:12px">{critical_text}</textarea>
+  <label>Критерий успеха</label>
+  <input type="text" value="{s.get('success_criteria','')}" data-field="success_criteria">
+</div>"""
+
+    content = f"""
+<div class="notice">Скрипты используются как эталон при анализе. ИИ сопоставляет разговор с этапами.</div>
+<button class="btn btn-secondary" onclick="addScript()" style="margin-bottom:16px">+ Добавить скрипт</button>
+{scripts_html}
+<script>
+var _scfg = {json.dumps(cfg, ensure_ascii=False)};
+function saveScript(id) {{
+  var card = document.querySelector('[data-script-id="'+id+'"]');
+  var s = _scfg.scripts.find(function(x){{return x.id===id}});
+  if (!s) return;
+  s.name = card.querySelector('[data-field=name]').value;
+  s.stages = card.querySelector('[data-field=stages]').value.split('\\n').filter(Boolean);
+  s.critical_stages = card.querySelector('[data-field=critical_stages]').value.split('\\n').filter(Boolean);
+  s.success_criteria = card.querySelector('[data-field=success_criteria]').value;
+  fetch('/admin/scripts', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(_scfg)}})
+  .then(r=>r.json()).then(d=>alert(d.ok ? '✅ Сохранено!' : 'Ошибка'));
+}}
+function addScript() {{
+  var name = prompt('Название нового скрипта:');
+  if (!name) return;
+  var id = name.toLowerCase().replace(/[^a-z0-9]/g,'_');
+  _scfg.scripts.push({{id:id, name:name, stages:[], critical_stages:[], success_criteria:''}});
+  location.reload();
+}}
+</script>"""
+    return html_r(admin_page("Скрипты и эталоны", content, "scripts"))
+
+
+# ============================================================
+# САМООБУЧЕНИЕ
+# ============================================================
+
+@admin_bp.route("/learning")
+@rop_required
+def admin_learning():
+    """Показывает паттерны из ручных правок для калибровки ИИ."""
+    corrections_path = DATA_DIR / "manual_corrections.json"
+    analyses_path = DATA_DIR / "analyses.json"
+
+    corrections = {}
+    if corrections_path.exists():
+        try: corrections = json.loads(corrections_path.read_text(encoding="utf-8"))
+        except: pass
+
+    analyses = {}
+    if analyses_path.exists():
+        try: analyses = json.loads(analyses_path.read_text(encoding="utf-8"))
+        except: pass
+
+    if not corrections:
+        content = '<div class="notice">Пока нет ручных правок оценок. Начните исправлять оценки ИИ — здесь появится анализ паттернов.</div>'
+        return html_r(admin_page("Самообучение", content, "learning"))
+
+    # Анализируем расхождения ИИ и человека
+    diffs = []
+    overcritical = 0  # ИИ занижает
+    underlevel = 0    # ИИ завышает
+    total_diff = 0
+
+    for aid, corr in corrections.items():
+        a = analyses.get(aid, {}).get("analysis", {})
+        ai_score = a.get("overall_score")
+        human_score = corr.get("overall_score")
+        if ai_score is None or human_score is None:
+            continue
+        diff = float(human_score) - float(ai_score)
+        total_diff += diff
+        if diff > 1: overcritical += 1
+        elif diff < -1: underlevel += 1
+        diffs.append({
+            "id": aid,
+            "ai": float(ai_score),
+            "human": float(human_score),
+            "diff": round(diff, 1),
+            "comment": corr.get("comment", ""),
+            "call_type": a.get("call_type", {}).get("label", "") if isinstance(a.get("call_type"), dict) else "",
+        })
+
+    diffs.sort(key=lambda x: abs(x["diff"]), reverse=True)
+    avg_diff = round(total_diff / len(diffs), 2) if diffs else 0
+    bias = "занижает" if avg_diff > 0 else "завышает"
+    bias_color = "#7C8B6F" if abs(avg_diff) < 0.5 else "#A0432B"
+
+    # Паттерны по типам звонков
+    type_diffs = defaultdict(list)
+    for d in diffs:
+        if d["call_type"]:
+            type_diffs[d["call_type"]].append(d["diff"])
+
+    type_rows = ""
+    for ctype, ds in sorted(type_diffs.items(), key=lambda x: abs(sum(x[1])/len(x[1])), reverse=True):
+        avg = round(sum(ds)/len(ds), 1)
+        color = "#A0432B" if abs(avg) > 1 else "#7C8B6F"
+        type_rows += f'<tr><td>{ctype}</td><td>{len(ds)}</td><td style="color:{color};font-weight:700">{avg:+.1f}</td></tr>'
+
+    # Калибровочный промпт
+    calibration_hint = ""
+    if len(diffs) >= 5:
+        if avg_diff > 0.5:
+            calibration_hint = f"ИИ в среднем занижает оценки на {avg_diff} балла. Рекомендуется добавить в системный промпт: «Будь немного мягче в оценках — твои оценки в среднем на {avg_diff} ниже оценок руководителя»."
+        elif avg_diff < -0.5:
+            calibration_hint = f"ИИ в среднем завышает оценки на {abs(avg_diff)} балла. Рекомендуется добавить в системный промпт: «Будь строже в оценках»."
+        else:
+            calibration_hint = "ИИ хорошо откалиброван — расхождение с оценками руководителя минимально."
+
+    # Генерируем калибровочный промпт
+    calibration_prompt = _generate_calibration_prompt(diffs, corrections)
+
+    diff_rows = "".join(
+        f'<tr><td><a href="/calls/{d["id"]}">{d["id"]}</a></td>'
+        f'<td>{d["call_type"]}</td>'
+        f'<td>{d["ai"]}</td><td>{d["human"]}</td>'
+        f'<td style="color:{"#7C8B6F" if abs(d["diff"])<1 else "#A0432B"};font-weight:700">{d["diff"]:+.1f}</td>'
+        f'<td style="font-size:11px;color:#A39686">{d["comment"][:50]}</td></tr>'
+        for d in diffs[:20]
+    )
+
+    content = f"""
+<div class="stat-grid">
+  <div class="stat"><div class="stat-val">{len(diffs)}</div><div class="stat-label">Правок оценок</div></div>
+  <div class="stat"><div class="stat-val" style="color:{bias_color}">{avg_diff:+.1f}</div><div class="stat-label">Средний сдвиг (ИИ {bias})</div></div>
+  <div class="stat"><div class="stat-val" style="color:#7C8B6F">{overcritical}</div><div class="stat-label">ИИ занижал</div></div>
+  <div class="stat"><div class="stat-val" style="color:#C9A961">{underlevel}</div><div class="stat-label">ИИ завышал</div></div>
+</div>
+
+<div class="card">
+  <h2>💡 Вывод</h2>
+  <p style="font-size:14px;line-height:1.6">{calibration_hint}</p>
+</div>
+
+<div class="card">
+  <h2>🔧 Калибровочная инструкция для ИИ</h2>
+  <p style="font-size:12px;color:#A39686;margin-bottom:8px">Скопируйте и добавьте в системный промпт claude_analyzer.py</p>
+  <textarea rows="6" style="font-size:12px;background:#F8F5F0">{calibration_prompt}</textarea>
+  <button class="btn btn-primary" style="margin-top:8px" onclick="navigator.clipboard.writeText(document.querySelector('textarea').value);alert('Скопировано!')">📋 Скопировать</button>
+</div>
+
+<div class="card">
+  <h2>📊 Расхождения по типам звонков</h2>
+  <table><tr><th>Тип звонка</th><th>Правок</th><th>Средний сдвиг</th></tr>{type_rows}</table>
+</div>
+
+<div class="card">
+  <h2>📋 Все правки (топ расхождений)</h2>
+  <table>
+    <tr><th>ID</th><th>Тип</th><th>ИИ</th><th>Человек</th><th>Разница</th><th>Комментарий</th></tr>
+    {diff_rows}
+  </table>
+</div>"""
+    return html_r(admin_page("Самообучение", content, "learning"))
+
+
+def _generate_calibration_prompt(diffs, corrections):
+    if not diffs:
+        return "Недостаточно данных для калибровки."
+    avg_diff = sum(d["diff"] for d in diffs) / len(diffs)
+    examples = [d for d in diffs if abs(d["diff"]) >= 2][:3]
+
+    prompt = f"КАЛИБРОВКА ОЦЕНОК (на основе {len(diffs)} правок руководителя):\n"
+    if avg_diff > 0.3:
+        prompt += f"- Твои оценки в среднем на {avg_diff:.1f} балла НИЖЕ оценок руководителя. Будь немного мягче.\n"
+    elif avg_diff < -0.3:
+        prompt += f"- Твои оценки в среднем на {abs(avg_diff):.1f} балла ВЫШЕ оценок руководителя. Будь строже.\n"
+    else:
+        prompt += "- Твои оценки хорошо совпадают с оценками руководителя. Продолжай в том же духе.\n"
+
+    if examples:
+        prompt += "\nПримеры расхождений (для понимания шкалы):\n"
+        for ex in examples:
+            comment = corrections.get(ex["id"], {}).get("comment", "")
+            prompt += f"- Звонок оценён тобой как {ex['ai']}, руководитель поставил {ex['human']}"
+            if comment:
+                prompt += f" (причина: {comment})"
+            prompt += "\n"
+    return prompt
+
+
+# ============================================================
+# КОНВЕРСИЯ
+# ============================================================
+
+@admin_bp.route("/conversion")
+@rop_required
+def admin_conversion():
+    """Связь качества звонков с конверсией в оплату."""
+    calls_path = DATA_DIR / "calls_data.json"
+    analyses_path = DATA_DIR / "analyses.json"
+
+    calls = []
+    if calls_path.exists():
+        try: calls = json.loads(calls_path.read_text(encoding="utf-8"))
+        except: pass
+
+    analyses = {}
+    if analyses_path.exists():
+        try: analyses = json.loads(analyses_path.read_text(encoding="utf-8"))
+        except: pass
+
+    if not calls or not analyses:
+        content = '<div class="notice">Нет данных для анализа конверсии.</div>'
+        return html_r(admin_page("Конверсия", content, "conversion"))
+
+    # Группируем по диапазонам оценок
+    score_buckets = {"9-10": [], "7-8": [], "5-6": [], "0-4": []}
+    won_by_bucket = {"9-10": 0, "7-8": 0, "5-6": 0, "0-4": 0}
+
+    for c in calls:
+        a = analyses.get(c["activity_id"], {}).get("analysis", {})
+        score = a.get("overall_score")
+        if score is None: continue
+        score = float(score)
+        stage = c.get("crm", {}).get("stage_id", "").upper()
+        won = "WON" in stage or "WIN" in stage
+
+        if score >= 9: bucket = "9-10"
+        elif score >= 7: bucket = "7-8"
+        elif score >= 5: bucket = "5-6"
+        else: bucket = "0-4"
+
+        score_buckets[bucket].append(score)
+        if won: won_by_bucket[bucket] += 1
+
+    # Средние оценки по менеджерам
+    manager_stats = defaultdict(lambda: {"scores": [], "won": 0, "total": 0, "name": ""})
+    for c in calls:
+        mid = c.get("manager", {}).get("id", 0)
+        mname = c.get("manager", {}).get("name", "")
+        a = analyses.get(c["activity_id"], {}).get("analysis", {})
+        score = a.get("overall_score")
+        stage = c.get("crm", {}).get("stage_id", "").upper()
+        won = "WON" in stage or "WIN" in stage
+        manager_stats[mid]["name"] = mname
+        manager_stats[mid]["total"] += 1
+        if won: manager_stats[mid]["won"] += 1
+        if score is not None:
+            manager_stats[mid]["scores"].append(float(score))
+
+    bucket_rows = ""
+    for bucket, scores in score_buckets.items():
+        if not scores: continue
+        count = len(scores)
+        won = won_by_bucket[bucket]
+        conv = round(won / count * 100, 1) if count > 0 else 0
+        avg = round(sum(scores)/count, 1)
+        bar_w = min(int(conv), 100)
+        bucket_rows += f"""
+<tr>
+  <td><b>{bucket} баллов</b></td>
+  <td>{count} звонков</td>
+  <td>{won}</td>
+  <td>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="progress" style="flex:1"><div class="progress-fill" style="width:{bar_w}%;background:#7C8B6F"></div></div>
+      <b>{conv}%</b>
+    </div>
+  </td>
+</tr>"""
+
+    manager_rows = ""
+    for mid, ms in sorted(manager_stats.items(), key=lambda x: -(sum(x[1]["scores"])/len(x[1]["scores"]) if x[1]["scores"] else 0)):
+        avg_score = round(sum(ms["scores"])/len(ms["scores"]), 1) if ms["scores"] else 0
+        conv = round(ms["won"]/ms["total"]*100, 1) if ms["total"] > 0 else 0
+        manager_rows += f"""
+<tr>
+  <td><b>{ms['name']}</b></td>
+  <td>{ms['total']}</td>
+  <td>{avg_score}</td>
+  <td>{ms['won']}</td>
+  <td><b>{conv}%</b></td>
+</tr>"""
+
+    # Корреляция оценки и выигрыша
+    scored_calls = [(float(analyses[c["activity_id"]]["analysis"]["overall_score"]),
+                     1 if "WON" in c.get("crm",{}).get("stage_id","").upper() else 0)
+                    for c in calls
+                    if c["activity_id"] in analyses
+                    and analyses[c["activity_id"]].get("analysis",{}).get("overall_score") is not None]
+
+    correlation_text = ""
+    if len(scored_calls) >= 10:
+        scores_list = [x[0] for x in scored_calls]
+        won_list = [x[1] for x in scored_calls]
+        n = len(scores_list)
+        mean_s = sum(scores_list)/n
+        mean_w = sum(won_list)/n
+        cov = sum((s-mean_s)*(w-mean_w) for s,w in zip(scores_list,won_list))/n
+        std_s = math.sqrt(sum((s-mean_s)**2 for s in scores_list)/n) or 1
+        std_w = math.sqrt(sum((w-mean_w)**2 for w in won_list)/n) or 1
+        corr = round(cov/(std_s*std_w), 2)
+        if abs(corr) > 0.5:
+            correlation_text = f"<div class='notice'>📈 Корреляция оценки ИИ и выигрыша сделки: <b>{corr}</b> — {'сильная связь' if abs(corr)>0.7 else 'умеренная связь'}. {'Высокие оценки действительно предсказывают оплату.' if corr>0 else 'Аномалия — нужна доп. проверка.'}</div>"
+        else:
+            correlation_text = f"<div class='notice'>📊 Корреляция оценки и выигрыша: <b>{corr}</b> — слабая связь. Возможно нужна калибровка критериев.</div>"
+
+    content = f"""
+{correlation_text}
+<div class="card">
+  <h2>Конверсия по диапазонам оценок</h2>
+  <table><tr><th>Оценка ИИ</th><th>Звонков</th><th>Выиграно</th><th>Конверсия</th></tr>
+  {bucket_rows or '<tr><td colspan="4" style="color:#A39686;text-align:center">Нет данных о статусах сделок</td></tr>'}
+  </table>
+</div>
+<div class="card">
+  <h2>Конверсия по менеджерам</h2>
+  <table><tr><th>Менеджер</th><th>Звонков</th><th>Ср. оценка</th><th>Выиграно</th><th>Конверсия</th></tr>
+  {manager_rows}
+  </table>
+</div>"""
+    return html_r(admin_page("Конверсия и качество", content, "conversion"))
+
+
+# ============================================================
+# ПРОГНОЗ РИСКА ПОТЕРИ СДЕЛКИ
+# ============================================================
+
+@admin_bp.route("/forecast")
+@rop_required
+def admin_forecast():
+    """Прогноз риска потери сделки на основе качества звонков."""
+    calls_path = DATA_DIR / "calls_data.json"
+    analyses_path = DATA_DIR / "analyses.json"
+
+    calls = []
+    if calls_path.exists():
+        try: calls = json.loads(calls_path.read_text(encoding="utf-8"))
+        except: pass
+
+    analyses = {}
+    if analyses_path.exists():
+        try: analyses = json.loads(analyses_path.read_text(encoding="utf-8"))
+        except: pass
+
+    # Группируем по сделкам
+    deals = defaultdict(lambda: {"calls": [], "client": "", "manager": "", "stage": "", "owner_id": ""})
+    for c in calls:
+        oid = c.get("crm", {}).get("owner_id", "")
+        otype = c.get("crm", {}).get("owner_type", "")
+        if otype != "deal" or not oid:
+            continue
+        deals[oid]["calls"].append(c)
+        deals[oid]["client"] = c.get("client", {}).get("name", "")
+        deals[oid]["manager"] = c.get("manager", {}).get("name", "")
+        deals[oid]["stage"] = c.get("crm", {}).get("stage_name", "") or c.get("crm", {}).get("stage_id", "")
+        deals[oid]["owner_id"] = oid
+
+    # Считаем риск для каждой сделки
+    risk_deals = []
+    for deal_id, deal in deals.items():
+        stage = deal["stage"].upper()
+        # Пропускаем завершённые
+        if any(x in stage for x in ["WON", "LOSE", "WIN", "ОТКАЗ", "УСПЕХ"]):
+            continue
+
+        scores = []
+        flags_count = 0
+        no_next_step_count = 0
+        last_call_date = None
+        triggers_all = []
+
+        for c in deal["calls"]:
+            a = analyses.get(c["activity_id"], {}).get("analysis", {})
+            score = a.get("overall_score")
+            if score is not None:
+                scores.append(float(score))
+            flags = a.get("flags", {}) or {}
+            if flags.get("no_next_step"): no_next_step_count += 1
+            if flags.get("missed_deal"): flags_count += 2
+            if a.get("is_critical"): flags_count += 1
+            for t in (a.get("triggers") or []):
+                triggers_all.append(t.get("name", ""))
+            created = c.get("created", "")
+            if created and (last_call_date is None or created > last_call_date):
+                last_call_date = created
+
+        if not scores:
+            continue
+
+        avg_score = sum(scores) / len(scores)
+        trend = scores[-1] - scores[0] if len(scores) >= 2 else 0
+
+        # Дней без контакта
+        days_silent = 0
+        if last_call_date:
+            try:
+                last_dt = datetime.fromisoformat(last_call_date)
+                days_silent = (datetime.now() - last_dt).days
+            except: pass
+
+        # Риск-скор (0-100, выше = опаснее)
+        risk = 0
+        if avg_score < 5: risk += 40
+        elif avg_score < 7: risk += 20
+        if trend < -1: risk += 20
+        risk += min(flags_count * 10, 30)
+        risk += min(no_next_step_count * 8, 24)
+        if days_silent > 7: risk += 15
+        if days_silent > 14: risk += 10
+        risk = min(risk, 100)
+
+        if risk < 30:
+            risk_level = "low"
+            risk_label = "Низкий"
+        elif risk < 60:
+            risk_level = "medium"
+            risk_label = "Средний"
+        else:
+            risk_level = "high"
+            risk_label = "Высокий"
+
+        # Причина риска
+        reasons = []
+        if avg_score < 5: reasons.append(f"низкая оценка звонков ({avg_score:.1f}/10)")
+        if trend < -1: reasons.append("оценки падают")
+        if no_next_step_count > 0: reasons.append(f"{no_next_step_count} звонков без следующего шага")
+        if days_silent > 7: reasons.append(f"{days_silent} дней без контакта")
+        if flags_count > 0: reasons.append("критические ошибки")
+
+        risk_deals.append({
+            "deal_id": deal_id,
+            "client": deal["client"],
+            "manager": deal["manager"],
+            "stage": deal["stage"],
+            "calls_count": len(deal["calls"]),
+            "avg_score": round(avg_score, 1),
+            "risk": risk,
+            "risk_level": risk_level,
+            "risk_label": risk_label,
+            "reasons": reasons,
+            "days_silent": days_silent,
+            "bitrix_url": f"https://mavisgroup.bitrix24.by/crm/deal/details/{deal_id}/",
+        })
+
+    risk_deals.sort(key=lambda x: -x["risk"])
+
+    if not risk_deals:
+        content = '<div class="notice">Нет активных сделок для анализа риска. Данные появятся после анализа звонков с привязкой к сделкам.</div>'
+        return html_r(admin_page("Прогноз риска", content, "forecast"))
+
+    high_count = sum(1 for d in risk_deals if d["risk_level"] == "high")
+    medium_count = sum(1 for d in risk_deals if d["risk_level"] == "medium")
+
+    rows = ""
+    for d in risk_deals:
+        risk_cls = f"risk-{d['risk_level']}"
+        reasons_str = "; ".join(d["reasons"]) if d["reasons"] else "—"
+        bar_color = {"high": "#A0432B", "medium": "#C9A961", "low": "#7C8B6F"}[d["risk_level"]]
+        rows += f"""
+<tr>
+  <td><a href="{d['bitrix_url']}" target="_blank"><b>{d['client']}</b></a></td>
+  <td style="font-size:12px;color:#A39686">{d['manager']}</td>
+  <td style="font-size:12px">{d['stage']}</td>
+  <td>{d['calls_count']}</td>
+  <td>{d['avg_score']}</td>
+  <td>{d['days_silent']}д</td>
+  <td>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="progress" style="width:60px"><div class="progress-fill" style="width:{d['risk']}%;background:{bar_color}"></div></div>
+      <span class="{risk_cls}">{d['risk_label']}</span>
+    </div>
+  </td>
+  <td style="font-size:11px;color:#A39686;max-width:200px">{reasons_str}</td>
+</tr>"""
+
+    content = f"""
+<div class="notice">
+  🔴 Высокий риск: <b>{high_count}</b> сделок &nbsp;&nbsp;
+  🟡 Средний риск: <b>{medium_count}</b> сделок
+</div>
+<div class="card">
+  <h2>Активные сделки по риску потери</h2>
+  <p style="font-size:12px;color:#A39686;margin-bottom:12px">Риск рассчитывается на основе: средней оценки звонков, динамики оценок, наличия следующего шага, дней без контакта, критических ошибок.</p>
+  <table>
+    <tr><th>Клиент</th><th>Менеджер</th><th>Стадия</th><th>Звонков</th><th>Ср.оценка</th><th>Молчание</th><th>Риск</th><th>Причины</th></tr>
+    {rows}
+  </table>
+</div>"""
+    return html_r(admin_page("Прогноз риска потери сделки", content, "forecast"))
 import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 
