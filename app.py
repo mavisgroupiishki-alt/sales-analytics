@@ -211,6 +211,7 @@ def fix_links(html):
         ('href="../best-calls.html"','href="/best"'),
         ('href="calls/',             'href="/calls/'),
         ('href="../calls/',          'href="/calls/'),
+        ('.html"',                   '"'),  # убираем .html из всех ссылок
         ('href="managers/',          'href="/managers/'),
         ('href="../managers/',       'href="/managers/'),
         ('src="../avatars/',         'src="/static/avatars/'),
@@ -220,6 +221,10 @@ def fix_links(html):
     ]
     for o, n in replacements:
         html = html.replace(o, n)
+    # Убираем .html из ссылок на звонки и менеджеров
+    import re
+    html = re.sub(r'href="(/calls/[^"]+)\.html"', r'href="\1"', html)
+    html = re.sub(r'href="(/managers/[^"]+)\.html"', r'href="\1"', html)
     return html
 
 def html_response(html):
@@ -285,6 +290,7 @@ def all_calls():
     return html_response(inject_and_fix(html, user))
 
 @app.route("/calls/<activity_id>")
+@app.route("/calls/<activity_id>.html")
 @login_required
 def call_detail(activity_id):
     user = current_user()
@@ -322,6 +328,7 @@ def managers():
     return html_response(inject_and_fix(html, user))
 
 @app.route("/managers/<int:manager_id>")
+@app.route("/managers/<int:manager_id>.html")
 @login_required
 def manager_detail(manager_id):
     user = current_user()
