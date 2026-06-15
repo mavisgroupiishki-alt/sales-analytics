@@ -142,9 +142,13 @@ def auth_bar(user):
 
 def inject_auth(html, user):
     """Убирает оригинальный топбар report_generator и вставляет наш с авторизацией."""
-    import re
-    # Удаляем оригинальный топбар (div.topbar) который генерирует report_generator
-    html = re.sub(r'<div class="topbar">.*?</div>', '', html, count=1, flags=re.DOTALL)
+    # Удаляем всё от <div class="topbar"> до <div class="container"> (включая вложенные div)
+    marker_start = '<div class="topbar">'
+    marker_end = '<div class="container">'
+    if marker_start in html and marker_end in html:
+        idx_start = html.index(marker_start)
+        idx_end = html.index(marker_end)
+        html = html[:idx_start] + html[idx_end:]
     bar = auth_bar(user)
     if "<body>" in html:
         return html.replace("<body>", f"<body>{bar}", 1)
