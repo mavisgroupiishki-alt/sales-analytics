@@ -29,13 +29,13 @@ MIN_DURATION_SEC = 40  # ТЗ: анализируем только звонки 
 # Имена менеджеров для фильтрации (приведём к lower при сравнении)
 ALLOWED_MANAGERS = [
     "Роман Авсеенко",
+    "Екатерина Халько",
     "Ирина Богомольцева",
-    # TODO 15.06.2026: добавить третьего менеджера
 ]
 
 # ID менеджеров для надёжной фильтрации (если имя в Bitrix отличается)
-# По данным из логов: Роман=1286, Ирина=2100
-ALLOWED_MANAGER_IDS = [1286, 2100]
+# По данным из логов: Роман=1286, Екатерина=2154, Ирина=2100
+ALLOWED_MANAGER_IDS = [1286, 2154, 2100]
 
 
 class Bitrix24Client:
@@ -283,6 +283,10 @@ def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str
         "crm": {
             "owner_type": owner_type,
             "owner_id": str(activity.get("OWNER_ID") or ""),
+            "stage_name": "",  # заполняется ниже через доп. запрос
+            "stage_id": "",
+            "has_next_activity": False,
+            "next_activity_date": "",
         },
         "audio": None,
     }
@@ -299,6 +303,116 @@ def _mask_phone(phone: str) -> str:
         return "***"
     return phone[:4] + "***" + phone[-4:]
 
+
+def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
+    """Обогащает звонки данными о статусе сделки и наличии следующего дела."""
+    # Группируем по типу CRM объекта
+    deal_ids = [c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "deal" and c["crm"]["owner_id"]]
+    lead_ids = [c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "lead" and c["crm"]["owner_id"]]
+
+    deal_stages = {}
+    deal_activities = {}
+
+    # Получаем статусы сделок
+    if deal_ids:
+        try:
+            resp = client._post("crm.deal.list", {
+                "filter": {"ID": deal_ids},
+                "select": ["ID", "STAGE_ID", "STAGE_NAME"],
+            })
+            for d in (resp.get("result") or []):
+                deal_stages[str(d["ID"])] = {
+                    "stage_id": d.get("STAGE_ID", ""),
+                    "stage_name": d.get("STAGE_NAME") or d.get("STAGE_ID", ""),
+                }
+        except Exception as e:
+            logger.warning(f"Не удалось получить статусы сделок: {e}")
+
+    # Проверяем наличие дел (следующий контакт)
+    if deal_ids:
+        try:
+            from datetime import datetime
+            now_str = datetime.now().strftime("%Y-%m-%d")
+            resp = client._post("crm.activity.list", {
+                "filter": {
+                    "OWNER_TYPE_ID": 2,
+                    "OWNER_ID": deal_ids,
+                    "COMPLETED": "N",
+                    ">=START_TIME": now_str,
+                },
+                "select": ["ID", "OWNER_ID", "START_TIME"],
+            })
+            for a in (resp.get("result") or []):
+                oid = str(a.get("OWNER_ID",""))
+                if oid not in deal_activities:
+                    deal_activities[oid] = a.get("START_TIME","")
+        except Exception as e:
+            logger.warning(f"Не удалось получить дела: {e}")
+
+    # Применяем к звонкам
+    for c in calls:
+        oid = c["crm"]["owner_id"]
+        otype = c["crm"]["owner_type"]
+        if otype == "deal" and oid in deal_stages:
+            c["crm"]["stage_id"] = deal_stages[oid]["stage_id"]
+            c["crm"]["stage_name"] = deal_stages[oid]["stage_name"]
+        if otype == "deal" and oid in deal_activities:
+            c["crm"]["has_next_activity"] = True
+            c["crm"]["next_activity_date"] = deal_activities[oid]
+
+    return calls
+
+
+
+def enrich_with_deal_info(client, calls):
+    """Обогащает звонки данными о статусе сделки и наличии следующего дела."""
+    deal_ids = list(set(c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "deal" and c["crm"]["owner_id"]))
+    if not deal_ids:
+        return calls
+
+    deal_stages = {}
+    deal_activities = {}
+
+    try:
+        resp = client._post("crm.deal.list", {
+            "filter": {"ID": deal_ids},
+            "select": ["ID", "STAGE_ID"],
+        })
+        for d in (resp.get("result") or []):
+            deal_stages[str(d["ID"])] = d.get("STAGE_ID", "")
+    except Exception as e:
+        logger.warning(f"Не удалось получить статусы сделок: {e}")
+
+    try:
+        from datetime import datetime as _dt
+        resp = client._post("crm.activity.list", {
+            "filter": {"OWNER_TYPE_ID": 2, "OWNER_ID": deal_ids, "COMPLETED": "N"},
+            "select": ["ID", "OWNER_ID", "START_TIME"],
+        })
+        for a in (resp.get("result") or []):
+            oid = str(a.get("OWNER_ID", ""))
+            if oid not in deal_activities:
+                deal_activities[oid] = a.get("START_TIME", "")
+    except Exception as e:
+        logger.warning(f"Не удалось получить дела: {e}")
+
+    for c in calls:
+        oid = c["crm"]["owner_id"]
+        if c["crm"]["owner_type"] == "deal":
+            stage = deal_stages.get(oid, "")
+            c["crm"]["stage_id"] = stage
+            # Человекочитаемое имя стадии Bitrix (стандартные)
+            stage_labels = {
+                "NEW": "Новая", "PREPARATION": "Подготовка КП", "PREPAYMENT_INVOICE": "Счёт на предоплату",
+                "EXECUTING": "В работе", "FINAL_INVOICE": "Финальный счёт",
+                "WON": "Сделка успешна", "LOSE": "Сделка провалена", "APOLOGY": "Анализ причин отказа",
+            }
+            c["crm"]["stage_name"] = stage_labels.get(stage, stage)
+        if oid in deal_activities:
+            c["crm"]["has_next_activity"] = True
+            c["crm"]["next_activity_date"] = deal_activities[oid]
+
+    return calls
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -427,9 +541,59 @@ def main():
 
         print(f"\nИтого скачано: {downloaded}/{len(to_download)}")
 
+    # Обогащаем данными о статусе сделки и делах
+    print("\nПолучаем статусы сделок и дела...")
+    results = enrich_with_deal_info(client, results)
+
     out_file = Path("calls_data.json")
     out_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nГотово! Всего звонков: {len(results)}, JSON: {out_file.stat().st_size:,} б")
+
+
+
+def send_manager_notifications(calls_with_analyses: list, webhook_url: str = None) -> None:
+    """
+    Отправляет менеджеру уведомление в Bitrix24 с оценкой его звонка.
+    Вызывается из claude_analyzer.py после анализа.
+    """
+    import os, requests as _req, json as _json
+
+    url = webhook_url or os.environ.get("BITRIX_WEBHOOK_URL", "")
+    if not url:
+        return
+
+    for call, analysis in calls_with_analyses:
+        manager_id = call.get("manager", {}).get("id")
+        if not manager_id:
+            continue
+
+        score = analysis.get("overall_score")
+        if score is None:
+            continue
+
+        client_name = call.get("client", {}).get("name", "клиент")
+        recommendation = analysis.get("recommendation", "")
+        is_crit = analysis.get("is_critical", False)
+        activity_id = call.get("activity_id", "")
+
+        emoji = "🔴" if is_crit else ("🟡" if float(score) < 7 else "🟢")
+        msg = (
+            f"{emoji} *Разбор звонка: {client_name}*\n"
+            f"Оценка: *{score}/10*\n"
+        )
+        if recommendation:
+            msg += f"💡 {recommendation}\n"
+        if is_crit:
+            msg += f"⚠️ {analysis.get('critical_reason', 'Требует внимания')}\n"
+
+        try:
+            _req.post(url.rstrip('/') + '/im.message.add', json={
+                "DIALOG_ID": f"U{manager_id}",
+                "MESSAGE": msg,
+            }, timeout=10)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Не удалось отправить уведомление менеджеру {manager_id}: {e}")
 
 
 if __name__ == "__main__":
