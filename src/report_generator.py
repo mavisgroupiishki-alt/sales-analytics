@@ -297,7 +297,7 @@ a { color: inherit; text-decoration: none; }
   overflow: hidden;
 }
 .logo { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
-.logo-img { height: 48px; width: auto; display: block; flex-shrink: 0; }
+.logo-img { height: 48px; width: auto; display: block; flex-shrink: 0; background: transparent; border-radius: 50%; }
 .logo-text { display: flex; flex-direction: column; line-height: 1.1; }
 .logo-text .brand { font-size: 17px; font-weight: 700; letter-spacing: 1px; color: #fff; }
 .logo-text .sub { font-size: 10px; letter-spacing: 3px; color: var(--brand-gold); text-transform: uppercase; margin-top: 2px; }
@@ -554,6 +554,35 @@ a { color: inherit; text-decoration: none; }
   .msg { grid-template-columns: 45px 1fr; gap: 8px; }
 }
 @media (max-width: 380px) { .kpi-row { grid-template-columns: 1fr; } }
+
+/* Фильтры по периоду */
+.period-tabs { display: flex; gap: 6px; margin-bottom: 20px; }
+.period-tab { padding: 7px 16px; border-radius: 20px; background: #fff; border: 1px solid var(--border); font-size: 13px; cursor: pointer; font-weight: 600; color: var(--text-secondary); font-family: -apple-system, sans-serif; transition: all 0.15s; }
+.period-tab.active { background: var(--brand-dark); color: #fff; border-color: var(--brand-dark); }
+.period-tab:hover:not(.active) { background: var(--brand-paper); }
+
+/* Расширенные фильтры */
+.filter-bar { background: #fff; border: 1px solid var(--border); border-radius: 6px; padding: 14px 18px; margin-bottom: 18px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-family: -apple-system, sans-serif; }
+.filter-bar select { padding: 7px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; color: var(--brand-dark); background: var(--brand-cream); font-family: inherit; cursor: pointer; }
+.filter-bar label { font-size: 12px; color: var(--text-muted); font-weight: 600; margin-right: -6px; }
+.filter-clear { padding: 7px 14px; background: none; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; color: var(--text-muted); cursor: pointer; font-family: inherit; }
+.filter-clear:hover { color: var(--brand-dark); border-color: var(--brand-medium); }
+
+/* Поиск по транскрипту */
+.transcript-search { padding: 8px 14px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-family: -apple-system, sans-serif; width: 100%; margin-bottom: 8px; }
+.msg.highlight { background: rgba(201,169,97,0.15); }
+.msg .highlight-text { background: rgba(201,169,97,0.4); border-radius: 2px; padding: 0 2px; }
+
+/* Кликабельные таймкоды */
+.tc-link { display: inline-block; font-size: 10px; color: var(--brand-medium); background: var(--brand-paper); padding: 1px 6px; border-radius: 3px; cursor: pointer; border: 1px solid var(--border); transition: all 0.15s; font-family: -apple-system, sans-serif; }
+.tc-link:hover { background: var(--brand-dark); color: #fff; border-color: var(--brand-dark); }
+
+/* Статус сделки */
+.deal-status { display: inline-block; font-size: 11px; padding: 3px 10px; border-radius: 10px; font-weight: 600; font-family: -apple-system, sans-serif; }
+.deal-status.won { background: rgba(124,139,111,0.2); color: var(--brand-olive); }
+.deal-status.lost { background: rgba(160,67,43,0.15); color: var(--red); }
+.deal-status.work { background: rgba(201,169,97,0.2); color: var(--brand-gold); }
+.deal-status.new { background: var(--blue-soft); color: var(--blue); }
 """
 
 
@@ -673,8 +702,15 @@ def render_call_row(c: Dict, show_manager: bool = True, analysis: Dict = None,
 
 def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: str) -> str:
     today = format_date(generated_at)
-    analyzed_count = len(analyses)
-    critical_count = stats["critical_count"]
+    # Считаем только звонки текущего дня которые проанализированы
+    analyzed_today = sum(1 for c in calls if c["activity_id"] in analyses)
+    critical_today = sum(
+        1 for c in calls
+        if c["activity_id"] in analyses
+        and analyses[c["activity_id"]].get("analysis", {}).get("is_critical")
+    )
+    critical_count = critical_today
+    analyzed_count = analyzed_today
 
     kpi_html = ('<div class="kpi-row">'
                 '<div class="kpi"><div class="kpi-label">Всего звонков</div>'
@@ -686,10 +722,10 @@ def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: s
                 '<div class="kpi-value">' + str(stats['outgoing']) + '</div></div>'
                 '<div class="kpi amber"><div class="kpi-label">Проанализировано</div>'
                 '<div class="kpi-value">' + str(analyzed_count) + '</div>'
-                '<div class="kpi-hint">из ' + str(stats['total']) + '</div></div>'
+                '<div class="kpi-hint">из ' + str(stats['total']) + ' за сутки</div></div>'
                 '<div class="kpi red"><div class="kpi-label">Срочно к РОПу</div>'
                 '<div class="kpi-value">' + str(critical_count) + '</div>'
-                '<div class="kpi-hint">критичных</div></div>'
+                '<div class="kpi-hint">критичных сегодня</div></div>'
                 '</div>')
 
     # Рейтинг менеджеров
@@ -729,29 +765,89 @@ def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: s
     notice = ""
     if critical_count > 0:
         notice = ('<div class="notice danger">'
-                  '<b>🔴 Внимание!</b> Найдено <b>' + str(critical_count) + '</b> критичных звонков, требующих внимания РОПа. '
+                  '<b>🔴 Внимание!</b> Найдено <b>' + str(critical_count) + '</b> критичных звонков за сутки. '
                   '<a href="critical.html" style="color: var(--red); font-weight: 700; text-decoration: underline;">Перейти к списку →</a>'
                   '</div>')
     elif analyzed_count > 0:
         notice = ('<div class="notice success">'
-                  '<b>✓ Анализ работает.</b> ' + str(analyzed_count) + ' звонков проанализированы ИИ.'
+                  '<b>✓ Анализ работает.</b> ' + str(analyzed_count) + ' звонков проанализированы за сутки.'
                   '</div>')
 
-    body = ('<div class="page-head">'
-            '<div><h1>Сводка</h1><div class="sub">' + COMPANY_NAME + ' · ' + str(stats['total']) + ' звонков · ' + str(stats['managers_count']) + ' менеджеров</div></div>'
-            '<div class="pill">📅 ' + today + '</div>'
-            '</div>'
-            + notice + kpi_html +
-            '<div class="grid">'
-            '<div class="panel">'
-            '<div class="panel-head"><h3>Рейтинг по качеству</h3><a href="managers.html" class="hint" style="color:var(--brand-medium);">все →</a></div>'
-            + managers_html +
-            '</div>'
-            '<div class="panel">'
-            '<div class="panel-head"><h3>Последние звонки</h3><a href="all-calls.html" class="hint" style="color:var(--brand-medium);">все →</a></div>'
-            + calls_html +
-            '</div>'
-            '</div>')
+    import json as _json_idx
+    _calls_data = _json_idx.dumps([{
+        'id': c['activity_id'], 'created': c.get('created',''),
+        'direction': c.get('direction',''), 'client': c.get('client',{}).get('name',''),
+        'manager': c.get('manager',{}).get('name',''), 'duration': c.get('duration_sec',0),
+        'score': analyses.get(c['activity_id'],{}).get('analysis',{}).get('overall_score'),
+        'is_critical': bool(analyses.get(c['activity_id'],{}).get('analysis',{}).get('is_critical',False)),
+    } for c in sorted(calls, key=lambda x: x.get('created',''), reverse=True)], ensure_ascii=False)
+
+    period_tabs_html = (
+        '<div class="period-tabs">'
+        '<button class="period-tab active" onclick="filterByPeriod(\'day\',this)">День</button>'
+        '<button class="period-tab" onclick="filterByPeriod(\'week\',this)">Неделя</button>'
+        '<button class="period-tab" onclick="filterByPeriod(\'month\',this)">Месяц</button>'
+        '<button class="period-tab" onclick="filterByPeriod(\'all\',this)">Всё время</button>'
+        '</div>')
+
+    kpi_html2 = (
+        '<div class="kpi-row">'
+        '<div class="kpi"><div class="kpi-label">Всего звонков</div>'
+        '<div class="kpi-value" id="kpi-total">' + str(stats['total']) + '</div><div class="kpi-hint">за период</div></div>'
+        '<div class="kpi green"><div class="kpi-label">Входящих</div>'
+        '<div class="kpi-value" id="kpi-incoming">' + str(stats['incoming']) + '</div></div>'
+        '<div class="kpi accent"><div class="kpi-label">Исходящих</div>'
+        '<div class="kpi-value" id="kpi-outgoing">' + str(stats['outgoing']) + '</div></div>'
+        '<div class="kpi amber"><div class="kpi-label">Проанализировано</div>'
+        '<div class="kpi-value" id="kpi-analyzed">' + str(analyzed_count) + '</div><div class="kpi-hint">за период</div></div>'
+        '<div class="kpi red"><div class="kpi-label">Срочно к РОПу</div>'
+        '<div class="kpi-value" id="kpi-critical">' + str(critical_count) + '</div></div>'
+        '</div>')
+
+    period_js = (
+        '<script>\nvar _aC=' + _calls_data + ';\n'
+        'function filterByPeriod(p,btn){'
+        'document.querySelectorAll(".period-tab").forEach(b=>b.classList.remove("active"));'
+        'btn.classList.add("active");'
+        'var now=new Date(),ms={day:86400000,week:604800000,month:2592000000};'
+        'var f=p==="all"?_aC:_aC.filter(c=>!c.created||(now-new Date(c.created))<(ms[p]||0));'
+        'document.getElementById("kpi-total").textContent=f.length;'
+        'document.getElementById("kpi-incoming").textContent=f.filter(c=>c.direction==="incoming").length;'
+        'document.getElementById("kpi-outgoing").textContent=f.filter(c=>c.direction==="outgoing").length;'
+        'document.getElementById("kpi-analyzed").textContent=f.filter(c=>c.score!=null).length;'
+        'document.getElementById("kpi-critical").textContent=f.filter(c=>c.is_critical).length;'
+        'var h="";f.slice(0,15).forEach(function(c){'
+        'var s=c.score,sc=s!=null?s:"",cl=c.is_critical?"crit":s>=7.5?"high":s>=5?"mid":"low";'
+        'var sH=sc!==""?"<div class=\\"mini-score "+cl+"\\">"+sc+"</div>":"";'
+        'var dH=c.duration?"<div class=\\"call-duration\\">"+Math.floor(c.duration/60)+" мин</div>":"";'
+        'var di=c.direction==="incoming"?"↓":"↑",dc=c.direction==="incoming"?"in":"out";'
+        'var rc=c.is_critical?"row-link critical":"row-link";'
+        'h+="<a href=\\"calls/"+c.id+".html\\" class=\\""+rc+"\\">"'
+        '+"<div class=\\"call-row\\">"'
+        '+"<div class=\\"call-direction "+dc+"\\">"+di+"</div>"'
+        '+"<div class=\\"call-info\\"><div class=\\"call-client\\">"+( c.client||"—")+"</div>"'
+        '+"<div class=\\"call-meta\\">"+( c.manager||"")+"</div></div>"'
+        '+dH+sH+"</div></a>";});'
+        'document.getElementById("recent-calls-list").innerHTML=h||"<div class=\\"empty\\">Нет звонков</div>";'
+        '}'
+        'window.addEventListener("load",function(){filterByPeriod("day",document.querySelector(".period-tab"))});'
+        '</script>')
+
+    body = (
+        '<div class="page-head">'
+        '<div><h1>Сводка</h1><div class="sub">' + COMPANY_NAME + ' · ' + str(stats['managers_count']) + ' менеджеров</div></div>'
+        '<div class="pill">📅 ' + today + '</div>'
+        '</div>'
+        + period_tabs_html + notice + kpi_html2
+        + '<div class="grid">'
+        '<div class="panel">'
+        '<div class="panel-head"><h3>Рейтинг по качеству</h3><a href="managers.html" class="hint" style="color:var(--brand-medium);">все →</a></div>'
+        + managers_html
+        + '</div>'
+        '<div class="panel">'
+        '<div class="panel-head"><h3>Последние звонки</h3><a href="all-calls.html" class="hint" style="color:var(--brand-medium);">все →</a></div>'
+        '<div id="recent-calls-list">' + calls_html + '</div>'
+        '</div></div>' + period_js)
     return page_template("Сводка", body, "dashboard", generated_at, critical_count)
 
 
@@ -817,14 +913,20 @@ def render_rop_report(calls: List[Dict], stats: Dict, analyses: Dict, generated_
     if not weak_m_html:
         weak_m_html = '<div class="empty">Все менеджеры в норме</div>'
 
+    analyzed_today_rop = sum(1 for c in calls if c["activity_id"] in analyses)
+    critical_today_rop = sum(
+        1 for c in calls
+        if c["activity_id"] in analyses
+        and analyses[c["activity_id"]].get("analysis", {}).get("is_critical")
+    )
     body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Отчёт РОПа</div>'
             '<div class="page-head">'
             '<div><h1>📊 Сводный отчёт РОПа</h1><div class="sub">' + today + ' · аналитика по отделу</div></div>'
             '</div>'
             '<div class="kpi-row">'
-            '<div class="kpi"><div class="kpi-label">Всего звонков</div><div class="kpi-value">' + str(stats['total']) + '</div></div>'
-            '<div class="kpi amber"><div class="kpi-label">Проанализировано</div><div class="kpi-value">' + str(len(analyses)) + '</div></div>'
-            '<div class="kpi red"><div class="kpi-label">Критичных</div><div class="kpi-value">' + str(critical_count) + '</div></div>'
+            '<div class="kpi"><div class="kpi-label">Всего звонков</div><div class="kpi-value">' + str(stats['total']) + '</div><div class="kpi-hint">за сутки</div></div>'
+            '<div class="kpi amber"><div class="kpi-label">Проанализировано</div><div class="kpi-value">' + str(analyzed_today_rop) + '</div><div class="kpi-hint">из сегодняшних</div></div>'
+            '<div class="kpi red"><div class="kpi-label">Критичных</div><div class="kpi-value">' + str(critical_today_rop) + '</div><div class="kpi-hint">сегодня</div></div>'
             '<div class="kpi blue"><div class="kpi-label">Менеджеров</div><div class="kpi-value">' + str(stats['managers_count']) + '</div></div>'
             '</div>'
             '<div class="rop-section">'
@@ -1054,6 +1156,41 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
     if client.get('company'):
         client_name_full += ' · ' + esc(client.get('company'))
 
+    # Статус сделки
+    deal_stage = call.get('crm', {}).get('stage_name') or call.get('crm', {}).get('status') or ''
+    deal_stage_id = str(call.get('crm', {}).get('stage_id') or '').lower()
+    if deal_stage:
+        if any(x in deal_stage_id for x in ['won','win','success','оплач']):
+            sc = 'won'; sl = '✅ ' + esc(deal_stage)
+        elif any(x in deal_stage_id for x in ['lost','fail','отказ','проигр']):
+            sc = 'lost'; sl = '❌ ' + esc(deal_stage)
+        elif any(x in deal_stage_id for x in ['new','новый','лид']):
+            sc = 'new'; sl = '🔵 ' + esc(deal_stage)
+        else:
+            sc = 'work'; sl = '🔄 ' + esc(deal_stage)
+        deal_status_html = ('<div class="detail"><div class="detail-label">Статус сделки</div>'
+                            '<div class="detail-value"><span class="deal-status ' + sc + '">' + sl + '</span></div></div>')
+    else:
+        deal_status_html = ''
+
+
+    # Статус сделки
+    deal_stage = call.get('crm', {}).get('stage_name') or call.get('crm', {}).get('status') or ''
+    deal_stage_id = str(call.get('crm', {}).get('stage_id') or '').lower()
+    if deal_stage:
+        if any(x in deal_stage_id for x in ['won','win','success','оплач']):
+            _dsc = 'won'; _dsl = '✅ ' + esc(deal_stage)
+        elif any(x in deal_stage_id for x in ['lost','fail','отказ','проигр']):
+            _dsc = 'lost'; _dsl = '❌ ' + esc(deal_stage)
+        elif any(x in deal_stage_id for x in ['new','новый','лид']):
+            _dsc = 'new'; _dsl = '🔵 ' + esc(deal_stage)
+        else:
+            _dsc = 'work'; _dsl = '🔄 ' + esc(deal_stage)
+        deal_status_html = ('<div class="detail"><div class="detail-label">Статус сделки</div>'
+                            '<div class="detail-value"><span class="deal-status ' + _dsc + '">' + _dsl + '</span></div></div>')
+    else:
+        deal_status_html = ''
+
     head_html = ('<div class="' + card_classes + '">'
                  '<div class="call-card-head">'
                  '<div>' + critical_badge +
@@ -1074,6 +1211,7 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
                  '<div class="detail-value">' + esc(dir_label) + '</div></div>'
                  '<div class="detail"><div class="detail-label">В CRM</div>'
                  '<div class="detail-value">' + (crm_link_html or '—') + '</div></div>'
+                 + deal_status_html +
                  '</div></div>')
 
     # Комментарий к ручной правке
@@ -1211,9 +1349,18 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
         elif isinstance(next_contact, str) and next_contact:
             nc_text = esc(next_contact)
         if nc_text:
+            # Проверяем есть ли дело в CRM
+            has_crm_task = call.get('crm', {}).get('has_next_activity', False)
+            crm_task_date = call.get('crm', {}).get('next_activity_date', '')
+            if has_crm_task and crm_task_date:
+                crm_check = (' <span style="color:var(--brand-olive);font-size:11px;">✅ Дело в CRM: ' + esc(crm_task_date[:10]) + '</span>')
+            elif has_crm_task:
+                crm_check = ' <span style="color:var(--brand-olive);font-size:11px;">✅ Дело создано в CRM</span>'
+            else:
+                crm_check = ' <span style="color:var(--brand-terracotta);font-size:11px;">⚠️ Дела в CRM нет</span>'
             rest_html += ('<div class="next-contact">'
                           '<div class="label">📞 Следующий контакт</div>'
-                          '<div class="text">' + nc_text + '</div></div>')
+                          '<div class="text">' + nc_text + crm_check + '</div></div>')
 
         # Использованные скрипты
         scripts_used = analysis.get("scripts_used") or []
@@ -1252,12 +1399,36 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
                          '<div class="msg-who ' + esc(who) + '">' + who_label + '</div>'
                          '<div class="msg-text">' + esc(m.get('text', '')) + '</div>'
                          '</div></div>')
+            transcript_js = (
+                '<script>'
+                'function seekAudio(tc){'
+                'var a=document.querySelector("audio");'
+                'if(!a)return;'
+                'var p=tc.split(":"),s=parseInt(p[0])*60+(p[1]?parseInt(p[1]):0);'
+                'a.currentTime=s;a.play();}'
+                'function searchTranscript(){'
+                'var q=document.getElementById("tsSearch").value.toLowerCase();'
+                'document.querySelectorAll(".msg").forEach(function(m){'
+                'var t=m.querySelector(".msg-text");'
+                'if(!t)return;'
+                'var orig=t.dataset.orig||t.textContent;'
+                't.dataset.orig=orig;'
+                'if(!q){t.innerHTML=orig;m.classList.remove("highlight");return;}'
+                'var idx=orig.toLowerCase().indexOf(q);'
+                'if(idx>=0){'
+                't.innerHTML=orig.slice(0,idx)+"<mark class=\\"highlight-text\\">"+orig.slice(idx,idx+q.length)+"</mark>"+orig.slice(idx+q.length);'
+                'm.classList.add("highlight");m.scrollIntoView({block:"nearest"});'
+                '}else{t.innerHTML=orig;m.classList.remove("highlight");}});}'
+                '</script>')
             rest_html += ('<div class="transcript-panel">'
                           '<div class="transcript-head"><h3>📝 Транскрипт</h3>'
                           '<span class="hint">' + str(len(ts)) + ' реплик · ' + format_duration(transcription.get("duration_sec")) + '</span>'
                           '</div>'
+                          '<div style="padding:8px 20px 0;">'
+                          '<input type="text" id="tsSearch" class="transcript-search" placeholder="🔍 Поиск по тексту разговора..." oninput="searchTranscript()">'
+                          '</div>'
                           '<div class="transcript-body">' + msgs + '</div>'
-                          '</div>')
+                          '</div>' + transcript_js)
 
         # Оценки по 17 критериям + веса
         scores = analysis.get("scores") or {}
@@ -1446,7 +1617,9 @@ function filterCalls() {
     var matchFilter = currentFilter === 'all' || 
       (currentFilter === 'incoming' && d.contains('in')) ||
       (currentFilter === 'outgoing' && d.contains('out')) ||
-      (currentFilter === 'critical' && r.classList.contains('critical'));
+      (currentFilter === 'critical' && r.classList.contains('critical')) ||
+      (currentFilter === 'analyzed' && r.querySelector('.mini-score')) ||
+      (currentFilter === 'no_next_step' && r.dataset.nonextstep === '1');
     var show = matchText && matchFilter;
     r.style.display = show ? '' : 'none';
     if (show) v++;
@@ -1464,6 +1637,8 @@ function filterCalls() {
             '<button class="filter-btn" onclick="setFilter(\'incoming\', this)">Входящие</button>'
             '<button class="filter-btn" onclick="setFilter(\'outgoing\', this)">Исходящие</button>'
             '<button class="filter-btn" onclick="setFilter(\'critical\', this)">🔴 Критичные</button>'
+            '<button class="filter-btn" onclick="setFilter(\'analyzed\', this)">✅ С анализом</button>'
+            '<button class="filter-btn" onclick="setFilter(\'no_next_step\', this)">⏰ Без след. шага</button>'
             '</div>'
             '<div class="panel"><div class="panel-head"><h3>Список</h3>'
             '<span class="hint" id="visibleCount">' + str(len(calls)) + ' видно</span></div>'
