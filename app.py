@@ -11,12 +11,16 @@ from pathlib import Path
 from datetime import datetime
 from functools import wraps
 from flask import Flask, request, redirect, url_for, session, abort, Response, jsonify
+from admin import admin_bp
+from admin import admin_bp
 
 # Добавляем src/ в путь чтобы импортировать report_generator
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mavis-secret-2026")
+app.register_blueprint(admin_bp)
+app.register_blueprint(admin_bp)
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
 
@@ -502,6 +506,45 @@ def serve_audio(activity_id):
         )
     except Exception:
         abort(502)
+
+@app.route("/calls/<activity_id>/reanalyze", methods=["POST"])
+@rop_required
+def reanalyze_call(activity_id):
+    """Повторный анализ звонка — удаляет из analyses.json и ставит в очередь."""
+    analyses = load_analyses()
+    if activity_id in analyses:
+        del analyses[activity_id]
+        p = DATA_DIR / "analyses.json"
+        p.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Запускаем анализ одного звонка в фоне
+        import subprocess, sys
+        subprocess.Popen(
+            [sys.executable, "src/claude_analyzer.py"],
+            env={**os.environ, "REANALYZE_ID": activity_id},
+            cwd=str(DATA_DIR)
+        )
+        return jsonify({"ok": True, "message": "Анализ запущен"})
+    return jsonify({"error": "Звонок не найден"}), 404
+
+
+
+@app.route("/calls/<activity_id>/reanalyze", methods=["POST"])
+@rop_required
+def reanalyze_call(activity_id):
+    """Повторный анализ звонка."""
+    analyses = load_analyses()
+    if activity_id not in analyses:
+        return jsonify({"error": "Звонок не найден"}), 404
+    del analyses[activity_id]
+    p = DATA_DIR / "analyses.json"
+    p.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
+    import subprocess, sys
+    subprocess.Popen(
+        [sys.executable, "src/claude_analyzer.py"],
+        env={**os.environ, "REANALYZE_ID": activity_id},
+        cwd=str(Path(__file__).parent)
+    )
+    return jsonify({"ok": True, "message": "Анализ запущен, обновите страницу через минуту"})
 
 @app.route("/health")
 def health():
