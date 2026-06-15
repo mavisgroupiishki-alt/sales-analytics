@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Вход — Mavis Group Sales Analytics</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Segoe UI", sans-serif;
+      background: #FAF7F2;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-box {
+      background: #fff;
+      border: 1px solid #E8DFD0;
+      border-radius: 10px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 380px;
+      box-shadow: 0 4px 24px rgba(61,46,31,0.08);
+    }
+    .logo {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .logo .brand {
+      font-family: "Georgia", serif;
+      font-size: 20px;
+      font-weight: 700;
+      color: #3D2E1F;
+      letter-spacing: 1px;
+    }
+    .logo .sub {
+      font-size: 11px;
+      letter-spacing: 3px;
+      color: #C9A961;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+    .divider {
+      width: 40px;
+      height: 2px;
+      background: #C9A961;
+      margin: 16px auto;
+    }
+    h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #3D2E1F;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #A39686;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+      margin-top: 16px;
+    }
+    input {
+      width: 100%;
+      padding: 11px 14px;
+      border: 1px solid #E8DFD0;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #FAF7F2;
+      color: #2A1F15;
+      transition: border-color 0.15s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #C9A961;
+      background: #fff;
+    }
+    .error {
+      background: #FFE5DC;
+      border: 1px solid #A0432B;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #A0432B;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #3D2E1F;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 24px;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    button:hover { background: #6B5544; }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <div class="logo">
+      <div class="brand">MAVIS GROUP</div>
+      <div class="sub">Sales Analytics</div>
+      <div class="divider"></div>
+    </div>
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="POST">
+      <label>Логин</label>
+      <input type="text" name="username" placeholder="Введите логин" autofocus required>
+      <label>Пароль</label>
+      <input type="password" name="password" placeholder="Введите пароль" required>
+      <button type="submit">Войти →</button>
+    </form>
+  </div>
+</body>
+</html>
