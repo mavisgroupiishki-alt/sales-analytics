@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Сводка{% endblock %} — Mavis Group Sales Analytics</title>
+  <style>
+    {% include 'styles.css' %}
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <div class="topbar">
+    <a href="{{ url_for('index') }}" class="logo">
+      <img class="logo-img" src="/static/logo.png" alt="Mavis Group" onerror="this.style.display='none'">
+      <div class="logo-text">
+        <span class="brand">Mavis Group</span>
+        <span class="sub">Sales Analytics</span>
+      </div>
+    </a>
+    <div class="nav">
+      <a href="{{ url_for('index') }}" {% if active == 'dashboard' %}class="active"{% endif %}>Сводка</a>
+      {% if user.role == 'rop' %}
+      <a href="{{ url_for('rop_report') }}" {% if active == 'rop' %}class="active"{% endif %}>Отчёт РОПа</a>
+      <a href="{{ url_for('managers') }}" {% if active == 'managers' %}class="active"{% endif %}>Менеджеры</a>
+      <a href="{{ url_for('compare') }}" {% if active == 'compare' %}class="active"{% endif %}>Сравнение</a>
+      {% endif %}
+      <a href="{{ url_for('all_calls') }}" {% if active == 'calls' %}class="active"{% endif %}>Все звонки</a>
+      <a href="{{ url_for('critical') }}" {% if active == 'critical' %}class="active {% if critical_count %}critical-link{% endif %}"{% endif %}>
+        Срочно{% if critical_count %} ({{ critical_count }}){% endif %}
+      </a>
+      <a href="{{ url_for('triggers') }}" {% if active == 'triggers' %}class="active"{% endif %}>Триггеры</a>
+      <a href="{{ url_for('objections') }}" {% if active == 'objections' %}class="active"{% endif %}>Возражения</a>
+      <a href="{{ url_for('best_calls') }}" {% if active == 'best' %}class="active"{% endif %}>Лучшие</a>
+    </div>
+    <div class="user-badge">
+      <span>{{ user.name }}</span>
+      <a href="{{ url_for('logout') }}" class="logout-btn">Выйти</a>
+    </div>
+  </div>
+
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+
+  <div class="footer-note">
+    <div class="footer-brand">MAVIS GROUP</div>
+    <div class="footer-divider"></div>
+    <div>Sales Analytics · Автоматический анализ звонков</div>
+    <div style="margin-top:6px;font-size:11px;">Bitrix24 · GitHub Actions · BitrixGPT · © {{ now.year }}</div>
+  </div>
+</body>
+</html>
