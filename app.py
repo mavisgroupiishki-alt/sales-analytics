@@ -1275,7 +1275,9 @@ def api_correct():
 @app.route("/audio/<activity_id>")
 @login_required
 def serve_audio(activity_id):
-    """Проксирует аудио с Bitrix через наш сервер."""
+    """Проксирует аудио с Bitrix через наш сервер.
+    Получает СВЕЖУЮ ссылку на скачивание через disk.file.get,
+    так как сохранённый в calls_data.json URL содержит временный токен и протухает."""
     import requests as _req
     from flask import Response as _Resp, stream_with_context
 
@@ -1288,7 +1290,24 @@ def serve_audio(activity_id):
     if user["role"] == "manager" and call.get("manager",{}).get("id") != user["manager_id"]:
         abort(403)
 
-    audio_url = (call.get("audio") or {}).get("url", "")
+    audio_meta = call.get("audio") or {}
+    file_id = audio_meta.get("file_id")
+    webhook = os.environ.get("BITRIX_WEBHOOK_URL", "").rstrip("/")
+
+    audio_url = ""
+    if file_id and webhook:
+        try:
+            meta_resp = _req.get(f"{webhook}/disk.file.get", params={"id": file_id}, timeout=15)
+            meta_resp.raise_for_status()
+            file_data = (meta_resp.json() or {}).get("result", {})
+            audio_url = file_data.get("DOWNLOAD_URL", "")
+        except Exception as e:
+            app.logger.warning(f"Failed to get fresh download URL for file_id={file_id}: {e}")
+
+    # Фоллбэк на старый сохранённый URL, если свежий получить не удалось
+    if not audio_url:
+        audio_url = audio_meta.get("url", "")
+
     if not audio_url:
         abort(404)
 
@@ -1296,9 +1315,7 @@ def serve_audio(activity_id):
         r = _req.get(audio_url, stream=True, timeout=30)
         r.raise_for_status()
         ctype = r.headers.get("Content-Type", "audio/mpeg")
-        # Если Bitrix вернул не аудио (например html-страницу логина) — не отдаём как звук
         if "audio" not in ctype and "octet-stream" not in ctype and "video" not in ctype:
-            # Прочитаем немного содержимого чтобы понять что это
             preview = next(r.iter_content(chunk_size=512), b"")
             app.logger.warning(f"Audio proxy got non-audio content-type={ctype} for {activity_id}: {preview[:200]}")
             abort(502)
