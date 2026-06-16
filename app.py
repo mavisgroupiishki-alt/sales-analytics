@@ -7,14 +7,13 @@ import json
 import os
 import hashlib
 import sys
+import math
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import defaultdict, Counter
 from functools import wraps
-from flask import Flask, request, redirect, url_for, session, abort, Response, jsonify
-import sys as _sys, os as _os
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
-import sys as _sys, os as _os
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from flask import Flask, request, redirect, url_for, session, abort, Response, jsonify, Blueprint
+
 # Admin module (встроен напрямую)
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -876,8 +875,6 @@ def admin_forecast():
   </table>
 </div>"""
     return html_r(admin_page("Прогноз риска потери сделки", content, "forecast"))
-import sys as _sys, os as _os
-_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 
 # Добавляем src/ в путь чтобы импортировать report_generator
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -1042,39 +1039,6 @@ var _origFetch = window.fetch;
     if "<body>" in html:
         return html.replace("<body>", f"<body>{bar}{fix_css}", 1)
     return bar + fix_css + html
-
-def fix_links(html):
-    """Заменяет статические HTML-пути на Flask маршруты."""
-    replacements = [
-        ('href="index.html"',       'href="/"'),
-        ('href="../index.html"',    'href="/"'),
-        ('href="rop-report.html"',  'href="/rop"'),
-        ('href="../rop-report.html"','href="/rop"'),
-        ('href="managers.html"',    'href="/managers"'),
-        ('href="../managers.html"', 'href="/managers"'),
-        ('href="all-calls.html"',   'href="/calls"'),
-        ('href="../all-calls.html"','href="/calls"'),
-        ('href="critical.html"',    'href="/critical"'),
-        ('href="../critical.html"', 'href="/critical"'),
-        ('href="triggers.html"',    'href="/triggers"'),
-        ('href="../triggers.html"', 'href="/triggers"'),
-        ('href="compare.html"',     'href="/compare"'),
-        ('href="../compare.html"',  'href="/compare"'),
-        ('href="objections.html"',  'href="/objections"'),
-        ('href="../objections.html"','href="/objections"'),
-        ('href="best-calls.html"',  'href="/best"'),
-        ('href="../best-calls.html"','href="/best"'),
-        ('href="calls/',            'href="/calls/'),
-        ('href="../calls/',         'href="/calls/'),
-        ('href="managers/',         'href="/managers/'),
-        ('href="../managers/',      'href="/managers/'),
-        ('src="../',                'src="/'),
-        ('src="avatars/',           'src="/static/avatars/'),
-        ('src="logo.png"',          'src="/static/logo.png"'),
-        ('src="../logo.png"',       'src="/static/logo.png"'),
-    ]
-    for old_str, new_str in replacements:
-        return html
 
 def inject_and_fix(html, user):
     html = fix_links(html)
@@ -1320,49 +1284,6 @@ def serve_audio(activity_id):
     if not call:
         abort(404)
 
-    # Защита — менеджер не слушает чужие звонки
-    user = current_user()
-    if user["role"] == "manager" and call.get("manager",{}).get("id") != user["manager_id"]:
-        abort(403)
-
-    audio = call.get("audio") or {}
-    audio_url = audio.get("url") or ""
-    if not audio_url:
-        abort(404)
-
-    # Добавляем авторизацию Bitrix через webhook
-    webhook = os.environ.get("BITRIX_WEBHOOK_URL", "").rstrip("/")
-    # URL уже содержит auth= параметр из Bitrix
-    try:
-        r = _req.get(audio_url, stream=True, timeout=30)
-        r.raise_for_status()
-        content_type = r.headers.get("Content-Type", "audio/mpeg")
-        return _Resp(
-            stream_with_context(r.iter_content(chunk_size=8192)),
-            status=200,
-            headers={
-                "Content-Type": content_type,
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "private, max-age=3600",
-            }
-        )
-    except Exception as e:
-        abort(502)
-
-
-
-@app.route("/audio/<activity_id>")
-@login_required
-def serve_audio(activity_id):
-    """Проксирует аудио с Bitrix через наш сервер."""
-    import requests as _req
-    from flask import Response as _Resp, stream_with_context
-
-    calls = load_calls()
-    call = next((c for c in calls if c["activity_id"] == activity_id), None)
-    if not call:
-        abort(404)
-
     user = current_user()
     if user["role"] == "manager" and call.get("manager",{}).get("id") != user["manager_id"]:
         abort(403)
@@ -1386,27 +1307,6 @@ def serve_audio(activity_id):
         )
     except Exception:
         abort(502)
-
-@app.route("/calls/<activity_id>/reanalyze", methods=["POST"])
-@rop_required
-def reanalyze_call(activity_id):
-    """Повторный анализ звонка — удаляет из analyses.json и ставит в очередь."""
-    analyses = load_analyses()
-    if activity_id in analyses:
-        del analyses[activity_id]
-        p = DATA_DIR / "analyses.json"
-        p.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
-        # Запускаем анализ одного звонка в фоне
-        import subprocess, sys
-        subprocess.Popen(
-            [sys.executable, "src/claude_analyzer.py"],
-            env={**os.environ, "REANALYZE_ID": activity_id},
-            cwd=str(DATA_DIR)
-        )
-        return jsonify({"ok": True, "message": "Анализ запущен"})
-    return jsonify({"error": "Звонок не найден"}), 404
-
-
 
 @app.route("/calls/<activity_id>/reanalyze", methods=["POST"])
 @rop_required
