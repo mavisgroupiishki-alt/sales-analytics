@@ -1128,7 +1128,7 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
         critical_badge = '<div class="critical-badge">🔴 СРОЧНО · ' + esc(crit_reason) + '</div>'
 
     # Оценка с кнопкой правки
-    edit_btn_html = ('<button class="edit-btn" onclick="openEditModal()">✏️ Изменить оценку</button>')
+    edit_btn_html = ('<button class="edit-btn" id="editScoreBtn" type="button">✏️ Изменить оценку</button>')
     corrected_mark_html = '<span class="score-corrected-mark">ред.</span>' if is_corrected else ''
     if has_ai:
         score = analysis.get("overall_score")
@@ -1576,7 +1576,7 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
 
 
 def build_edit_modal(activity_id: str, current_score) -> str:
-    """Модальное окно для правки оценки. Копирует JSON в буфер обмена для последующей вставки в GitHub."""
+    """Модальное окно для правки оценки."""
     safe_id = esc(activity_id)
     safe_score = esc(current_score) if current_score else ""
     return ('<div class="modal-backdrop" id="editModal">'
@@ -1590,35 +1590,52 @@ def build_edit_modal(activity_id: str, current_score) -> str:
             '💾 Оценка сохранится мгновенно и обновится на странице.'
             '</div>'
             '<div class="actions">'
-            '<button class="btn-cancel" onclick="closeEditModal()">Отмена</button>'
-            '<button class="btn-save" onclick="copyCorrection()">💾 Сохранить</button>'
+            '<button class="btn-cancel" id="cancelEditBtn" type="button">Отмена</button>'
+            '<button class="btn-save" id="saveScoreBtn" type="button">💾 Сохранить</button>'
             '</div>'
             '</div></div>'
             '<script>'
-            'function openEditModal() { document.getElementById("editModal").classList.add("active"); }'
-            'function closeEditModal() { document.getElementById("editModal").classList.remove("active"); }'
-            'function copyCorrection() {'
-            '  var score = parseFloat(document.getElementById("newScore").value);'
-            '  var comment = document.getElementById("newComment").value;'
-            '  var btn = document.querySelector(".btn-save");'
-            '  btn.textContent = "Сохраняю..."; btn.disabled = true;'
-            '  fetch("/api/correct", {'
-            '    method: "POST",'
-            '    headers: {"Content-Type": "application/json"},'
-            '    body: JSON.stringify({activity_id: "' + safe_id + '", score: score, comment: comment})'
-            '  }).then(function(r) { return r.json(); }).then(function(d) {'
-            '    if (d.ok) {'
-            '      alert("✅ Оценка сохранена!");'
-            '      closeEditModal();'
-            '      location.reload();'
-            '    } else { alert("Ошибка: " + JSON.stringify(d)); }'
-            '  }).catch(function(e) {'
-            '    // Fallback — копируем JSON если API недоступен (GitHub Pages)'
-            '    var obj = {}; obj["' + safe_id + '"] = {overall_score: score, comment: comment};'
-            '    navigator.clipboard.writeText(JSON.stringify(obj, null, 2));'
-            '    alert("API недоступен. JSON скопирован в буфер.");'
-            '  }).finally(function() { btn.textContent = "💾 Сохранить"; btn.disabled = false; });'
-            '}'
+            '(function() {'
+            '  var ACTIVITY_ID = "' + safe_id + '";'
+            '  function openEditModal() { var m = document.getElementById("editModal"); if (m) m.classList.add("active"); }'
+            '  function closeEditModal() { var m = document.getElementById("editModal"); if (m) m.classList.remove("active"); }'
+            '  function copyCorrection() {'
+            '    var score = parseFloat(document.getElementById("newScore").value);'
+            '    var comment = document.getElementById("newComment").value;'
+            '    var btn = document.getElementById("saveScoreBtn");'
+            '    btn.textContent = "Сохраняю..."; btn.disabled = true;'
+            '    fetch("/api/correct", {'
+            '      method: "POST",'
+            '      headers: {"Content-Type": "application/json"},'
+            '      body: JSON.stringify({activity_id: ACTIVITY_ID, score: score, comment: comment})'
+            '    }).then(function(r) { return r.json(); }).then(function(d) {'
+            '      if (d.ok) {'
+            '        alert("✅ Оценка сохранена!");'
+            '        closeEditModal();'
+            '        location.reload();'
+            '      } else { alert("Ошибка: " + JSON.stringify(d)); }'
+            '    }).catch(function(e) {'
+            '      var obj = {}; obj[ACTIVITY_ID] = {overall_score: score, comment: comment};'
+            '      navigator.clipboard.writeText(JSON.stringify(obj, null, 2));'
+            '      alert("API недоступен. JSON скопирован в буфер.");'
+            '    }).finally(function() { btn.textContent = "💾 Сохранить"; btn.disabled = false; });'
+            '  }'
+            '  function wire() {'
+            '    var editBtn = document.getElementById("editScoreBtn");'
+            '    var cancelBtn = document.getElementById("cancelEditBtn");'
+            '    var saveBtn = document.getElementById("saveScoreBtn");'
+            '    if (editBtn) editBtn.addEventListener("click", openEditModal);'
+            '    if (cancelBtn) cancelBtn.addEventListener("click", closeEditModal);'
+            '    if (saveBtn) saveBtn.addEventListener("click", copyCorrection);'
+            '  }'
+            '  if (document.readyState === "loading") {'
+            '    document.addEventListener("DOMContentLoaded", wire);'
+            '  } else {'
+            '    wire();'
+            '  }'
+            '  window.openEditModal = openEditModal;'
+            '  window.closeEditModal = closeEditModal;'
+            '})();'
             '</script>')
 
 
