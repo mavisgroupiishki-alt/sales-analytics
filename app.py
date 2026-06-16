@@ -1296,6 +1296,12 @@ def serve_audio(activity_id):
         r = _req.get(audio_url, stream=True, timeout=30)
         r.raise_for_status()
         ctype = r.headers.get("Content-Type", "audio/mpeg")
+        # Если Bitrix вернул не аудио (например html-страницу логина) — не отдаём как звук
+        if "audio" not in ctype and "octet-stream" not in ctype and "video" not in ctype:
+            # Прочитаем немного содержимого чтобы понять что это
+            preview = next(r.iter_content(chunk_size=512), b"")
+            app.logger.warning(f"Audio proxy got non-audio content-type={ctype} for {activity_id}: {preview[:200]}")
+            abort(502)
         return _Resp(
             stream_with_context(r.iter_content(chunk_size=8192)),
             status=200,
