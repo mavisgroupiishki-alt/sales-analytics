@@ -984,12 +984,14 @@ def auth_bar(user):
     """Полоска авторизации которая вставляется в существующий HTML."""
     role_badge = "РОП" if user["role"] == "rop" else "Менеджер"
     extra_links = ""
+    admin_link = ""
     if user["role"] == "rop":
         extra_links = """
         <a href="/rop" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Отчёт РОПа</a>
         <a href="/compare" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Сравнение</a>
         <a href="/managers" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Менеджеры</a>
         """
+        admin_link = '<a href="/admin" style="color:#C9A961;text-decoration:none;font-weight:600;white-space:nowrap;border:1px solid #C9A961;padding:4px 10px;border-radius:4px">⚙️ Админ</a>'
     return f"""
 <div style="background:#1a1208;color:#fff;padding:6px 16px;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,sans-serif;font-size:12px;gap:16px;flex-wrap:wrap;position:relative;z-index:50">
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
@@ -1001,7 +1003,10 @@ def auth_bar(user):
     <a href="/best" style="color:rgba(255,255,255,.7);text-decoration:none">🏆 Лучшие</a>
     <a href="/objections" style="color:rgba(255,255,255,.7);text-decoration:none">💬 Возражения</a>
   </div>
-  <a href="/logout" style="color:#C9A961;text-decoration:none;font-weight:600;white-space:nowrap">Выйти →</a>
+  <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    {admin_link}
+    <a href="/logout" style="color:#C9A961;text-decoration:none;font-weight:600;white-space:nowrap">Выйти →</a>
+  </div>
 </div>
 """
 
