@@ -784,10 +784,10 @@ def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: s
 
     period_tabs_html = (
         '<div class="period-tabs">'
-        '<button class="period-tab active" onclick="filterByPeriod(\'day\',this)">День</button>'
-        '<button class="period-tab" onclick="filterByPeriod(\'week\',this)">Неделя</button>'
-        '<button class="period-tab" onclick="filterByPeriod(\'month\',this)">Месяц</button>'
-        '<button class="period-tab" onclick="filterByPeriod(\'all\',this)">Всё время</button>'
+        '<button class="period-tab active" data-period="day" type="button">День</button>'
+        '<button class="period-tab" data-period="week" type="button">Неделя</button>'
+        '<button class="period-tab" data-period="month" type="button">Месяц</button>'
+        '<button class="period-tab" data-period="all" type="button">Всё время</button>'
         '</div>')
 
     kpi_html2 = (
@@ -805,32 +805,45 @@ def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: s
         '</div>')
 
     period_js = (
-        '<script>\nvar _aC=' + _calls_data + ';\n'
+        '<script>'
+        '(function(){'
+        'var _aC=' + _calls_data + ';'
         'function filterByPeriod(p,btn){'
-        'document.querySelectorAll(".period-tab").forEach(b=>b.classList.remove("active"));'
-        'btn.classList.add("active");'
+        'document.querySelectorAll(".period-tab").forEach(function(b){b.classList.remove("active");});'
+        'if(btn)btn.classList.add("active");'
         'var now=new Date(),ms={day:86400000,week:604800000,month:2592000000};'
-        'var f=p==="all"?_aC:_aC.filter(c=>!c.created||(now-new Date(c.created))<(ms[p]||0));'
-        'document.getElementById("kpi-total").textContent=f.length;'
-        'document.getElementById("kpi-incoming").textContent=f.filter(c=>c.direction==="incoming").length;'
-        'document.getElementById("kpi-outgoing").textContent=f.filter(c=>c.direction==="outgoing").length;'
-        'document.getElementById("kpi-analyzed").textContent=f.filter(c=>c.score!=null).length;'
-        'document.getElementById("kpi-critical").textContent=f.filter(c=>c.is_critical).length;'
+        'var f=p==="all"?_aC:_aC.filter(function(c){return !c.created||(now-new Date(c.created))<(ms[p]||0);});'
+        'var elTotal=document.getElementById("kpi-total");if(elTotal)elTotal.textContent=f.length;'
+        'var elIn=document.getElementById("kpi-incoming");if(elIn)elIn.textContent=f.filter(function(c){return c.direction==="incoming";}).length;'
+        'var elOut=document.getElementById("kpi-outgoing");if(elOut)elOut.textContent=f.filter(function(c){return c.direction==="outgoing";}).length;'
+        'var elAn=document.getElementById("kpi-analyzed");if(elAn)elAn.textContent=f.filter(function(c){return c.score!=null;}).length;'
+        'var elCrit=document.getElementById("kpi-critical");if(elCrit)elCrit.textContent=f.filter(function(c){return c.is_critical;}).length;'
         'var h="";f.slice(0,15).forEach(function(c){'
         'var s=c.score,sc=s!=null?s:"",cl=c.is_critical?"crit":s>=7.5?"high":s>=5?"mid":"low";'
         'var sH=sc!==""?"<div class=\\"mini-score "+cl+"\\">"+sc+"</div>":"";'
         'var dH=c.duration?"<div class=\\"call-duration\\">"+Math.floor(c.duration/60)+" мин</div>":"";'
         'var di=c.direction==="incoming"?"↓":"↑",dc=c.direction==="incoming"?"in":"out";'
         'var rc=c.is_critical?"row-link critical":"row-link";'
-        'h+="<a href=\\"calls/"+c.id+".html\\" class=\\""+rc+"\\">"'
+        'h+="<a href=\\"/calls/"+c.id+"\\" class=\\""+rc+"\\">"'
         '+"<div class=\\"call-row\\">"'
         '+"<div class=\\"call-direction "+dc+"\\">"+di+"</div>"'
         '+"<div class=\\"call-info\\"><div class=\\"call-client\\">"+( c.client||"—")+"</div>"'
         '+"<div class=\\"call-meta\\">"+( c.manager||"")+"</div></div>"'
         '+dH+sH+"</div></a>";});'
-        'document.getElementById("recent-calls-list").innerHTML=h||"<div class=\\"empty\\">Нет звонков</div>";'
+        'var listEl=document.getElementById("recent-calls-list");'
+        'if(listEl)listEl.innerHTML=h||"<div class=\\"empty\\">Нет звонков</div>";'
         '}'
-        'window.addEventListener("load",function(){filterByPeriod("day",document.querySelector(".period-tab"))});'
+        'function wirePeriodTabs(){'
+        'document.querySelectorAll(".period-tab").forEach(function(btn){'
+        'btn.addEventListener("click",function(){filterByPeriod(btn.getAttribute("data-period"),btn);});'
+        '});'
+        'var first=document.querySelector(".period-tab");'
+        'filterByPeriod("day",first);'
+        '}'
+        'if(document.readyState==="loading"){'
+        'document.addEventListener("DOMContentLoaded",wirePeriodTabs);'
+        '}else{wirePeriodTabs();}'
+        '})();'
         '</script>')
 
     body = (
@@ -1924,6 +1937,13 @@ def render_compare_page(stats: Dict, calls: List[Dict], analyses: Dict, generate
                      f'<text x="{x + bar_width//2}" y="{chart_h + 20}" text-anchor="middle" font-size="11" fill="var(--text-secondary)">{esc(m["name"].split()[0])}</text>')
     bars_svg += '</svg>'
 
+    def smart_truncate(text, max_len=90):
+        """Обрезает текст по границе слова, не разрывая слово на середине."""
+        if not text or len(text) <= max_len:
+            return text
+        cut = text[:max_len].rsplit(" ", 1)[0]
+        return cut.rstrip(",.;:") + "…"
+
     # Сравнительная таблица частых проблем
     manager_issues = {}
     for m in managers:
@@ -1933,9 +1953,9 @@ def render_compare_page(stats: Dict, calls: List[Dict], analyses: Dict, generate
             if a:
                 for imp in a.get("analysis", {}).get("improvements", []) or []:
                     if isinstance(imp, dict) and imp.get("text"):
-                        issues[imp["text"][:60]] += 1
+                        issues[smart_truncate(imp["text"])] += 1
                 for t in a.get("analysis", {}).get("triggers", []) or []:
-                    issues[t.get("name", "")[:60]] += 1
+                    issues[smart_truncate(t.get("name", ""))] += 1
         manager_issues[m["id"]] = issues.most_common(5)
 
     issues_html = '<div class="panel"><div class="panel-head"><h3>Топ проблем по каждому менеджеру</h3></div>'
