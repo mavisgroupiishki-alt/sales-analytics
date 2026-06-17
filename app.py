@@ -105,7 +105,7 @@ def rop_required(f):
     def decorated(*args, **kwargs):
         if "username" not in session:
             return redirect("/login")
-        if session.get("role") != "rop":
+        if session.get("role") not in ("rop", "director"):
             abort(403)
         return f(*args, **kwargs)
     return decorated
@@ -892,9 +892,10 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
 def hash_pw(p): return hashlib.sha256(p.encode()).hexdigest()
 
 USERS = [
-    {"username": "rop",    "password_hash": hash_pw(os.environ.get("ROP_PASSWORD",   "rop123")),   "role": "rop",     "name": "Руководитель",       "manager_id": None},
-    {"username": "roman",  "password_hash": hash_pw(os.environ.get("ROMAN_PASSWORD", "roman123")), "role": "manager", "name": "Роман Авсеенко",     "manager_id": 1286},
-    {"username": "irina",  "password_hash": hash_pw(os.environ.get("IRINA_PASSWORD", "irina123")), "role": "manager", "name": "Ирина Богомольцева", "manager_id": 2100},
+    {"username": "rop",      "password_hash": hash_pw(os.environ.get("ROP_PASSWORD",      "rop123")),      "role": "rop",      "name": "Руководитель",       "manager_id": None},
+    {"username": "Виктория", "password_hash": hash_pw(os.environ.get("DIRECTOR_PASSWORD", "9999")),        "role": "director", "name": "Виктория, Директор", "manager_id": None},
+    {"username": "roman",    "password_hash": hash_pw(os.environ.get("ROMAN_PASSWORD",    "roman123")),    "role": "manager",  "name": "Роман Авсеенко",     "manager_id": 1286},
+    {"username": "irina",    "password_hash": hash_pw(os.environ.get("IRINA_PASSWORD",    "irina123")),    "role": "manager",  "name": "Ирина Богомольцева", "manager_id": 2100},
 ]
 
 def find_user(username, password):
@@ -917,7 +918,7 @@ def rop_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if "username" not in session: return redirect(url_for("login"))
-        if session.get("role") != "rop": abort(403)
+        if session.get("role") not in ("rop", "director"): abort(403)
         return f(*args, **kwargs)
     return decorated
 
@@ -982,16 +983,19 @@ button:hover{background:#6B5544}
 
 def auth_bar(user):
     """Полоска авторизации которая вставляется в существующий HTML."""
-    role_badge = "РОП" if user["role"] == "rop" else "Менеджер"
+    role_labels = {"rop": "РОП", "director": "Директор", "manager": "Менеджер"}
+    role_badge = role_labels.get(user["role"], "Менеджер")
     extra_links = ""
     admin_link = ""
-    if user["role"] == "rop":
+    if user["role"] in ("rop", "director"):
         extra_links = """
         <a href="/rop" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Отчёт РОПа</a>
         <a href="/compare" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Сравнение</a>
         <a href="/managers" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Менеджеры</a>
         """
         admin_link = '<a href="/admin" style="color:#C9A961;text-decoration:none;font-weight:600;white-space:nowrap;border:1px solid #C9A961;padding:4px 10px;border-radius:4px">⚙️ Админ</a>'
+    if user["role"] == "director":
+        extra_links += '<a href="/director" style="color:#C9A961;font-size:13px;font-weight:700;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">📈 Бизнес-обзор</a>'
     return f"""
 <div style="background:#1a1208;color:#fff;padding:6px 16px;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,sans-serif;font-size:12px;gap:16px;flex-wrap:wrap;position:relative;z-index:50">
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
@@ -1353,6 +1357,154 @@ def reanalyze_call(activity_id):
         cwd=str(Path(__file__).parent)
     )
     return jsonify({"ok": True, "message": "Анализ запущен, обновите страницу через минуту"})
+
+@app.route("/director")
+@rop_required
+def director_overview():
+    """Бизнес-обзор для директора: верхнеуровневые тренды, без операционной рутины."""
+    from datetime import timedelta as _td
+    user = current_user()
+    calls = load_calls()
+    analyses = load_analyses()
+    corrections = load_corrections()
+    analyses = apply_corrections(analyses, corrections)
+
+    def score_of(call):
+        a = analyses.get(call["activity_id"], {}).get("analysis", {})
+        return a.get("overall_score")
+
+    now = datetime.now()
+    period_30 = now - _td(days=30)
+    period_60 = now - _td(days=60)
+
+    def in_range(c, start, end):
+        created = c.get("created", "")
+        try:
+            dt = datetime.fromisoformat(created)
+            return start <= dt.replace(tzinfo=None) < end
+        except Exception:
+            return False
+
+    recent = [c for c in calls if in_range(c, period_30, now)]
+    previous = [c for c in calls if in_range(c, period_60, period_30)]
+
+    def stats_for(call_list):
+        scores = [score_of(c) for c in call_list if score_of(c) is not None]
+        won = sum(1 for c in call_list if "WON" in (c.get("crm", {}).get("stage_id", "") or "").upper())
+        critical = sum(1 for c in call_list if analyses.get(c["activity_id"], {}).get("analysis", {}).get("is_critical"))
+        avg = round(sum(scores) / len(scores), 2) if scores else 0
+        return {"count": len(call_list), "avg_score": avg, "won": won, "critical": critical}
+
+    cur = stats_for(recent)
+    prev = stats_for(previous)
+
+    def delta(a, b):
+        if b == 0:
+            return 0
+        return round((a - b) / b * 100, 1)
+
+    deltas = {
+        "count": delta(cur["count"], prev["count"]),
+        "avg_score": delta(cur["avg_score"], prev["avg_score"]),
+        "won": delta(cur["won"], prev["won"]),
+        "critical": delta(cur["critical"], prev["critical"]),
+    }
+
+    # По менеджерам — средняя оценка за 30 дней
+    from collections import defaultdict as _dd
+    mgr_stats = _dd(lambda: {"name": "", "scores": [], "count": 0})
+    for c in recent:
+        mid = c.get("manager", {}).get("id", 0)
+        mgr_stats[mid]["name"] = c.get("manager", {}).get("name", "")
+        mgr_stats[mid]["count"] += 1
+        sc = score_of(c)
+        if sc is not None:
+            mgr_stats[mid]["scores"].append(sc)
+
+    mgr_rows = ""
+    for mid, ms in sorted(mgr_stats.items(), key=lambda x: -(sum(x[1]["scores"]) / len(x[1]["scores"]) if x[1]["scores"] else 0)):
+        avg = round(sum(ms["scores"]) / len(ms["scores"]), 1) if ms["scores"] else 0
+        bar_color = "#7C8B6F" if avg >= 7 else ("#C9A961" if avg >= 5 else "#A0432B")
+        mgr_rows += f"""
+<tr>
+  <td><b>{ms['name']}</b></td>
+  <td>{ms['count']}</td>
+  <td><span style="color:{bar_color};font-weight:700">{avg}</span></td>
+</tr>"""
+
+    def arrow(d):
+        if d > 0:
+            return f'<span style="color:#7C8B6F">▲ {d}%</span>'
+        if d < 0:
+            return f'<span style="color:#A0432B">▼ {abs(d)}%</span>'
+        return '<span style="color:#A39686">— 0%</span>'
+
+    html = f"""<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Бизнес-обзор — Mavis Group</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:-apple-system,"Segoe UI",sans-serif;background:#FAF7F2;color:#2A1F15}}
+.container{{max-width:1100px;margin:0 auto;padding:32px 24px}}
+h1{{font-size:28px;font-weight:400;color:#3D2E1F;margin-bottom:6px;font-family:Georgia,serif}}
+.subtitle{{color:#A39686;font-size:14px;margin-bottom:28px}}
+.stat-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:28px}}
+.stat{{background:#fff;border:1px solid #E8DFD0;border-radius:8px;padding:18px;border-top:3px solid #C9A961}}
+.stat-val{{font-size:30px;font-family:Georgia,serif;color:#3D2E1F}}
+.stat-label{{font-size:11px;color:#A39686;text-transform:uppercase;letter-spacing:1px;margin-top:4px}}
+.stat-delta{{font-size:12px;margin-top:6px;font-weight:600}}
+.card{{background:#fff;border:1px solid #E8DFD0;border-radius:8px;padding:22px;margin-bottom:18px}}
+.card h2{{font-size:17px;font-weight:600;color:#3D2E1F;margin-bottom:14px;font-family:Georgia,serif}}
+table{{width:100%;border-collapse:collapse;font-size:13.5px}}
+th{{text-align:left;padding:8px 12px;color:#A39686;font-size:11px;text-transform:uppercase;letter-spacing:1px;border-bottom:2px solid #E8DFD0}}
+td{{padding:10px 12px;border-bottom:1px solid #F0E8DA}}
+.note{{background:#FFF8E8;border:1px solid #C9A961;border-radius:6px;padding:12px 16px;font-size:13px;margin-bottom:20px}}
+</style></head><body>
+<div class="container">
+<h1>📈 Бизнес-обзор</h1>
+<div class="subtitle">Динамика последних 30 дней относительно предыдущих 30 дней</div>
+
+<div class="note">Этот раздел показывает только верхнеуровневые тренды. Для разбора конкретных звонков используйте раздел \u201CОтчёт РОПа\u201D или \u201CВсе звонки\u201D.</div>
+
+<div class="stat-grid">
+  <div class="stat">
+    <div class="stat-val">{cur['count']}</div>
+    <div class="stat-label">Звонков за 30 дней</div>
+    <div class="stat-delta">{arrow(deltas['count'])}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">{cur['avg_score']}</div>
+    <div class="stat-label">Средняя оценка ИИ</div>
+    <div class="stat-delta">{arrow(deltas['avg_score'])}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">{cur['won']}</div>
+    <div class="stat-label">Выиграно сделок</div>
+    <div class="stat-delta">{arrow(deltas['won'])}</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">{cur['critical']}</div>
+    <div class="stat-label">Критичных звонков</div>
+    <div class="stat-delta">{arrow(deltas['critical'])}</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Средняя оценка по менеджерам (последние 30 дней)</h2>
+  <table><tr><th>Менеджер</th><th>Звонков</th><th>Средняя оценка</th></tr>{mgr_rows or '<tr><td colspan="3" style="color:#A39686;text-align:center">Нет данных за период</td></tr>'}</table>
+</div>
+
+<div class="card">
+  <h2>Что это значит</h2>
+  <p style="font-size:13.5px;line-height:1.7;color:#4A3D2E">
+  Рост среднего балла и числа выигранных сделок при сохранении объёма звонков — хороший знак.
+  Если критичных звонков становится больше, а оценка падает — стоит заглянуть в раздел \u201CСрочно\u201D
+  или обсудить с РОПом конкретные случаи.
+  </p>
+</div>
+</div></body></html>"""
+
+    return html_response(inject_and_fix(html, user))
 
 @app.route("/health")
 def health():
