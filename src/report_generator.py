@@ -1141,7 +1141,10 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
         critical_badge = '<div class="critical-badge">🔴 СРОЧНО · ' + esc(crit_reason) + '</div>'
 
     # Оценка с кнопкой правки
-    edit_btn_html = ('<button class="edit-btn" id="editScoreBtn" type="button">✏️ Изменить оценку</button>')
+    edit_btn_html = ('<button class="edit-btn" id="editScoreBtn" type="button">✏️ Изменить оценку</button>'
+                     '<button class="edit-btn" id="reanalyzeBtn" type="button" '
+                     'style="margin-top:6px;background:rgba(255,255,255,0.15);" '
+                     'title="Запустить анализ заново">🔄 Переанализировать</button>')
     corrected_mark_html = '<span class="score-corrected-mark">ред.</span>' if is_corrected else ''
     if has_ai:
         score = analysis.get("overall_score")
@@ -1633,13 +1636,28 @@ def build_edit_modal(activity_id: str, current_score) -> str:
             '      alert("API недоступен. JSON скопирован в буфер.");'
             '    }).finally(function() { btn.textContent = "💾 Сохранить"; btn.disabled = false; });'
             '  }'
+            '  function reanalyzeCall() {'
+            '    if (!confirm("Запустить повторный анализ этого звонка? Это займёт пару минут.")) return;'
+            '    var btn = document.getElementById("reanalyzeBtn");'
+            '    btn.textContent = "Запускаю..."; btn.disabled = true;'
+            '    fetch("/calls/" + ACTIVITY_ID + "/reanalyze", { method: "POST" })'
+            '      .then(function(r) { return r.json(); })'
+            '      .then(function(d) {'
+            '        if (d.ok) { alert("✅ " + (d.message || "Анализ запущен")); }'
+            '        else { alert("Ошибка: " + (d.error || JSON.stringify(d))); }'
+            '      })'
+            '      .catch(function(e) { alert("Ошибка запроса: " + e.message); })'
+            '      .finally(function() { btn.textContent = "🔄 Переанализировать"; btn.disabled = false; });'
+            '  }'
             '  function wire() {'
             '    var editBtn = document.getElementById("editScoreBtn");'
             '    var cancelBtn = document.getElementById("cancelEditBtn");'
             '    var saveBtn = document.getElementById("saveScoreBtn");'
+            '    var reanalyzeBtn = document.getElementById("reanalyzeBtn");'
             '    if (editBtn) editBtn.addEventListener("click", openEditModal);'
             '    if (cancelBtn) cancelBtn.addEventListener("click", closeEditModal);'
             '    if (saveBtn) saveBtn.addEventListener("click", copyCorrection);'
+            '    if (reanalyzeBtn) reanalyzeBtn.addEventListener("click", reanalyzeCall);'
             '  }'
             '  if (document.readyState === "loading") {'
             '    document.addEventListener("DOMContentLoaded", wire);'
@@ -1795,11 +1813,18 @@ def render_triggers_page(calls: List[Dict], analyses: Dict, generated_at: str, c
                     duration_html = '<div class="call-duration">' + format_duration(c.get("duration_sec")) + '</div>'
                 dir_icon = "↓" if c.get('direction') == 'incoming' else "↑"
                 dir_cls = "in" if c.get('direction') == 'incoming' else "out"
+                bitrix_url = crm_link(c)
+                bitrix_btn_html = (
+                    '<a href="' + esc(bitrix_url) + '" target="_blank" rel="noopener" '
+                    'onclick="event.stopPropagation()" '
+                    'style="margin-left:10px;font-size:11px;color:var(--brand-medium);white-space:nowrap;text-decoration:underline;">'
+                    'Bitrix24 →</a>'
+                ) if bitrix_url else ''
                 rows += ('<a href="calls/' + esc(c['activity_id']) + '.html" class="row-link">'
                          '<div class="call-row">'
                          '<div class="call-direction ' + dir_cls + '">' + dir_icon + '</div>'
                          '<div class="call-info">'
-                         '<div class="call-client">' + esc(c.get('client', {}).get('name', '')) + ' · ' + esc(c.get('manager', {}).get('name', '')) + '</div>'
+                         '<div class="call-client">' + esc(c.get('client', {}).get('name', '')) + ' · ' + esc(c.get('manager', {}).get('name', '')) + bitrix_btn_html + '</div>'
                          '<div class="call-meta">' + esc(t.get('description', '')) + '</div>'
                          '</div>'
                          + duration_html +
