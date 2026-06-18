@@ -31,11 +31,13 @@ ALLOWED_MANAGERS = [
     "Роман Авсеенко",
     "Екатерина Халько",
     "Ирина Богомольцева",
+    "Анна Абушкевич",
+    "Денис Бутько",
 ]
 
 # ID менеджеров для надёжной фильтрации (если имя в Bitrix отличается)
-# По данным из логов: Роман=1286, Екатерина=2154, Ирина=2100
-ALLOWED_MANAGER_IDS = [1286, 2154, 2100]
+# По данным из логов: Роман=1286, Екатерина=2154, Ирина=2100, Анна=2196, Денис=2212
+ALLOWED_MANAGER_IDS = [1286, 2154, 2100, 2196, 2212]
 
 
 class Bitrix24Client:
@@ -305,114 +307,105 @@ def _mask_phone(phone: str) -> str:
 
 
 def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
-    """Обогащает звонки данными о статусе сделки и наличии следующего дела."""
+    """Обогащает звонки данными о статусе сделки/лида и наличии следующего дела."""
     # Группируем по типу CRM объекта
-    deal_ids = [c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "deal" and c["crm"]["owner_id"]]
-    lead_ids = [c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "lead" and c["crm"]["owner_id"]]
+    deal_ids = list(set(c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "deal" and c["crm"]["owner_id"]))
+    lead_ids = list(set(c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "lead" and c["crm"]["owner_id"]))
 
     deal_stages = {}
-    deal_activities = {}
+    lead_statuses = {}
+    next_activities = {}  # ключ: f"{owner_type}:{owner_id}"
+
+    deal_stage_labels = {
+        "NEW": "Новая", "PREPARATION": "Подготовка КП", "PREPAYMENT_INVOICE": "Счёт на предоплату",
+        "EXECUTING": "В работе", "FINAL_INVOICE": "Финальный счёт",
+        "WON": "Сделка успешна", "LOSE": "Сделка провалена", "APOLOGY": "Анализ причин отказа",
+    }
+    lead_status_labels = {
+        "NEW": "Новый", "IN_PROCESS": "В работе", "PROCESSED": "Обработан",
+        "CONVERTED": "Конвертирован", "JUNK": "Некачественный",
+    }
 
     # Получаем статусы сделок
     if deal_ids:
         try:
             resp = client._post("crm.deal.list", {
                 "filter": {"ID": deal_ids},
-                "select": ["ID", "STAGE_ID", "STAGE_NAME"],
+                "select": ["ID", "STAGE_ID"],
             })
             for d in (resp.get("result") or []):
+                stage = d.get("STAGE_ID", "")
                 deal_stages[str(d["ID"])] = {
-                    "stage_id": d.get("STAGE_ID", ""),
-                    "stage_name": d.get("STAGE_NAME") or d.get("STAGE_ID", ""),
+                    "stage_id": stage,
+                    "stage_name": deal_stage_labels.get(stage, stage),
                 }
         except Exception as e:
             logger.warning(f"Не удалось получить статусы сделок: {e}")
 
-    # Проверяем наличие дел (следующий контакт)
+    # Получаем статусы лидов
+    if lead_ids:
+        try:
+            resp = client._post("crm.lead.list", {
+                "filter": {"ID": lead_ids},
+                "select": ["ID", "STATUS_ID"],
+            })
+            for ld in (resp.get("result") or []):
+                status = ld.get("STATUS_ID", "")
+                lead_statuses[str(ld["ID"])] = {
+                    "stage_id": status,
+                    "stage_name": lead_status_labels.get(status, status),
+                }
+        except Exception as e:
+            logger.warning(f"Не удалось получить статусы лидов: {e}")
+
+    # Проверяем наличие открытых дел (следующий контакт) — для сделок
     if deal_ids:
         try:
-            from datetime import datetime
-            now_str = datetime.now().strftime("%Y-%m-%d")
             resp = client._post("crm.activity.list", {
-                "filter": {
-                    "OWNER_TYPE_ID": 2,
-                    "OWNER_ID": deal_ids,
-                    "COMPLETED": "N",
-                    ">=START_TIME": now_str,
-                },
+                "filter": {"OWNER_TYPE_ID": 2, "OWNER_ID": deal_ids, "COMPLETED": "N"},
                 "select": ["ID", "OWNER_ID", "START_TIME"],
             })
             for a in (resp.get("result") or []):
-                oid = str(a.get("OWNER_ID",""))
-                if oid not in deal_activities:
-                    deal_activities[oid] = a.get("START_TIME","")
+                key = f"deal:{a.get('OWNER_ID','')}"
+                if key not in next_activities:
+                    next_activities[key] = a.get("START_TIME", "")
         except Exception as e:
-            logger.warning(f"Не удалось получить дела: {e}")
+            logger.warning(f"Не удалось получить дела по сделкам: {e}")
+
+    # Проверяем наличие открытых дел (следующий контакт) — для лидов
+    if lead_ids:
+        try:
+            resp = client._post("crm.activity.list", {
+                "filter": {"OWNER_TYPE_ID": 1, "OWNER_ID": lead_ids, "COMPLETED": "N"},
+                "select": ["ID", "OWNER_ID", "START_TIME"],
+            })
+            for a in (resp.get("result") or []):
+                key = f"lead:{a.get('OWNER_ID','')}"
+                if key not in next_activities:
+                    next_activities[key] = a.get("START_TIME", "")
+        except Exception as e:
+            logger.warning(f"Не удалось получить дела по лидам: {e}")
 
     # Применяем к звонкам
     for c in calls:
         oid = c["crm"]["owner_id"]
         otype = c["crm"]["owner_type"]
+        info = None
         if otype == "deal" and oid in deal_stages:
-            c["crm"]["stage_id"] = deal_stages[oid]["stage_id"]
-            c["crm"]["stage_name"] = deal_stages[oid]["stage_name"]
-        if otype == "deal" and oid in deal_activities:
+            info = deal_stages[oid]
+        elif otype == "lead" and oid in lead_statuses:
+            info = lead_statuses[oid]
+        if info:
+            c["crm"]["stage_id"] = info["stage_id"]
+            c["crm"]["stage_name"] = info["stage_name"]
+        key = f"{otype}:{oid}"
+        if key in next_activities:
             c["crm"]["has_next_activity"] = True
-            c["crm"]["next_activity_date"] = deal_activities[oid]
+            c["crm"]["next_activity_date"] = next_activities[key]
 
     return calls
 
 
-
-def enrich_with_deal_info(client, calls):
-    """Обогащает звонки данными о статусе сделки и наличии следующего дела."""
-    deal_ids = list(set(c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "deal" and c["crm"]["owner_id"]))
-    if not deal_ids:
-        return calls
-
-    deal_stages = {}
-    deal_activities = {}
-
-    try:
-        resp = client._post("crm.deal.list", {
-            "filter": {"ID": deal_ids},
-            "select": ["ID", "STAGE_ID"],
-        })
-        for d in (resp.get("result") or []):
-            deal_stages[str(d["ID"])] = d.get("STAGE_ID", "")
-    except Exception as e:
-        logger.warning(f"Не удалось получить статусы сделок: {e}")
-
-    try:
-        from datetime import datetime as _dt
-        resp = client._post("crm.activity.list", {
-            "filter": {"OWNER_TYPE_ID": 2, "OWNER_ID": deal_ids, "COMPLETED": "N"},
-            "select": ["ID", "OWNER_ID", "START_TIME"],
-        })
-        for a in (resp.get("result") or []):
-            oid = str(a.get("OWNER_ID", ""))
-            if oid not in deal_activities:
-                deal_activities[oid] = a.get("START_TIME", "")
-    except Exception as e:
-        logger.warning(f"Не удалось получить дела: {e}")
-
-    for c in calls:
-        oid = c["crm"]["owner_id"]
-        if c["crm"]["owner_type"] == "deal":
-            stage = deal_stages.get(oid, "")
-            c["crm"]["stage_id"] = stage
-            # Человекочитаемое имя стадии Bitrix (стандартные)
-            stage_labels = {
-                "NEW": "Новая", "PREPARATION": "Подготовка КП", "PREPAYMENT_INVOICE": "Счёт на предоплату",
-                "EXECUTING": "В работе", "FINAL_INVOICE": "Финальный счёт",
-                "WON": "Сделка успешна", "LOSE": "Сделка провалена", "APOLOGY": "Анализ причин отказа",
-            }
-            c["crm"]["stage_name"] = stage_labels.get(stage, stage)
-        if oid in deal_activities:
-            c["crm"]["has_next_activity"] = True
-            c["crm"]["next_activity_date"] = deal_activities[oid]
-
-    return calls
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -445,7 +438,8 @@ def main():
     print(f"   Загружено пользователей: {len(users)}")
 
     print(f"\nФото менеджеров...")
-    download_user_avatars(users, Path("docs") / "avatars")
+    # Сохраняем в static/avatars — этот путь читает и Flask (Render), и можно скопировать в docs/ для GitHub Pages
+    download_user_avatars(users, Path("static") / "avatars")
 
     print(f"\nНормализуем...")
     all_results = [normalize_call(raw, users) for raw in raw_calls]
