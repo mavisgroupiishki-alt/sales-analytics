@@ -24,7 +24,9 @@ ACTIVITY_TYPE_CALL = 2
 DEFAULT_REQUEST_TIMEOUT = 60
 MIN_AUDIO_SIZE_BYTES = 10_000
 DEFAULT_AUDIO_DOWNLOAD_LIMIT = 0
-MIN_DURATION_SEC = 40  # ТЗ: анализируем только звонки ≥ 40 секунд
+MIN_DURATION_SEC = 30  # звонки от 30 сек получают полный ИИ-анализ
+TRANSCRIBE_ONLY_MIN_SEC = 16  # звонки 16-29 сек: только аудио + транскрипт, без анализа
+HARD_FLOOR_SEC = 15  # звонки ≤ 15 сек не попадают в систему вообще
 
 # Имена менеджеров для фильтрации (приведём к lower при сравнении)
 ALLOWED_MANAGERS = [
@@ -443,6 +445,14 @@ def main():
 
     print(f"\nНормализуем...")
     all_results = [normalize_call(raw, users) for raw in raw_calls]
+
+    # ====== ЖЁСТКИЙ ОТСЕВ: звонки ≤ 15 сек не попадают в систему вообще ======
+    before_floor = len(all_results)
+    all_results = [
+        r for r in all_results
+        if r.get("duration_sec") is None or r["duration_sec"] > HARD_FLOOR_SEC
+    ]
+    print(f"\nОтсев звонков ≤ {HARD_FLOOR_SEC} сек: {before_floor} → {len(all_results)}")
 
     # ====== ДИАГНОСТИКА: сколько звонков имеют расхождения ======
     print(f"\nДиагностика полей ответственности:")
