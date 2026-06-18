@@ -458,7 +458,7 @@ def admin_learning():
     total_diff = 0
 
     for aid, corr in corrections.items():
-        a = analyses.get(aid, {}).get("analysis", {})
+        a = analyses.get(aid, {}).get("analysis") or {}
         ai_score = a.get("overall_score")
         human_score = corr.get("overall_score")
         if ai_score is None or human_score is None:
@@ -605,7 +605,7 @@ def admin_conversion():
     won_by_bucket = {"9-10": 0, "7-8": 0, "5-6": 0, "0-4": 0}
 
     for c in calls:
-        a = analyses.get(c["activity_id"], {}).get("analysis", {})
+        a = analyses.get(c["activity_id"], {}).get("analysis") or {}
         score = a.get("overall_score")
         if score is None: continue
         score = float(score)
@@ -625,7 +625,7 @@ def admin_conversion():
     for c in calls:
         mid = c.get("manager", {}).get("id", 0)
         mname = c.get("manager", {}).get("name", "")
-        a = analyses.get(c["activity_id"], {}).get("analysis", {})
+        a = analyses.get(c["activity_id"], {}).get("analysis") or {}
         score = a.get("overall_score")
         stage = c.get("crm", {}).get("stage_id", "").upper()
         won = "WON" in stage or "WIN" in stage
@@ -674,7 +674,7 @@ def admin_conversion():
                      1 if "WON" in c.get("crm",{}).get("stage_id","").upper() else 0)
                     for c in calls
                     if c["activity_id"] in analyses
-                    and analyses[c["activity_id"]].get("analysis",{}).get("overall_score") is not None]
+                    and (analyses[c["activity_id"]].get("analysis") or {}).get("overall_score") is not None]
 
     correlation_text = ""
     if len(scored_calls) >= 10:
@@ -758,7 +758,7 @@ def admin_forecast():
         triggers_all = []
 
         for c in deal["calls"]:
-            a = analyses.get(c["activity_id"], {}).get("analysis", {})
+            a = analyses.get(c["activity_id"], {}).get("analysis") or {}
             score = a.get("overall_score")
             if score is not None:
                 scores.append(float(score))
@@ -948,7 +948,9 @@ def load_corrections():
 def apply_corrections(analyses, corrections):
     for aid, corr in corrections.items():
         if aid in analyses:
-            ad = analyses[aid].get("analysis", {})
+            ad = analyses[aid].get("analysis")
+            if ad is None:
+                continue  # короткий звонок без анализа — правка оценки не применима
             if "overall_score" in corr:
                 new_score = corr["overall_score"]
                 ad["overall_score"] = new_score
@@ -1406,7 +1408,7 @@ def director_overview():
     analyses = apply_corrections(analyses, corrections)
 
     def score_of(call):
-        a = analyses.get(call["activity_id"], {}).get("analysis", {})
+        a = analyses.get(call["activity_id"], {}).get("analysis") or {}
         return a.get("overall_score")
 
     now = datetime.now()
@@ -1427,7 +1429,7 @@ def director_overview():
     def stats_for(call_list):
         scores = [score_of(c) for c in call_list if score_of(c) is not None]
         won = sum(1 for c in call_list if "WON" in (c.get("crm", {}).get("stage_id", "") or "").upper())
-        critical = sum(1 for c in call_list if analyses.get(c["activity_id"], {}).get("analysis", {}).get("is_critical"))
+        critical = sum(1 for c in call_list if (analyses.get(c["activity_id"], {}).get("analysis") or {}).get("is_critical"))
         avg = round(sum(scores) / len(scores), 2) if scores else 0
         return {"count": len(call_list), "avg_score": avg, "won": won, "critical": critical}
 
