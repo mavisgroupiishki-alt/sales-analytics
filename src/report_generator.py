@@ -1108,9 +1108,11 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
         crm_link_html = ('<a href="' + esc(bitrix_link) + '" target="_blank">' + owner_type_label +
                          ' №' + esc(call.get("crm", {}).get("owner_id", "")) + '</a>')
 
-    has_ai = analysis_data is not None
-    analysis = (analysis_data or {}).get("analysis", {}) if has_ai else {}
-    transcription = (analysis_data or {}).get("transcription", {}) if has_ai else {}
+    has_record = analysis_data is not None
+    has_ai = has_record and (analysis_data or {}).get("analysis") is not None
+    transcribe_only = has_record and not has_ai  # запись есть, но это короткий звонок без анализа
+    analysis = (analysis_data or {}).get("analysis") or {} if has_record else {}
+    transcription = (analysis_data or {}).get("transcription", {}) if has_record else {}
     is_crit = analysis.get("is_critical", False)
     crit_reason = analysis.get("critical_reason", "")
     is_corrected = analysis.get("score_corrected", False)
@@ -1157,6 +1159,10 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
                           + edit_btn_html + '</div>')
         else:
             score_html = '<div class="score-big placeholder"><div class="num">—</div><div class="label">нет</div></div>'
+    elif transcribe_only:
+        score_html = ('<div class="score-big placeholder" style="background:rgba(124,139,111,0.12);border:1px dashed var(--olive, #7C8B6F);">'
+                      '<div class="num" style="font-size:1.1rem;">⏱️</div>'
+                      '<div class="label">Короткий звонок<br>без ИИ-анализа</div></div>')
     else:
         score_html = '<div class="score-big placeholder"><div class="num">—</div><div class="label">не анализирован</div></div>'
 
@@ -1265,7 +1271,22 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
                       '</div>')
 
     # Анализ
-    if not has_ai:
+    if transcribe_only:
+        transcript_text_tc = transcription.get("text_with_timecodes") or transcription.get("text", "")
+        if transcript_text_tc:
+            rest_html = ('<div class="placeholder-panel" style="text-align:left;border-style:dashed;">'
+                         '<h3>⏱️ Короткий звонок — без ИИ-анализа</h3>'
+                         '<p style="margin-bottom:14px;">Звонок короче 30 секунд: оценка и разбор ИИ для таких '
+                         'звонков не делаются, но запись и расшифровка доступны ниже.</p>'
+                         '<div class="label">📝 Транскрипт</div>'
+                         '<div class="text" style="white-space:pre-wrap;">' + esc(transcript_text_tc) + '</div>'
+                         '</div>')
+        else:
+            rest_html = ('<div class="placeholder-panel">'
+                         '<h3>⏱️ Короткий звонок — без ИИ-анализа</h3>'
+                         '<p>Звонок короче 30 секунд, транскрипт пуст или не получен.</p>'
+                         '</div>')
+    elif not has_ai:
         rest_html = ('<div class="placeholder-panel">'
                      '<h3>📝 Транскрипт</h3><p>Звонок ещё не прошёл ИИ-анализ.</p>'
                      '</div>')
