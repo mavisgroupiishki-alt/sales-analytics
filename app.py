@@ -885,6 +885,9 @@ app.register_blueprint(admin_bp)
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
 
+# Простой in-memory кэш для аудиофайлов (чтобы перемотка не дёргала Bitrix повторно)
+_AUDIO_CACHE = {}
+
 # ============================================================
 # ПОЛЬЗОВАТЕЛИ
 # ============================================================
@@ -896,6 +899,8 @@ USERS = [
     {"username": "Виктория", "password_hash": hash_pw(os.environ.get("DIRECTOR_PASSWORD", "9999")),        "role": "director", "name": "Виктория, Директор", "manager_id": None},
     {"username": "roman",    "password_hash": hash_pw(os.environ.get("ROMAN_PASSWORD",    "roman123")),    "role": "manager",  "name": "Роман Авсеенко",     "manager_id": 1286},
     {"username": "irina",    "password_hash": hash_pw(os.environ.get("IRINA_PASSWORD",    "irina123")),    "role": "manager",  "name": "Ирина Богомольцева", "manager_id": 2100},
+    {"username": "anna",     "password_hash": hash_pw(os.environ.get("ANNA_PASSWORD",     "1111")),        "role": "manager",  "name": "Анна Абушкевич",     "manager_id": 2196},
+    {"username": "denis",    "password_hash": hash_pw(os.environ.get("DENIS_PASSWORD",    "1111")),        "role": "manager",  "name": "Денис Бутько",       "manager_id": 2212},
 ]
 
 def find_user(username, password):
@@ -945,8 +950,14 @@ def apply_corrections(analyses, corrections):
         if aid in analyses:
             ad = analyses[aid].get("analysis", {})
             if "overall_score" in corr:
-                ad["overall_score"] = corr["overall_score"]
+                new_score = corr["overall_score"]
+                ad["overall_score"] = new_score
                 ad["score_corrected"] = True
+                # Если РОП поднял оценку выше порога — снимаем флаг "Срочно"
+                if new_score >= 6:
+                    ad["is_critical"] = False
+                    if isinstance(ad.get("flags"), dict):
+                        ad["flags"]["critical"] = False
             if "comment" in corr:
                 ad["correction_comment"] = corr["comment"]
     return analyses
@@ -1284,11 +1295,11 @@ def api_correct():
 @app.route("/audio/<activity_id>")
 @login_required
 def serve_audio(activity_id):
-    """Проксирует аудио с Bitrix через наш сервер.
+    """Проксирует аудио с Bitrix через наш сервер, с поддержкой перемотки (Range-запросы).
     Получает СВЕЖУЮ ссылку на скачивание через disk.file.get,
     так как сохранённый в calls_data.json URL содержит временный токен и протухает."""
     import requests as _req
-    from flask import Response as _Resp, stream_with_context
+    from flask import Response as _Resp
 
     calls = load_calls()
     call = next((c for c in calls if c["activity_id"] == activity_id), None)
@@ -1313,32 +1324,57 @@ def serve_audio(activity_id):
         except Exception as e:
             app.logger.warning(f"Failed to get fresh download URL for file_id={file_id}: {e}")
 
-    # Фоллбэк на старый сохранённый URL, если свежий получить не удалось
     if not audio_url:
         audio_url = audio_meta.get("url", "")
 
     if not audio_url:
         abort(404)
 
-    try:
-        r = _req.get(audio_url, stream=True, timeout=30)
-        r.raise_for_status()
-        ctype = r.headers.get("Content-Type", "audio/mpeg")
-        if "audio" not in ctype and "octet-stream" not in ctype and "video" not in ctype:
-            preview = next(r.iter_content(chunk_size=512), b"")
-            app.logger.warning(f"Audio proxy got non-audio content-type={ctype} for {activity_id}: {preview[:200]}")
+    # Кэшируем файл целиком в памяти процесса на короткое время, чтобы
+    # перемотка (Range-запросы браузера) не дёргала Bitrix повторно и работала мгновенно.
+    cache_key = f"audio_{activity_id}"
+    cached = _AUDIO_CACHE.get(cache_key)
+    if cached and (datetime.now() - cached["ts"]).total_seconds() < 600:
+        data, ctype = cached["data"], cached["ctype"]
+    else:
+        try:
+            r = _req.get(audio_url, timeout=30)
+            r.raise_for_status()
+            ctype = r.headers.get("Content-Type", "audio/mpeg")
+            if "audio" not in ctype and "octet-stream" not in ctype and "video" not in ctype:
+                app.logger.warning(f"Audio proxy got non-audio content-type={ctype} for {activity_id}: {r.content[:200]}")
+                abort(502)
+            data = r.content
+            _AUDIO_CACHE[cache_key] = {"data": data, "ctype": ctype, "ts": datetime.now()}
+        except Exception:
             abort(502)
-        return _Resp(
-            stream_with_context(r.iter_content(chunk_size=8192)),
-            status=200,
-            headers={
-                "Content-Type": ctype,
-                "Accept-Ranges": "bytes",
-                "Cache-Control": "private, max-age=3600",
-            }
-        )
-    except Exception:
-        abort(502)
+
+    total_len = len(data)
+    range_header = request.headers.get("Range")
+
+    if range_header:
+        # Пример заголовка: "bytes=12345-"
+        try:
+            range_val = range_header.replace("bytes=", "").split("-")
+            start = int(range_val[0]) if range_val[0] else 0
+            end = int(range_val[1]) if len(range_val) > 1 and range_val[1] else total_len - 1
+            end = min(end, total_len - 1)
+        except Exception:
+            start, end = 0, total_len - 1
+
+        chunk = data[start:end + 1]
+        resp = _Resp(chunk, status=206, mimetype=ctype)
+        resp.headers["Content-Range"] = f"bytes {start}-{end}/{total_len}"
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Content-Length"] = str(len(chunk))
+        resp.headers["Cache-Control"] = "private, max-age=3600"
+        return resp
+
+    resp = _Resp(data, status=200, mimetype=ctype)
+    resp.headers["Accept-Ranges"] = "bytes"
+    resp.headers["Content-Length"] = str(total_len)
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
 
 @app.route("/calls/<activity_id>/reanalyze", methods=["POST"])
 @rop_required
