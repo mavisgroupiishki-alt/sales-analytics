@@ -26,6 +26,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MODEL_CLAUDE = "bitrix/bitrixgpt-5.5"   # бесплатная модель Vibe Code; замени на "auto" для автовыбора
+MIN_DURATION_FOR_ANALYSIS = 30  # звонки короче этого порога только транскрибируются, без ИИ-анализа
 MODEL_WHISPER = "base"
 VIBE_AI_URL = "https://vibecode.bitrix24.tech/v1/ai/chat/completions"
 
@@ -900,11 +901,27 @@ def main():
         print(f"   Менеджер: {call_meta['manager']['name']}")
         print(f"   Клиент: {call_meta['client']['name']}")
 
+        call_duration = call_meta.get("duration_sec") or 0
+        transcribe_only_mode = call_duration and call_duration < MIN_DURATION_FOR_ANALYSIS
+
         try:
             transcription = transcribe_audio(audio_path)
             print(f"   Транскрипт: {len(transcription['text'])} символов, {transcription['duration_sec']} сек")
+
+            if transcribe_only_mode:
+                # Звонок 16-29 сек: сохраняем транскрипт, но без ИИ-анализа
+                print(f"   ℹ Короткий звонок ({call_duration} сек) — только транскрипт, без анализа")
+                analyses[activity_id] = {
+                    "call_meta": call_meta,
+                    "transcription": transcription,
+                    "analysis": None,
+                    "analyzed_at": datetime.now().isoformat(),
+                }
+                success += 1
+                continue
+
             if len(transcription["text"]) < 50:
-                print(f"   ⚠ Слишком короткий, пропускаем")
+                print(f"   ⚠ Слишком короткий транскрипт, пропускаем анализ")
                 failed += 1
                 continue
 
