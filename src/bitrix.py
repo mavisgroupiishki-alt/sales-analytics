@@ -499,9 +499,14 @@ def main():
     # Статистика по длительности
     with_duration = [r for r in results if r.get("duration_sec") is not None]
     long_enough = [r for r in results if r.get("duration_sec") and r["duration_sec"] >= MIN_DURATION_SEC]
+    transcribe_only = [
+        r for r in results
+        if r.get("duration_sec") and TRANSCRIBE_ONLY_MIN_SEC <= r["duration_sec"] < MIN_DURATION_SEC
+    ]
     print(f"\nДлительность:")
     print(f"   С известной длительностью: {len(with_duration)}/{len(results)}")
-    print(f"   ≥ {MIN_DURATION_SEC} сек: {len(long_enough)}")
+    print(f"   ≥ {MIN_DURATION_SEC} сек (полный анализ): {len(long_enough)}")
+    print(f"   {TRANSCRIBE_ONLY_MIN_SEC}-{MIN_DURATION_SEC-1} сек (только транскрипт): {len(transcribe_only)}")
 
     # Скачивание аудио
     audio_limit = int(os.environ.get("DOWNLOAD_AUDIO_COUNT", DEFAULT_AUDIO_DOWNLOAD_LIMIT))
@@ -511,11 +516,11 @@ def main():
         audio_dir = Path("audio_temp")
         audio_dir.mkdir(exist_ok=True)
 
-        # Кандидаты: длинные (≥ 40 сек) + неизвестной длительности
+        # Кандидаты: от 16 сек (полный анализ ИЛИ только транскрипт) + неизвестной длительности
         candidates = [
             r for r in results
             if r.get("audio") and r["audio"].get("file_id")
-            and (r.get("duration_sec") is None or r["duration_sec"] >= MIN_DURATION_SEC)
+            and (r.get("duration_sec") is None or r["duration_sec"] >= TRANSCRIBE_ONLY_MIN_SEC)
         ]
         candidates.sort(key=lambda x: x.get("created", ""), reverse=True)
 
