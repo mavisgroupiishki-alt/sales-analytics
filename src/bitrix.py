@@ -419,15 +419,36 @@ def main():
     # DATE_FROM=2026-06-21 python bitrix.py  — загрузит звонки с указанной даты
     # DAYS_BACK=3 python bitrix.py           — загрузит за последние N дней
     date_from_env = os.environ.get("DATE_FROM", "")
-    days_back = int(os.environ.get("DAYS_BACK", "1"))
+    days_back_env = os.environ.get("DAYS_BACK", "")
     if date_from_env:
         try:
             date_from = datetime.strptime(date_from_env, "%Y-%m-%d")
             print(f"⚡ Ручной запуск: DATE_FROM={date_from_env}")
         except ValueError:
-            print(f"⚠ Неверный формат DATE_FROM={date_from_env}, используем {days_back} дней")
-            date_from = now - timedelta(days=days_back)
+            print(f"⚠ Неверный формат DATE_FROM={date_from_env}, используем автоматический режим")
+            date_from = None
+    elif days_back_env:
+        days_back = int(days_back_env)
+        date_from = now - timedelta(days=days_back)
+        print(f"⚡ Ручной запуск: DAYS_BACK={days_back}")
     else:
+        date_from = None
+
+    if date_from is None:
+        # Автоматический режим: в понедельник берём пятницу, иначе вчера
+        weekday = now.weekday()  # 0=пн, 4=пт, 5=сб, 6=вс
+        if weekday == 0:  # понедельник
+            days_back = 3  # берём пятницу
+            print("📅 Понедельник — загружаем пятницу (3 дня назад)")
+        elif weekday == 6:  # воскресенье (на всякий случай)
+            days_back = 2
+            print("📅 Воскресенье — загружаем пятницу (2 дня назад)")
+        elif weekday == 5:  # суббота
+            days_back = 1
+            print("📅 Суббота — загружаем пятницу (1 день назад)")
+        else:
+            days_back = 1  # вт-пт: вчера
+            print(f"📅 Обычный день — загружаем вчера (1 день назад)")
         date_from = now - timedelta(days=days_back)
 
     date_to = now + timedelta(hours=3)
