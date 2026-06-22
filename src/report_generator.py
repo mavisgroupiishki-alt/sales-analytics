@@ -142,7 +142,7 @@ def apply_manual_corrections(analyses: Dict, corrections: Dict) -> Dict:
         return analyses
     for activity_id, correction in corrections.items():
         if activity_id in analyses:
-            ad = analyses[activity_id].get("analysis", {})
+            ad = analyses[activity_id].get("analysis") or {}
             if "overall_score" in correction:
                 ad["overall_score"] = correction["overall_score"]
                 ad["score_corrected"] = True
@@ -164,7 +164,7 @@ def compute_stats(calls: List[Dict], analyses: Dict) -> Dict[str, Any]:
     outgoing = sum(1 for c in calls if c.get("direction") == "outgoing")
     critical = sum(
         1 for a in analyses.values()
-        if a.get("analysis", {}).get("is_critical")
+        if (a.get("analysis") or {}).get("is_critical")
     )
 
     by_manager = defaultdict(lambda: {
@@ -186,13 +186,13 @@ def compute_stats(calls: List[Dict], analyses: Dict) -> Dict[str, Any]:
             by_manager[mid]["out"] += 1
         a = analyses.get(c["activity_id"])
         if a:
-            sc = a.get("analysis", {}).get("overall_score")
+            sc = (a.get("analysis") or {}).get("overall_score")
             if sc is not None:
                 try:
                     by_manager[mid]["scores"].append(float(sc))
                 except (TypeError, ValueError):
                     pass
-            if a.get("analysis", {}).get("is_critical"):
+            if (a.get("analysis") or {}).get("is_critical"):
                 by_manager[mid]["critical"] += 1
 
     for m in by_manager.values():
@@ -229,7 +229,7 @@ def compute_manager_daily_report(manager: Dict, analyses: Dict) -> Dict:
     # Лучший и худший звонок
     sorted_by_score = sorted(
         manager_analyses,
-        key=lambda x: x[1].get("analysis", {}).get("overall_score") or 0
+        key=lambda x: (x[1].get("analysis") or {}).get("overall_score") or 0
     )
     worst = sorted_by_score[0] if sorted_by_score else None
     best = sorted_by_score[-1] if sorted_by_score else None
@@ -237,7 +237,7 @@ def compute_manager_daily_report(manager: Dict, analyses: Dict) -> Dict:
     # Слабые критерии (средняя оценка по критериям)
     criterion_scores = defaultdict(list)
     for _, a in manager_analyses:
-        scores = a.get("analysis", {}).get("scores", {}) or {}
+        scores = (a.get("analysis") or {}).get("scores", {}) or {}
         for crit, val in scores.items():
             try:
                 criterion_scores[crit].append(float(val))
@@ -253,7 +253,7 @@ def compute_manager_daily_report(manager: Dict, analyses: Dict) -> Dict:
     # Частые триггеры
     trigger_counter = Counter()
     for _, a in manager_analyses:
-        for t in a.get("analysis", {}).get("triggers", []) or []:
+        for t in (a.get("analysis") or {}).get("triggers", []) or []:
             trigger_counter[t.get("name", "")] += 1
     top_triggers = trigger_counter.most_common(5)
 
@@ -674,7 +674,7 @@ def render_call_row(c: Dict, show_manager: bool = True, analysis: Dict = None,
     score_html = ""
     row_classes = ["row-link"]
     if analysis:
-        an = analysis.get("analysis", {})
+        an = analysis.get("analysis") or {}
         score = an.get("overall_score")
         if score is not None:
             cls = "crit" if an.get("is_critical") else score_color(score)
@@ -707,7 +707,7 @@ def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: s
     critical_today = sum(
         1 for c in calls
         if c["activity_id"] in analyses
-        and analyses[c["activity_id"]].get("analysis", {}).get("is_critical")
+        and (analyses[c["activity_id"]].get("analysis") or {}).get("is_critical")
     )
     critical_count = critical_today
     analyzed_count = analyzed_today
@@ -875,7 +875,7 @@ def render_rop_report(calls: List[Dict], stats: Dict, analyses: Dict, generated_
     # Топ-5 слабых критериев по компании
     criterion_scores = defaultdict(list)
     for a in analyses.values():
-        scores = a.get("analysis", {}).get("scores", {}) or {}
+        scores = (a.get("analysis") or {}).get("scores", {}) or {}
         for crit, val in scores.items():
             try:
                 criterion_scores[crit].append(float(val))
@@ -900,7 +900,7 @@ def render_rop_report(calls: List[Dict], stats: Dict, analyses: Dict, generated_
     # Топ-5 триггеров
     trigger_counter = Counter()
     for a in analyses.values():
-        for t in a.get("analysis", {}).get("triggers", []) or []:
+        for t in (a.get("analysis") or {}).get("triggers", []) or []:
             trigger_counter[t.get("name", "")] += 1
     top_triggers = trigger_counter.most_common(5)
     triggers_html = ""
@@ -930,7 +930,7 @@ def render_rop_report(calls: List[Dict], stats: Dict, analyses: Dict, generated_
     critical_today_rop = sum(
         1 for c in calls
         if c["activity_id"] in analyses
-        and analyses[c["activity_id"]].get("analysis", {}).get("is_critical")
+        and (analyses[c["activity_id"]].get("analysis") or {}).get("is_critical")
     )
     body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Отчёт РОПа</div>'
             '<div class="page-head">'
@@ -1032,7 +1032,7 @@ def render_manager_page(manager: Dict, analyses: Dict, generated_at: str, critic
         best_html = ""
         if daily["best"]:
             c, a = daily["best"]
-            sc = a.get("analysis", {}).get("overall_score", 0)
+            sc = (a.get("analysis") or {}).get("overall_score", 0)
             cls = score_color(sc)
             best_html = ('<div class="dr-callref">'
                          '<span class="sc mini-score ' + cls + '">' + str(sc) + '</span>'
@@ -1043,8 +1043,8 @@ def render_manager_page(manager: Dict, analyses: Dict, generated_at: str, critic
         worst_html = ""
         if daily["worst"] and daily["worst"] != daily["best"]:
             c, a = daily["worst"]
-            sc = a.get("analysis", {}).get("overall_score", 0)
-            cls = "crit" if a.get("analysis", {}).get("is_critical") else score_color(sc)
+            sc = (a.get("analysis") or {}).get("overall_score", 0)
+            cls = "crit" if (a.get("analysis") or {}).get("is_critical") else score_color(sc)
             worst_html = ('<div class="dr-callref">'
                           '<span class="sc mini-score ' + cls + '">' + str(sc) + '</span>'
                           '<a href="../calls/' + esc(c['activity_id']) + '.html">'
@@ -1759,7 +1759,7 @@ def render_critical_page(calls: List[Dict], analyses: Dict, generated_at: str, c
     critical_calls = []
     for c in calls:
         a = analyses.get(c["activity_id"])
-        if a and a.get("analysis", {}).get("is_critical"):
+        if a and (a.get("analysis") or {}).get("is_critical"):
             critical_calls.append((c, a))
     critical_calls.sort(key=lambda x: x[0].get("created", ""), reverse=True)
 
@@ -1810,7 +1810,7 @@ def render_triggers_page(calls: List[Dict], analyses: Dict, generated_at: str, c
     for c in calls:
         a = analyses.get(c["activity_id"])
         if a:
-            for t in a.get("analysis", {}).get("triggers", []) or []:
+            for t in (a.get("analysis") or {}).get("triggers", []) or []:
                 triggers_data[t.get("name", "")].append((c, a, t))
 
     body_top = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Триггеры</div>'
@@ -1874,7 +1874,7 @@ def get_weekly_scores(manager_id: int, calls: List[Dict], analyses: Dict) -> Lis
         a = analyses.get(c["activity_id"])
         if not a:
             continue
-        score = a.get("analysis", {}).get("overall_score")
+        score = (a.get("analysis") or {}).get("overall_score")
         if score is None:
             continue
         try:
@@ -1898,7 +1898,7 @@ def get_objections_stats(analyses: Dict) -> List[Dict]:
     ]
     counter = Counter()
     for a_data in analyses.values():
-        an = a_data.get("analysis", {})
+        an = a_data.get("analysis") or {}
         text_sources = []
         # из transcript_split
         for msg in an.get("transcript_split", []) or []:
@@ -1926,7 +1926,7 @@ def get_best_calls(calls: List[Dict], analyses: Dict, n: int = 10) -> List[tuple
         a = analyses.get(c["activity_id"])
         if not a:
             continue
-        score = a.get("analysis", {}).get("overall_score")
+        score = (a.get("analysis") or {}).get("overall_score")
         if score is None:
             continue
         try:
@@ -1997,10 +1997,10 @@ def render_compare_page(stats: Dict, calls: List[Dict], analyses: Dict, generate
         for c in m["calls"]:
             a = analyses.get(c["activity_id"])
             if a:
-                for imp in a.get("analysis", {}).get("improvements", []) or []:
+                for imp in (a.get("analysis") or {}).get("improvements", []) or []:
                     if isinstance(imp, dict) and imp.get("text"):
                         issues[smart_truncate(imp["text"])] += 1
-                for t in a.get("analysis", {}).get("triggers", []) or []:
+                for t in (a.get("analysis") or {}).get("triggers", []) or []:
                     issues[smart_truncate(t.get("name", ""))] += 1
         manager_issues[m["id"]] = issues.most_common(5)
 
@@ -2025,7 +2025,7 @@ def render_compare_page(stats: Dict, calls: List[Dict], analyses: Dict, generate
         a = analyses.get(c["activity_id"])
         if not a:
             continue
-        score = a.get("analysis", {}).get("overall_score")
+        score = (a.get("analysis") or {}).get("overall_score")
         mid = c.get("manager", {}).get("id")
         if score is None or mid is None:
             continue
@@ -2087,7 +2087,7 @@ def render_objections_page(calls: List[Dict], analyses: Dict, generated_at: str,
         a = analyses.get(c["activity_id"])
         if not a:
             continue
-        an = a.get("analysis", {})
+        an = a.get("analysis") or {}
         text_blob = " ".join([
             m.get("text", "") for m in (an.get("transcript_split") or []) if m.get("speaker") == "client"
         ] + [
@@ -2127,7 +2127,7 @@ def render_objections_page(calls: List[Dict], analyses: Dict, generated_at: str,
                 continue
             rows = ""
             for c, a in examples:
-                an = a.get("analysis", {})
+                an = a.get("analysis") or {}
                 score = an.get("overall_score", 0)
                 cls = score_color(score)
                 rows += (f'<a href="calls/{esc(c["activity_id"])}.html" class="row-link">'
@@ -2164,7 +2164,7 @@ def render_best_calls_page(calls: List[Dict], analyses: Dict, generated_at: str,
     else:
         body += '<div class="panel"><div class="panel-head"><h3>Топ звонков по оценке</h3></div>'
         for i, (c, a, score) in enumerate(best, 1):
-            an = a.get("analysis", {})
+            an = a.get("analysis") or {}
             cls = score_color(score)
             medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
             recommendation = an.get("recommendation", "")
@@ -2202,7 +2202,7 @@ def render_growth_chart(manager_id: int, manager_name: str, calls: List[Dict], a
         a = analyses.get(c["activity_id"])
         if not a:
             continue
-        score = a.get("analysis", {}).get("overall_score")
+        score = (a.get("analysis") or {}).get("overall_score")
         if score is None:
             continue
         try:
