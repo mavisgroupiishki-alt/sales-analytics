@@ -414,7 +414,22 @@ def main():
 
     client = Bitrix24Client()
     now = datetime.now()
-    date_from = now - timedelta(hours=24)
+
+    # Поддержка ручного запуска за произвольный период:
+    # DATE_FROM=2026-06-21 python bitrix.py  — загрузит звонки с указанной даты
+    # DAYS_BACK=3 python bitrix.py           — загрузит за последние N дней
+    date_from_env = os.environ.get("DATE_FROM", "")
+    days_back = int(os.environ.get("DAYS_BACK", "1"))
+    if date_from_env:
+        try:
+            date_from = datetime.strptime(date_from_env, "%Y-%m-%d")
+            print(f"⚡ Ручной запуск: DATE_FROM={date_from_env}")
+        except ValueError:
+            print(f"⚠ Неверный формат DATE_FROM={date_from_env}, используем {days_back} дней")
+            date_from = now - timedelta(days=days_back)
+    else:
+        date_from = now - timedelta(days=days_back)
+
     date_to = now + timedelta(hours=3)
 
     print(f"\nЗагружаем звонки за {date_from:%Y-%m-%d %H:%M} - {date_to:%Y-%m-%d %H:%M}")
