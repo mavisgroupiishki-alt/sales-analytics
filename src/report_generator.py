@@ -1,4 +1,4 @@
-"""
+    """
 Генератор HTML-отчёта по звонкам Mavis Group.
 Реализует требования ТЗ:
 - 17 критериев с весами
@@ -1903,15 +1903,15 @@ def get_objections_stats(analyses: Dict) -> List[Dict]:
         # из transcript_split
         for msg in an.get("transcript_split", []) or []:
             if msg.get("speaker") == "client":
-                text_sources.append(msg.get("text", "").lower())
+                text_sources.append((msg.get("text") or "").lower())
         # из key_quotes
         for kq in an.get("key_quotes", []) or []:
             text_sources.append(kq.get("text", "").lower())
         # из improvements
         for imp in an.get("improvements", []) or []:
             if isinstance(imp, dict):
-                text_sources.append(imp.get("text", "").lower())
-                text_sources.append(imp.get("quote", "").lower())
+                text_sources.append((imp.get("text") or "").lower())
+                text_sources.append((imp.get("quote") or "").lower())
         combined = " ".join(text_sources)
         for kw in objection_keywords:
             if kw in combined:
