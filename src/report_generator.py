@@ -778,8 +778,8 @@ def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: s
         'id': c['activity_id'], 'created': c.get('created',''),
         'direction': c.get('direction',''), 'client': c.get('client',{}).get('name',''),
         'manager': c.get('manager',{}).get('name',''), 'duration': c.get('duration_sec',0),
-        'score': analyses.get(c['activity_id'],{}).get('analysis',{}).get('overall_score'),
-        'is_critical': bool(analyses.get(c['activity_id'],{}).get('analysis',{}).get('is_critical',False)),
+        'score': analyses.get(c['activity_id'],{}().get('analysis') or {}).get('overall_score'),
+        'is_critical': bool(analyses.get(c['activity_id'],{}().get('analysis') or {}).get('is_critical',False)),
     } for c in sorted(calls, key=lambda x: x.get('created',''), reverse=True)], ensure_ascii=False)
 
     period_tabs_html = (
