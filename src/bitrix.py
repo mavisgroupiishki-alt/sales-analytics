@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 ACTIVITY_TYPE_CALL = 2
 DEFAULT_REQUEST_TIMEOUT = 60
 MIN_AUDIO_SIZE_BYTES = 10_000
-DEFAULT_AUDIO_DOWNLOAD_LIMIT = 0
+DEFAULT_AUDIO_DOWNLOAD_LIMIT = -1  # -1 = без лимита, 0 = не скачивать
 MIN_DURATION_SEC = 30  # звонки от 30 сек получают полный ИИ-анализ
 TRANSCRIBE_ONLY_MIN_SEC = 16  # звонки 16-29 сек: только аудио + транскрипт, без анализа
 HARD_FLOOR_SEC = 15  # звонки ≤ 15 сек не попадают в систему вообще
@@ -331,7 +331,7 @@ def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
     # Получаем статусы сделок
     if deal_ids:
         try:
-            resp = client._post("crm.deal.list", {
+            resp = client.call("crm.deal.list", {
                 "filter": {"ID": deal_ids},
                 "select": ["ID", "STAGE_ID"],
             })
@@ -347,7 +347,7 @@ def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
     # Получаем статусы лидов
     if lead_ids:
         try:
-            resp = client._post("crm.lead.list", {
+            resp = client.call("crm.lead.list", {
                 "filter": {"ID": lead_ids},
                 "select": ["ID", "STATUS_ID"],
             })
@@ -363,7 +363,7 @@ def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
     # Проверяем наличие открытых дел (следующий контакт) — для сделок
     if deal_ids:
         try:
-            resp = client._post("crm.activity.list", {
+            resp = client.call("crm.activity.list", {
                 "filter": {"OWNER_TYPE_ID": 2, "OWNER_ID": deal_ids, "COMPLETED": "N"},
                 "select": ["ID", "OWNER_ID", "START_TIME"],
             })
@@ -377,7 +377,7 @@ def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
     # Проверяем наличие открытых дел (следующий контакт) — для лидов
     if lead_ids:
         try:
-            resp = client._post("crm.activity.list", {
+            resp = client.call("crm.activity.list", {
                 "filter": {"OWNER_TYPE_ID": 1, "OWNER_ID": lead_ids, "COMPLETED": "N"},
                 "select": ["ID", "OWNER_ID", "START_TIME"],
             })
