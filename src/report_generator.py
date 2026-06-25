@@ -1233,7 +1233,7 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
                  '<div class="detail"><div class="detail-label">Менеджер</div>'
                  '<div class="detail-value"><a href="../managers/' + str(manager.get('id', 0)) + '.html">' + esc(manager.get('name', '')) + '</a></div></div>'
                  '<div class="detail"><div class="detail-label">Телефон</div>'
-                 '<div class="detail-value">' + esc(client.get('phone_masked') or '—') + '</div></div>'
+                 '<div class="detail-value">' + esc(client.get('phone') or client.get('phone_masked') or '—') + '</div></div>'
                  '<div class="detail"><div class="detail-label">Время</div>'
                  '<div class="detail-value">' + format_datetime(call.get('created', '')) + '</div></div>'
                  + duration_html +
@@ -1258,18 +1258,24 @@ def render_call_page(call: Dict, analysis_data: Optional[Dict], generated_at: st
     audio_html = ""
     # Аудио через прокси /audio/<id> (работает на Render)
     # или через прямой URL Bitrix (для GitHub Pages)
-    audio_direct_url = (call.get('audio') or {}).get('url', '')
+    audio_meta = call.get('audio') or {}
+    audio_direct_url = audio_meta.get('url', '')
+    audio_file_id = audio_meta.get('file_id')
     use_proxy = __import__('os').environ.get('RENDER', '') or __import__('os').environ.get('USE_AUDIO_PROXY', '')
-    if audio_direct_url or public_path:
+    # Используем прокси если есть file_id (Render) или прямой URL (GitHub Pages)
+    has_audio = bool(audio_file_id or audio_direct_url or public_path)
+    if has_audio:
         bitrix_btn = ""
         if bitrix_call_url:
             bitrix_btn = '<a href="' + esc(bitrix_call_url) + '" target="_blank" class="bitrix-link">Открыть в Bitrix24</a>'
-        if use_proxy and audio_direct_url:
+        if use_proxy and audio_file_id:
             audio_src = '/audio/' + esc(activity_id)
         elif audio_direct_url:
             audio_src = esc(audio_direct_url)
-        else:
+        elif public_path:
             audio_src = '../' + esc(public_path)
+        else:
+            audio_src = '/audio/' + esc(activity_id)
         audio_html = ('<div class="audio-player">'
                       '<audio controls preload="metadata" src="' + audio_src + '" id="callAudio"></audio>'
                       + bitrix_btn + '</div>')
