@@ -1129,7 +1129,7 @@ def login():
 <title>Вход — Mavis Group</title>{LOGIN_CSS}</head><body>
 <div class="login-box">
   <div class="brand">MAVIS GROUP</div>
-  <div class="sub">Sales Analytics</div>
+  <div class="sub">ИИгорь — анализ ваших звонков</div>
   <div class="divider"></div>
   {err_html}
   <form method="POST">
