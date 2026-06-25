@@ -619,7 +619,7 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{esc(title)} — {esc(COMPANY_NAME)} ИИгорь</title>
+  <title>{esc(title)} — ИИгорь · {esc(COMPANY_NAME)}</title>
   <style>{CSS}</style>
   {extra_head}
 </head>
@@ -628,8 +628,8 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
     <a href="{base_path}index.html" class="logo">
       <img class="logo-img" src="{base_path}logo.png" alt="{esc(COMPANY_NAME)}" onerror="this.style.display='none'">
       <div class="logo-text">
-        <span class="brand">{esc(COMPANY_NAME)}</span>
-        <span class="sub">ИИгорь</span>
+        <span class="brand">ИИгорь</span>
+        <span class="sub">{esc(COMPANY_NAME)}</span>
       </div>
     </a>
     <div class="nav">{nav_html}</div>
@@ -2001,7 +2001,7 @@ def render_compare_page(stats: Dict, calls: List[Dict], analyses: Dict, generate
                      f'<text x="{x + bar_width//2}" y="{chart_h + 20}" text-anchor="middle" font-size="11" fill="var(--text-secondary)">{esc(m["name"].split()[0])}</text>')
     bars_svg += '</svg>'
 
-    def smart_truncate(text, max_len=90):
+    def smart_truncate(text, max_len=120):
         """Обрезает текст по границе слова, не разрывая слово на середине."""
         if not text or len(text) <= max_len:
             return text
@@ -2322,7 +2322,7 @@ def build_ai_chat_widget(call: Dict, analysis: Dict, vibe_api_note: str = "") ->
   display:flex; align-items:center; justify-content:center;
   font-size:22px; cursor:pointer; box-shadow:0 4px 16px rgba(61,46,31,0.35);
   border:2px solid var(--brand-gold); transition:transform 0.2s;
-" title="Спросить ИИ про этот звонок">💬</div>
+" title="Спросить ИИгоря про этот звонок">🤖</div>
 
 <div id="aiChatPanel" style="
   display:none; position:fixed; bottom:90px; right:28px; z-index:1001;
@@ -2334,14 +2334,14 @@ def build_ai_chat_widget(call: Dict, analysis: Dict, vibe_api_note: str = "") ->
 ">
   <div style="background:var(--brand-dark);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;">
     <div>
-      <div style="font-weight:600;font-size:14px;">💬 Спросить про звонок</div>
-      <div style="font-size:11px;opacity:0.7;margin-top:2px;">ИИ знает контекст этого звонка</div>
+      <div style="font-weight:600;font-size:14px;">🤖 ИИгорь</div>
+      <div style="font-size:11px;opacity:0.7;margin-top:2px;">Слушал этот звонок внимательнее чем сам менеджер</div>
     </div>
     <button onclick="toggleAiChat()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0 4px;">×</button>
   </div>
   <div id="aiChatMessages" style="height:280px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;">
     <div style="background:var(--brand-paper);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--brand-dark);">
-      Привет! Я знаю этот звонок. Можешь спросить:<br>
+      Здарова! Я ИИгорь — слушал этот звонок внимательнее чем сам менеджер 😄<br><br>
       <span style="color:var(--text-muted);">— Почему такая оценка?<br>— Что конкретно не так с возражением?<br>— Как менеджеру улучшиться?</span>
     </div>
   </div>
@@ -2389,7 +2389,7 @@ async function sendAiMessage() {{
 
   var thinking = appendMsg('assistant', '...');
 
-  var systemPrompt = `Ты — РОП компании Mavis Group. Тебе известен полный анализ конкретного звонка:
+  var systemPrompt = `Ты — ИИгорь, ИИ-ассистент компании Mavis Group для анализа звонков. Ты слушал этот звонок внимательнее чем сам менеджер 😄 Тебе известен полный анализ конкретного звонка:
 ${{_callCtx}}
 
 Отвечай кратко и по делу. Используй контекст этого звонка. Пиши на русском.`;
