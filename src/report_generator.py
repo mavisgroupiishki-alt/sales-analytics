@@ -792,7 +792,7 @@ def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: s
 
     period_tabs_html = (
         '<div class="period-tabs">'
-        '<button class="period-tab active" data-period="day" type="button">День</button>'
+        '<button class="period-tab active" data-period="day" type="button">Вчера</button>'
         '<button class="period-tab" data-period="week" type="button">Неделя</button>'
         '<button class="period-tab" data-period="month" type="button">Месяц</button>'
         '<button class="period-tab" data-period="all" type="button">Всё время</button>'
@@ -819,8 +819,20 @@ def render_index(calls: List[Dict], stats: Dict, analyses: Dict, generated_at: s
         'function filterByPeriod(p,btn){'
         'document.querySelectorAll(".period-tab").forEach(function(b){b.classList.remove("active");});'
         'if(btn)btn.classList.add("active");'
-        'var now=new Date(),ms={day:86400000,week:604800000,month:2592000000};'
-        'var f=p==="all"?_aC:_aC.filter(function(c){return !c.created||(now-new Date(c.created))<(ms[p]||0);});'
+        'var now=new Date();'
+        '// "день" = вчерашний рабочий день (00:00 - 23:59 вчера)'
+        'var yesterday=new Date(now);yesterday.setDate(yesterday.getDate()-1);'
+        'var yStart=new Date(yesterday.getFullYear(),yesterday.getMonth(),yesterday.getDate(),0,0,0);'
+        'var yEnd=new Date(yesterday.getFullYear(),yesterday.getMonth(),yesterday.getDate(),23,59,59);'
+        'var ms={week:604800000,month:2592000000};'
+        'var f;'
+        'if(p==="day"){'
+        '  f=_aC.filter(function(c){if(!c.created)return false;var d=new Date(c.created);return d>=yStart&&d<=yEnd;});'
+        '}else if(p==="all"){'
+        '  f=_aC;'
+        '}else{'
+        '  f=_aC.filter(function(c){return !c.created||(now-new Date(c.created))<(ms[p]||0);});'
+        '}'
         'var elTotal=document.getElementById("kpi-total");if(elTotal)elTotal.textContent=f.length;'
         'var elIn=document.getElementById("kpi-incoming");if(elIn)elIn.textContent=f.filter(function(c){return c.direction==="incoming";}).length;'
         'var elOut=document.getElementById("kpi-outgoing");if(elOut)elOut.textContent=f.filter(function(c){return c.direction==="outgoing";}).length;'
@@ -934,20 +946,39 @@ def render_rop_report(calls: List[Dict], stats: Dict, analyses: Dict, generated_
     if not weak_m_html:
         weak_m_html = '<div class="empty">Все менеджеры в норме</div>'
 
-    analyzed_today_rop = sum(1 for c in calls if c["activity_id"] in analyses)
-    critical_today_rop = sum(
-        1 for c in calls
+    from datetime import datetime as _dt, timedelta as _td
+    _now = _dt.now()
+    _yesterday = _now - _td(days=1)
+    _ystart = _yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+    _yend = _yesterday.replace(hour=23, minute=59, second=59, microsecond=0)
+    yesterday_label = _yesterday.strftime("%-d %B %Y") if hasattr(_yesterday, 'strftime') else today
+
+    def _in_yesterday(c):
+        try:
+            d = _dt.fromisoformat(c.get("created", "").replace("Z", "+00:00"))
+            d = d.replace(tzinfo=None)
+            return _ystart <= d <= _yend
+        except Exception:
+            return False
+
+    calls_yesterday = [c for c in calls if _in_yesterday(c)]
+    analyzed_yesterday = sum(1 for c in calls_yesterday if c["activity_id"] in analyses)
+    critical_yesterday = sum(
+        1 for c in calls_yesterday
         if c["activity_id"] in analyses
         and (analyses[c["activity_id"]].get("analysis") or {}).get("is_critical")
     )
+    analyzed_today_rop = analyzed_yesterday
+    critical_today_rop = critical_yesterday
+    total_yesterday = len(calls_yesterday)
     body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Отчёт РОПа</div>'
             '<div class="page-head">'
-            '<div><h1>📊 Сводный отчёт РОПа</h1><div class="sub">' + today + ' · аналитика по отделу</div></div>'
+            '<div><h1>📊 Сводный отчёт РОПа</h1><div class="sub">' + yesterday_label + ' · аналитика по отделу за вчера</div></div>'
             '</div>'
             '<div class="kpi-row">'
-            '<div class="kpi"><div class="kpi-label">Всего звонков</div><div class="kpi-value">' + str(stats['total']) + '</div><div class="kpi-hint">за сутки</div></div>'
-            '<div class="kpi amber"><div class="kpi-label">Проанализировано</div><div class="kpi-value">' + str(analyzed_today_rop) + '</div><div class="kpi-hint">из сегодняшних</div></div>'
-            '<div class="kpi red"><div class="kpi-label">Критичных</div><div class="kpi-value">' + str(critical_today_rop) + '</div><div class="kpi-hint">сегодня</div></div>'
+            '<div class="kpi"><div class="kpi-label">Всего звонков</div><div class="kpi-value">' + str(total_yesterday) + '</div><div class="kpi-hint">за вчера</div></div>'
+            '<div class="kpi amber"><div class="kpi-label">Проанализировано</div><div class="kpi-value">' + str(analyzed_today_rop) + '</div><div class="kpi-hint">из вчерашних</div></div>'
+            '<div class="kpi red"><div class="kpi-label">Критичных</div><div class="kpi-value">' + str(critical_today_rop) + '</div><div class="kpi-hint">за вчера</div></div>'
             '<div class="kpi blue"><div class="kpi-label">Менеджеров</div><div class="kpi-value">' + str(stats['managers_count']) + '</div></div>'
             '</div>'
             '<div class="rop-section">'
