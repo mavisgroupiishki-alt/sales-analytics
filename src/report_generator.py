@@ -619,7 +619,7 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{esc(title)} — {esc(COMPANY_NAME)} Sales Analytics</title>
+  <title>{esc(title)} — {esc(COMPANY_NAME)} ИИгорь</title>
   <style>{CSS}</style>
   {extra_head}
 </head>
@@ -629,7 +629,7 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
       <img class="logo-img" src="{base_path}logo.png" alt="{esc(COMPANY_NAME)}" onerror="this.style.display='none'">
       <div class="logo-text">
         <span class="brand">{esc(COMPANY_NAME)}</span>
-        <span class="sub">Sales Analytics</span>
+        <span class="sub">ИИгорь</span>
       </div>
     </a>
     <div class="nav">{nav_html}</div>
@@ -639,7 +639,7 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
   <div class="footer-note">
     <div class="footer-brand">{esc(COMPANY_NAME).upper()}</div>
     <div class="footer-divider"></div>
-    <div>Sales Analytics · Автоматический анализ звонков отдела продаж</div>
+    <div>ИИгорь · Автоматический анализ звонков отдела продаж</div>
     <div style="margin-top:6px; font-size:11px;">Bitrix24 · GitHub Actions · BitrixGPT · © {year}</div>
   </div>
 </body>
@@ -683,7 +683,15 @@ def render_call_row(c: Dict, show_manager: bool = True, analysis: Dict = None,
             row_classes.append("critical")
 
     activity_id = esc(c['activity_id'])
-    return ('<a href="' + base_path + 'calls/' + activity_id + '.html" class="' + ' '.join(row_classes) + '">'
+    phone = c.get("client", {}).get("phone", "") or ""
+    created_raw = c.get("created", "")
+    # data-атрибуты для поиска: полный телефон (не маскированный), дата, ID
+    data_attrs = (
+        f' data-phone="{esc(phone)}"'
+        f' data-date="{esc(created_raw[:10])}"'
+        f' data-id="{activity_id}"'
+    )
+    return ('<a href="' + base_path + 'calls/' + activity_id + '.html" class="' + ' '.join(row_classes) + '"' + data_attrs + '>'
             '<div class="call-row">'
             '<div class="call-direction ' + dir_class + '">' + dir_icon + '</div>'
             '<div class="call-info">'
@@ -1711,13 +1719,17 @@ function setFilter(f, btn) {
   filterCalls();
 }
 function filterCalls() {
-  var q = document.getElementById('searchInput').value.toLowerCase();
+  var q = document.getElementById('searchInput').value.toLowerCase().trim();
   var rows = document.querySelectorAll('#callsList .row-link');
   var v = 0;
   rows.forEach(function(r) {
     var t = r.textContent.toLowerCase();
+    // Дополнительно ищем по скрытым data-атрибутам: телефон, дата, ID звонка
+    var phone = (r.dataset.phone || '').toLowerCase();
+    var date = (r.dataset.date || '').toLowerCase();
+    var id = (r.dataset.id || '').toLowerCase();
+    var matchText = !q || t.indexOf(q) !== -1 || phone.indexOf(q) !== -1 || date.indexOf(q) !== -1 || id.indexOf(q) !== -1;
     var d = r.querySelector('.call-direction').classList;
-    var matchText = !q || t.indexOf(q) !== -1;
     var matchFilter = currentFilter === 'all' || 
       (currentFilter === 'incoming' && d.contains('in')) ||
       (currentFilter === 'outgoing' && d.contains('out')) ||
