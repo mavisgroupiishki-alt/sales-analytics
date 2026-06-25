@@ -282,7 +282,8 @@ def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str
         "client": {
             "name": client_name,
             "company": company,
-            "phone_masked": _mask_phone(comm.get("VALUE", "")),
+            "phone": comm.get("VALUE", ""),          # полный номер для поиска
+            "phone_masked": _mask_phone(comm.get("VALUE", "")),  # маскированный для показа
         },
         "crm": {
             "owner_type": owner_type,
