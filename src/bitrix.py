@@ -592,8 +592,28 @@ def main():
     results = enrich_with_deal_info(client, results)
 
     out_file = Path("calls_data.json")
-    out_file.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\nГотово! Всего звонков: {len(results)}, JSON: {out_file.stat().st_size:,} б")
+
+    # Загружаем существующие звонки и мёрджим — не перезаписываем
+    existing = []
+    if out_file.exists():
+        try:
+            existing = json.loads(out_file.read_text(encoding="utf-8"))
+            print(f"\nСуществующих звонков в базе: {len(existing)}")
+        except Exception:
+            existing = []
+
+    # Индекс по activity_id чтобы не дублировать
+    existing_ids = {c["activity_id"] for c in existing}
+    new_calls = [c for c in results if c["activity_id"] not in existing_ids]
+    # Обновляем существующие записи (могли обновиться данные CRM)
+    updated = {c["activity_id"]: c for c in existing}
+    updated.update({c["activity_id"]: c for c in results})
+    merged = list(updated.values())
+    # Сортируем по дате (новые сверху)
+    merged.sort(key=lambda c: c.get("created", ""), reverse=True)
+
+    out_file.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"\nГотово! Новых звонков: {len(new_calls)}, всего в базе: {len(merged)}, JSON: {out_file.stat().st_size:,} б")
 
 
 
