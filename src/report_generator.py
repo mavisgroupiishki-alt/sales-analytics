@@ -159,12 +159,30 @@ def apply_manual_corrections(analyses: Dict, corrections: Dict) -> Dict:
 # ============================================================
 
 def compute_stats(calls: List[Dict], analyses: Dict) -> Dict[str, Any]:
-    total = len(calls)
-    incoming = sum(1 for c in calls if c.get("direction") == "incoming")
-    outgoing = sum(1 for c in calls if c.get("direction") == "outgoing")
+    # Помечаем звонки с плохим качеством и нерелевантные
+    def is_poor_audio(c):
+        a = (analyses.get(c["activity_id"]) or {}).get("analysis") or {}
+        return bool(a.get("poor_audio")) or bool(a.get("exclude_from_stats") and a.get("poor_audio"))
+
+    def is_not_sales(c):
+        a = (analyses.get(c["activity_id"]) or {}).get("analysis") or {}
+        return bool(a.get("not_sales"))
+
+    def is_excluded(c):
+        return is_poor_audio(c) or is_not_sales(c)
+
+    # Основная статистика — без исключённых
+    main_calls = [c for c in calls if not is_excluded(c)]
+    poor_audio_calls = [c for c in calls if is_poor_audio(c)]
+    not_sales_calls_list = [c for c in calls if is_not_sales(c) and not is_poor_audio(c)]
+
+    total = len(main_calls)
+    incoming = sum(1 for c in main_calls if c.get("direction") == "incoming")
+    outgoing = sum(1 for c in main_calls if c.get("direction") == "outgoing")
     critical = sum(
         1 for a in analyses.values()
         if (a.get("analysis") or {}).get("is_critical")
+        and not (a.get("analysis") or {}).get("exclude_from_stats")
     )
 
     by_manager = defaultdict(lambda: {
@@ -172,7 +190,7 @@ def compute_stats(calls: List[Dict], analyses: Dict) -> Dict[str, Any]:
         "calls": [], "avatar_file": "",
         "scores": [], "critical": 0,
     })
-    for c in calls:
+    for c in main_calls:
         m = c.get("manager", {})
         mid = m.get("id") or 0
         by_manager[mid]["id"] = mid
@@ -212,6 +230,8 @@ def compute_stats(calls: List[Dict], analyses: Dict) -> Dict[str, Any]:
         "managers_count": len(by_manager),
         "managers": managers_by_quality,
         "critical_count": critical,
+        "poor_audio_count": len(poor_audio_calls),
+        "not_sales_count": len(not_sales_calls_list),
     }
 
 
@@ -2548,3 +2568,62 @@ def generate(calls_json_path: str = "calls_data.json",
 
 if __name__ == "__main__":
     generate()
+
+
+def render_poor_audio_page(calls: List[Dict], analyses: Dict, generated_at: str, critical_count: int) -> str:
+    """Страница звонков с плохим качеством записи — не учитываются в общей статистике."""
+    def is_poor(c):
+        a = (analyses.get(c["activity_id"]) or {}).get("analysis") or {}
+        return bool(a.get("poor_audio"))
+
+    poor_calls = [c for c in calls if is_poor(c)]
+
+    rows = ""
+    for c in poor_calls:
+        a_data = analyses.get(c["activity_id"]) or {}
+        an = a_data.get("analysis") or {}
+        reason = an.get("poor_audio_reason") or "Плохое качество записи"
+        rows += render_call_row(c, show_manager=True, analysis=an, base_path="")
+    if not rows:
+        rows = '<div style="padding:40px;text-align:center;color:var(--text-muted);">Звонков с проблемами качества не найдено</div>'
+
+    body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Проблемы качества</div>'
+            '<div class="page-head"><div><h1>🔇 Звонки с плохим качеством</h1>'
+            '<div class="sub">Не учитываются в общей статистике и рейтингах</div></div></div>'
+            '<div class="info-box" style="background:#FFF8E8;border:1px solid #C9A961;border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:13.5px;">'
+            '⚠️ Эти звонки были проанализированы, но из-за помех, шума или ошибок распознавания речи '
+            'их оценки могут быть ненадёжными. Рекомендуем прослушать записи вручную.'
+            '</div>'
+            '<div class="panel"><div id="callsList">' + rows + '</div>'
+            '<div style="padding:12px 16px;color:var(--text-muted);font-size:13px;">Всего: ' + str(len(poor_calls)) + ' звонков</div>'
+            '</div>')
+    return page_template("Плохое качество", body, "poor-audio", generated_at, critical_count)
+
+
+def render_not_sales_page(calls: List[Dict], analyses: Dict, generated_at: str, critical_count: int) -> str:
+    """Страница нерелевантных звонков — не касаются продаж."""
+    def is_not_sales(c):
+        a = (analyses.get(c["activity_id"]) or {}).get("analysis") or {}
+        return bool(a.get("not_sales")) and not bool(a.get("poor_audio"))
+
+    ns_calls = [c for c in calls if is_not_sales(c)]
+
+    rows = ""
+    for c in ns_calls:
+        a_data = analyses.get(c["activity_id"]) or {}
+        an = a_data.get("analysis") or {}
+        rows += render_call_row(c, show_manager=True, analysis=an, base_path="")
+    if not rows:
+        rows = '<div style="padding:40px;text-align:center;color:var(--text-muted);">Нерелевантных звонков не найдено</div>'
+
+    body = ('<div class="breadcrumb"><a href="index.html">Главная</a> › Не продажи</div>'
+            '<div class="page-head"><div><h1>🚫 Звонки не по продажам</h1>'
+            '<div class="sub">Ошибочные звонки, не тот человек, нерелевантные запросы</div></div></div>'
+            '<div class="info-box" style="background:#FFF0F0;border:1px solid #A0432B;border-radius:8px;padding:14px 18px;margin-bottom:20px;font-size:13.5px;">'
+            '🚫 ИИ определил что эти звонки не относятся к продажам. '
+            'Они исключены из общих оценок и рейтингов менеджеров.'
+            '</div>'
+            '<div class="panel"><div id="callsList">' + rows + '</div>'
+            '<div style="padding:12px 16px;color:var(--text-muted);font-size:13px;">Всего: ' + str(len(ns_calls)) + ' звонков</div>'
+            '</div>')
+    return page_template("Не продажи", body, "not-sales", generated_at, critical_count)
