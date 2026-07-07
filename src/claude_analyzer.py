@@ -732,6 +732,8 @@ def build_analysis_prompt(
     - "critical": true если грубость, скандал, потеря клиента по вине менеджера
     - "missed_deal": true если клиент был готов купить а менеджер не закрыл
     - "no_next_step": true если важный звонок завершился без договорённости о следующем шаге
+    - "poor_audio": true если запись с сильными помехами, эхом, обрывами — текст расшифрован плохо или частично, оценка ненадёжна. Укажи причину в poor_audio_reason.
+    - "not_sales": true если звонок НЕ касается продаж: попали не на того человека, ошибочный номер, технический вопрос не по теме, спросить как пройти, входящий от поставщика/курьера и т.п. Укажи причину в not_sales_reason.
 
 ОТВЕТ СТРОГО В JSON, БЕЗ ОБЁРТКИ ```json:
 
@@ -770,7 +772,11 @@ def build_analysis_prompt(
     "critical": false,
     "critical_reason": null,
     "missed_deal": false,
-    "no_next_step": false
+    "no_next_step": false,
+    "poor_audio": false,
+    "poor_audio_reason": null,
+    "not_sales": false,
+    "not_sales_reason": null
   }},
   "key_moments": [
     {{"type": "positive|negative|neutral", "time": "MM:SS", "text": "Краткое описание момента", "detail": "Цитата или пояснение"}}
@@ -823,7 +829,7 @@ def analyze_transcript(
     result["overall_score_method"] = "rop_judgement"
 
     # Критичность — из флагов которые поставила модель
-    flags = result.get("flags", {})
+    flags = result.get("flags", {}) or {}
     is_crit = bool(flags.get("critical", False))
     crit_reason = flags.get("critical_reason") or ""
     # Дополнительно: оценка ниже 4 = критично
@@ -832,6 +838,31 @@ def analyze_transcript(
         crit_reason = crit_reason or f"Низкая оценка ({result['overall_score']}/10)"
     result["is_critical"] = is_crit
     result["critical_reason"] = crit_reason
+
+    # Плохое качество записи — проверяем программно ДО вызова ИИ
+    result["poor_audio"] = bool(flags.get("poor_audio", False))
+    result["poor_audio_reason"] = flags.get("poor_audio_reason") or ""
+
+    # Дополнительная программная проверка: мало текста относительно длительности
+    call_dur = call_meta.get("duration_sec") or 0
+    transcript_len = len(transcription.get("text", ""))
+    transcript_dur = transcription.get("duration_sec") or 0
+    if not result["poor_audio"]:
+        if transcript_len < 30:
+            result["poor_audio"] = True
+            result["poor_audio_reason"] = "Транскрипт пустой или почти пустой"
+        elif call_dur >= 30 and transcript_dur > 0 and (transcript_dur / call_dur) < 0.3:
+            result["poor_audio"] = True
+            result["poor_audio_reason"] = f"Whisper расшифровал только {int(transcript_dur)}с из {int(call_dur)}с — вероятно помехи в начале"
+
+    # Нерелевантный звонок (не продажи)
+    result["not_sales"] = bool(flags.get("not_sales", False))
+    result["not_sales_reason"] = flags.get("not_sales_reason") or ""
+
+    # Если плохое качество или нерелевантный — не учитываем в общей статистике
+    if result["poor_audio"] or result["not_sales"]:
+        result["exclude_from_stats"] = True
+        result["is_critical"] = False  # не показываем в срочных
 
     result["_meta"] = meta
     return result
