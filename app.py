@@ -1009,6 +1009,11 @@ def auth_bar(user):
         admin_link = '<a href="/admin" style="color:#C9A961;text-decoration:none;font-weight:600;white-space:nowrap;border:1px solid #C9A961;padding:4px 10px;border-radius:4px">⚙️ Админ</a>'
     if user["role"] == "director":
         extra_links += '<a href="/director" style="color:#C9A961;font-size:13px;font-weight:700;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">📈 Бизнес-обзор</a>'
+    # Ссылки на технические разделы (только для роп/директор)
+    tech_links = ""
+    if user["role"] in ("rop", "director"):
+        tech_links = ('<a href="/poor-audio" style="color:rgba(255,255,255,.55);font-size:12px;text-decoration:none;white-space:nowrap" title="Звонки с плохим качеством записи">🔇</a>'
+                      '<a href="/not-sales" style="color:rgba(255,255,255,.55);font-size:12px;text-decoration:none;white-space:nowrap;margin-left:8px;" title="Нерелевантные звонки (не продажи)">🚫</a>')
     return f"""
 <div style="background:#1a1208;color:#fff;padding:6px 16px;display:flex;align-items:center;justify-content:space-between;font-family:-apple-system,sans-serif;font-size:12px;gap:16px;flex-wrap:wrap;position:relative;z-index:50">
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
@@ -1022,6 +1027,7 @@ def auth_bar(user):
   </div>
   <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
     {admin_link}
+    {tech_links}
     <a href="/logout" style="color:#C9A961;text-decoration:none;font-weight:600;white-space:nowrap">Выйти →</a>
   </div>
 </div>
@@ -1270,6 +1276,26 @@ def best_calls():
     from report_generator import render_best_calls_page, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_best_calls_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
+    return html_response(inject_and_fix(html, user))
+
+@app.route("/poor-audio")
+@rop_required
+def poor_audio_calls():
+    user = current_user()
+    calls, analyses = get_data(user)
+    from report_generator import render_poor_audio_page, compute_stats
+    stats = compute_stats(calls, analyses)
+    html = render_poor_audio_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
+    return html_response(inject_and_fix(html, user))
+
+@app.route("/not-sales")
+@rop_required
+def not_sales_calls():
+    user = current_user()
+    calls, analyses = get_data(user)
+    from report_generator import render_not_sales_page, compute_stats
+    stats = compute_stats(calls, analyses)
+    html = render_not_sales_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
     return html_response(inject_and_fix(html, user))
 
 # ============================================================
