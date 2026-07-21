@@ -1,0 +1,31 @@
+name: Send Daily Reports
+
+on:
+  schedule:
+    - cron: '0 5 * * 1-5'  # 8:00 по Минску (UTC+3), только пн-пт
+  workflow_dispatch:
+    inputs:
+      date_override:
+        description: 'Дата отчёта (YYYY-MM-DD), оставь пустым для автоматического режима (вчера/пятница)'
+        required: false
+        default: ''
+
+jobs:
+  send-reports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Send daily reports to managers
+        env:
+          BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
+          APP_URL: https://sales-analytics-qyf6.onrender.com
+        run: python src/send_reports.py
