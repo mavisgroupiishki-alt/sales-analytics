@@ -200,8 +200,43 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
     return "\n".join(lines)
 
 # ============================================================
-# ОТПРАВКА В BITRIX
+# ОТПРАВКА В BITRIX — СОЗДАНИЕ ЗАДАЧИ
 # ============================================================
+
+def send_message(user_id, text, date_label):
+    """Создаёт задачу менеджеру в Bitrix24 с текстом отчёта."""
+    if not WEBHOOK_URL:
+        print(f"⚠ BITRIX_WEBHOOK_URL не задан")
+        return False
+
+    url = f"{WEBHOOK_URL}/tasks.task.add"
+    payload = {
+        "fields": {
+            "TITLE": f"📊 Отчёт ИИгорь за {date_label}",
+            "DESCRIPTION": text,
+            "RESPONSIBLE_ID": user_id,
+            "CREATED_BY": user_id,
+            "PRIORITY": "1",
+            "ALLOW_CHANGE_DEADLINE": "Y",
+            "ALLOW_TIME_TRACKING": "N",
+            "TASK_CONTROL": "N",
+            "GROUP_ID": 0,
+        }
+    }
+    try:
+        r = requests.post(url, json=payload, timeout=30)
+        data = r.json()
+        if data.get("result") and data["result"].get("task"):
+            task_id = data["result"]["task"].get("id")
+            print(f"✅ Задача создана для пользователя {user_id} (task ID: {task_id})")
+            return True
+        error = data.get("error_description") or data.get("error") or str(data)
+        print(f"❌ Ошибка создания задачи для {user_id}: {error}")
+        return False
+    except Exception as e:
+        print(f"❌ Ошибка запроса для {user_id}: {e}")
+        return False
+
 
 def build_rop_report(calls, analyses, date_label):
     """Общая сводка для РОПа по всем менеджерам за день."""
