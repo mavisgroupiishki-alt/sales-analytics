@@ -199,57 +199,39 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
 # ОТПРАВКА В BITRIX
 # ============================================================
 
-def send_message(user_id, text):
+def send_message(user_id, text, date_label):
+    """Создаёт задачу менеджеру в Bitrix24 с текстом отчёта."""
     if not WEBHOOK_URL:
         print(f"⚠ BITRIX_WEBHOOK_URL не задан")
         return False
 
-    methods = [
-        # Личное сообщение
-        ("im.message.add", {"DIALOG_ID": f"u{user_id}", "MESSAGE": text}),
-        # Системное уведомление (не требует особых прав)
-        ("im.notify.system.add", {"USER_ID": user_id, "MESSAGE": text}),
-        # Персональное уведомление
-        ("im.notify.personal.add", {"USER_ID": user_id, "MESSAGE": text, "TAG": "IIGORY_REPORT"}),
-        # Устаревший но рабочий метод
-        ("im.notify", {"TO": user_id, "MESSAGE": text, "TYPE": "SYSTEM"}),
-    ]
-
-    for method, payload in methods:
-        url = f"{WEBHOOK_URL}/{method}"
-        try:
-            r = requests.post(url, json=payload, timeout=30)
-            data = r.json()
-            if data.get("result") or data.get("result") == 0:
-                print(f"✅ Отправлено пользователю {user_id} через {method}")
-                return True
-            error = str(data.get("error", ""))
-            if any(x in error.upper() for x in ["ACCESS_DENIED", "UNAUTHORIZED", "WRONG_AUTH_TYPE"]):
-                print(f"   ⚠ {method} — нет прав")
-                continue
-            print(f"   ⚠ {method} — ошибка: {data.get('error_description') or error}")
-            continue
-        except Exception as e:
-            if "401" in str(e) or "403" in str(e):
-                print(f"   ⚠ {method} — нет прав")
-                continue
-            print(f"   ⚠ {method} — ошибка: {e}")
-            continue
-
-    # Последний вариант — через messageservice (SMS/push)
+    url = f"{WEBHOOK_URL}/tasks.task.add"
+    payload = {
+        "fields": {
+            "TITLE": f"📊 Отчёт ИИгорь за {date_label}",
+            "DESCRIPTION": text,
+            "RESPONSIBLE_ID": user_id,
+            "CREATED_BY": user_id,
+            "PRIORITY": "1",  # обычный приоритет
+            "ALLOW_CHANGE_DEADLINE": "Y",
+            "ALLOW_TIME_TRACKING": "N",
+            "TASK_CONTROL": "N",
+            "GROUP_ID": 0,
+        }
+    }
     try:
-        url = f"{WEBHOOK_URL}/messageservice.message.add"
-        r = requests.post(url, json={"USER_ID": user_id, "MESSAGE": text}, timeout=30)
+        r = requests.post(url, json=payload, timeout=30)
         data = r.json()
-        if data.get("result"):
-            print(f"✅ Отправлено через messageservice")
+        if data.get("result") and data["result"].get("task"):
+            task_id = data["result"]["task"].get("id")
+            print(f"✅ Задача создана для пользователя {user_id} (task ID: {task_id})")
             return True
-    except Exception:
-        pass
-
-    print(f"❌ Не удалось отправить пользователю {user_id}.")
-    print(f"   Попробуй: Bitrix24 → Разработчикам → Входящий вебхук → убедись что вебхук создан от имени АДМИНИСТРАТОРА")
-    return False
+        error = data.get("error_description") or data.get("error") or str(data)
+        print(f"❌ Ошибка создания задачи для {user_id}: {error}")
+        return False
+    except Exception as e:
+        print(f"❌ Ошибка запроса для {user_id}: {e}")
+        return False
 
 # ============================================================
 # MAIN
@@ -283,7 +265,7 @@ def main():
             print(f"   Нет звонков за {date_label} — пропускаем")
             continue
         print(f"   Сообщение готово ({len(text)} символов)")
-        if send_message(user_id, text):
+        if send_message(user_id, text, date_label):
             sent += 1
 
     print(f"\n✅ Отправлено {sent}/{len(MANAGERS)} отчётов")
