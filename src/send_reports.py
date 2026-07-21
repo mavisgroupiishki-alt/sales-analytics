@@ -117,7 +117,7 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
         if an.get("overall_score") is not None:
             analyzed.append((c, an))
             # Нужен перезвон: критичный или нет следующего шага
-            if an.get("is_critical") or an.get("flags", {}).get("no_next_step"):
+            if (an.get("is_critical") or an.get("flags", {}).get("no_next_step")) and float(an.get("overall_score") or 0) < 7.0:
                 need_callback.append((c, an))
         else:
             not_analyzed.append(c)
@@ -139,7 +139,7 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
     for _, an in analyzed:
         for imp in an.get("improvements", []) or []:
             if isinstance(imp, dict) and imp.get("text"):
-                text = imp["text"][:80]
+                text = imp["text"]
                 weak_points[text] = weak_points.get(text, 0) + 1
     top_weak = sorted(weak_points.items(), key=lambda x: -x[1])[:3]
 
@@ -148,7 +148,7 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
     for _, an in analyzed:
         for s in an.get("strengths", []) or []:
             if isinstance(s, dict) and s.get("text"):
-                text = s["text"][:80]
+                text = s["text"]
                 strong_points[text] = strong_points.get(text, 0) + 1
     top_strong = sorted(strong_points.items(), key=lambda x: -x[1])[:2]
 
@@ -179,7 +179,7 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
         for c, an in need_callback[:5]:
             client = c.get("client", {}).get("name", "Неизвестный клиент")
             score = an.get("overall_score", "—")
-            reason = an.get("critical_reason") or an.get("score_explanation", "")[:60]
+            reason = an.get("critical_reason") or an.get("score_explanation", "")
             call_url = f"{APP_URL}/calls/{c['activity_id']}"
             lines.append(f"   🔴 {client} — {score}/10")
             if reason:
@@ -276,7 +276,7 @@ def build_rop_report(calls, analyses, date_label):
             client = c.get("client", {}).get("name", "Неизвестный")
             mgr = c.get("manager", {}).get("name", "").split()[0]
             score = an.get("overall_score", "—")
-            reason = (an.get("critical_reason") or an.get("score_explanation", ""))[:70]
+            reason = (an.get("critical_reason") or an.get("score_explanation", ""))
             lines.append(f"   🔴 {mgr} → {client} ({score}/10)")
             if reason:
                 lines.append(f"      {reason}")
