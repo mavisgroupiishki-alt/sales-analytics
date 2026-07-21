@@ -53,7 +53,10 @@ def get_yesterday_range():
     prev = now - timedelta(days=days_back)
     start = prev.replace(hour=0, minute=0, second=0, microsecond=0)
     end = prev.replace(hour=23, minute=59, second=59, microsecond=0)
-    return start, end, prev.strftime("%-d %B %Y")
+    MONTHS_RU = ["января","февраля","марта","апреля","мая","июня",
+                  "июля","августа","сентября","октября","ноября","декабря"]
+    date_label = f"{prev.day} {MONTHS_RU[prev.month-1]} {prev.year}"
+    return start, end, date_label
 
 def in_range(c, start, end):
     try:
@@ -201,25 +204,32 @@ def send_message(user_id, text):
         print(f"⚠ BITRIX_WEBHOOK_URL не задан — сообщение не отправлено для user {user_id}")
         return False
 
-    url = f"{WEBHOOK_URL}/im.message.add"
-    payload = {
-        "DIALOG_ID": f"u{user_id}",  # личный чат с пользователем
-        "MESSAGE": text,
-        "ATTACH": [],
-    }
-    try:
-        r = requests.post(url, json=payload, timeout=30)
-        r.raise_for_status()
-        result = r.json()
-        if result.get("result"):
-            print(f"✅ Отправлено пользователю {user_id}")
-            return True
-        else:
-            print(f"❌ Ошибка Bitrix для {user_id}: {result}")
+    # Пробуем im.message.add (личный чат), при ошибке — im.notify
+    methods = [
+        ("im.message.add", {"DIALOG_ID": f"u{user_id}", "MESSAGE": text}),
+        ("im.notify", {"TO": user_id, "MESSAGE": text, "TYPE": "SYSTEM"}),
+    ]
+
+    for method, payload in methods:
+        url = f"{WEBHOOK_URL}/{method}"
+        try:
+            r = requests.post(url, json=payload, timeout=30)
+            data = r.json()
+            if data.get("result"):
+                print(f"✅ Отправлено пользователю {user_id} через {method}")
+                return True
+            error = data.get("error", "") or ""
+            if "ACCESS_DENIED" in str(error) or "UNAUTHORIZED" in str(error) or r.status_code == 401:
+                print(f"   ⚠ {method} — нет прав, пробуем следующий метод...")
+                continue
+            print(f"❌ Ошибка {method} для {user_id}: {data}")
             return False
-    except Exception as e:
-        print(f"❌ Ошибка запроса для {user_id}: {e}")
-        return False
+        except Exception as e:
+            print(f"❌ Ошибка запроса {method} для {user_id}: {e}")
+            continue
+
+    print(f"❌ Все методы недоступны для {user_id}. Нужно добавить права на IM в вебхуке.")
+    return False
 
 # ============================================================
 # MAIN
