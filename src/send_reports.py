@@ -23,7 +23,7 @@ MANAGERS = {
 }
 
 # РОП — получает общую сводку по всем менеджерам
-ROP_USER_ID = int(os.environ.get("ROP_BITRIX_ID", "2110"))  # Саша (Анна Жихарева)
+ROP_USER_ID = int(os.environ.get("ROP_BITRIX_ID", "2210"))  # Саша, ID 2210
 ROP_NAME = "Саша"
 
 WEBHOOK_URL = os.environ.get("BITRIX_WEBHOOK_URL", "").rstrip("/")
@@ -134,23 +134,33 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
     best = sorted_analyzed[0] if sorted_analyzed else None
     worst = sorted_analyzed[-1] if len(sorted_analyzed) > 1 else None
 
+    # Слова-признаки НЕ продажных "плюсов" — фильтруем
+    NON_SALES_WORDS = [
+        "представил", "поздоровал", "вежлив", "способ связи", "контакт", "почта", "вайбер",
+        "телефон", "переключил", "перенаправил", "записал", "уточнил номер", "уточнил почту",
+    ]
+    def is_real_sales_strength(text):
+        tl = text.lower()
+        return not any(w in tl for w in NON_SALES_WORDS)
+
     # Частые слабые места
     weak_points = {}
     for _, an in analyzed:
         for imp in an.get("improvements", []) or []:
             if isinstance(imp, dict) and imp.get("text"):
-                text = imp["text"]
-                weak_points[text] = weak_points.get(text, 0) + 1
+                weak_points[imp["text"]] = weak_points.get(imp["text"], 0) + 1
     top_weak = sorted(weak_points.items(), key=lambda x: -x[1])[:3]
 
-    # Частые сильные стороны
+    # Частые сильные стороны — только реальные продажные
     strong_points = {}
     for _, an in analyzed:
         for s in an.get("strengths", []) or []:
-            if isinstance(s, dict) and s.get("text"):
-                text = s["text"]
-                strong_points[text] = strong_points.get(text, 0) + 1
+            if isinstance(s, dict) and s.get("text") and is_real_sales_strength(s["text"]):
+                strong_points[s["text"]] = strong_points.get(s["text"], 0) + 1
     top_strong = sorted(strong_points.items(), key=lambda x: -x[1])[:2]
+
+    # Топ-3 лучших звонка (оценка 7.5+)
+    top_calls = [(c, an) for c, an in sorted_analyzed if float(an.get("overall_score", 0) or 0) >= 7.5][:3]
 
     # ---- Собираем текст ----
     lines = []
@@ -174,24 +184,26 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
             lines.append(f"   — {text}")
         lines.append("")
 
+    if top_calls:
+        lines.append(f"🏆 *Хорошие звонки — молодец:*")
+        for c, an in top_calls:
+            client = c.get("client", {}).get("name", "Неизвестный клиент")
+            score = an.get("overall_score", "—")
+            lines.append(f"   ✅ {client} — {score}/10")
+            lines.append(f"      👉 {APP_URL}/calls/{c['activity_id']}")
+        lines.append("")
+
     if need_callback:
-        lines.append(f"📞 *Требуют внимания ({len(need_callback)} звонков):*")
+        lines.append(f"📞 *Разбери эти звонки — там есть что улучшить:*")
         for c, an in need_callback[:5]:
             client = c.get("client", {}).get("name", "Неизвестный клиент")
             score = an.get("overall_score", "—")
-            reason = an.get("critical_reason") or an.get("score_explanation", "")
+            reason = an.get("critical_reason") or ""
             call_url = f"{APP_URL}/calls/{c['activity_id']}"
             lines.append(f"   🔴 {client} — {score}/10")
             if reason:
                 lines.append(f"      {reason}")
             lines.append(f"      👉 {call_url}")
-        lines.append("")
-
-    if best:
-        bc, ban = best
-        client = bc.get("client", {}).get("name", "")
-        lines.append(f"🏆 *Лучший звонок:* {client} — {format_score(ban.get('overall_score'))}")
-        lines.append(f"   {APP_URL}/calls/{bc['activity_id']}")
         lines.append("")
 
     lines.append(f"🔍 *Все твои звонки:*")
@@ -215,7 +227,6 @@ def send_message(user_id, text, date_label):
             "TITLE": f"📊 Отчёт ИИгорь за {date_label}",
             "DESCRIPTION": text,
             "RESPONSIBLE_ID": user_id,
-            "CREATED_BY": user_id,
             "PRIORITY": "1",
             "ALLOW_CHANGE_DEADLINE": "Y",
             "ALLOW_TIME_TRACKING": "N",
