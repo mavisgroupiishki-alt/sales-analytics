@@ -201,12 +201,17 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
 
 def send_message(user_id, text):
     if not WEBHOOK_URL:
-        print(f"⚠ BITRIX_WEBHOOK_URL не задан — сообщение не отправлено для user {user_id}")
+        print(f"⚠ BITRIX_WEBHOOK_URL не задан")
         return False
 
-    # Пробуем im.message.add (личный чат), при ошибке — im.notify
     methods = [
+        # Личное сообщение
         ("im.message.add", {"DIALOG_ID": f"u{user_id}", "MESSAGE": text}),
+        # Системное уведомление (не требует особых прав)
+        ("im.notify.system.add", {"USER_ID": user_id, "MESSAGE": text}),
+        # Персональное уведомление
+        ("im.notify.personal.add", {"USER_ID": user_id, "MESSAGE": text, "TAG": "IIGORY_REPORT"}),
+        # Устаревший но рабочий метод
         ("im.notify", {"TO": user_id, "MESSAGE": text, "TYPE": "SYSTEM"}),
     ]
 
@@ -215,20 +220,35 @@ def send_message(user_id, text):
         try:
             r = requests.post(url, json=payload, timeout=30)
             data = r.json()
-            if data.get("result"):
+            if data.get("result") or data.get("result") == 0:
                 print(f"✅ Отправлено пользователю {user_id} через {method}")
                 return True
-            error = data.get("error", "") or ""
-            if "ACCESS_DENIED" in str(error) or "UNAUTHORIZED" in str(error) or r.status_code == 401:
-                print(f"   ⚠ {method} — нет прав, пробуем следующий метод...")
+            error = str(data.get("error", ""))
+            if any(x in error.upper() for x in ["ACCESS_DENIED", "UNAUTHORIZED", "WRONG_AUTH_TYPE"]):
+                print(f"   ⚠ {method} — нет прав")
                 continue
-            print(f"❌ Ошибка {method} для {user_id}: {data}")
-            return False
+            print(f"   ⚠ {method} — ошибка: {data.get('error_description') or error}")
+            continue
         except Exception as e:
-            print(f"❌ Ошибка запроса {method} для {user_id}: {e}")
+            if "401" in str(e) or "403" in str(e):
+                print(f"   ⚠ {method} — нет прав")
+                continue
+            print(f"   ⚠ {method} — ошибка: {e}")
             continue
 
-    print(f"❌ Все методы недоступны для {user_id}. Нужно добавить права на IM в вебхуке.")
+    # Последний вариант — через messageservice (SMS/push)
+    try:
+        url = f"{WEBHOOK_URL}/messageservice.message.add"
+        r = requests.post(url, json={"USER_ID": user_id, "MESSAGE": text}, timeout=30)
+        data = r.json()
+        if data.get("result"):
+            print(f"✅ Отправлено через messageservice")
+            return True
+    except Exception:
+        pass
+
+    print(f"❌ Не удалось отправить пользователю {user_id}.")
+    print(f"   Попробуй: Bitrix24 → Разработчикам → Входящий вебхук → убедись что вебхук создан от имени АДМИНИСТРАТОРА")
     return False
 
 # ============================================================
