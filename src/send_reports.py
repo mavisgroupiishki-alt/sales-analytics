@@ -22,6 +22,10 @@ MANAGERS = {
     # Денис (2212) исключён
 }
 
+# РОП — получает общую сводку по всем менеджерам
+ROP_USER_ID = int(os.environ.get("ROP_BITRIX_ID", "2110"))  # Саша (Анна Жихарева)
+ROP_NAME = "Саша"
+
 WEBHOOK_URL = os.environ.get("BITRIX_WEBHOOK_URL", "").rstrip("/")
 APP_URL = os.environ.get("APP_URL", "https://sales-analytics-qyf6.onrender.com")
 
@@ -199,7 +203,93 @@ def build_report(manager_id, manager_name, calls, analyses, date_label):
 # ОТПРАВКА В BITRIX
 # ============================================================
 
-def send_message(user_id, text, date_label):
+def build_rop_report(calls, analyses, date_label):
+    """Общая сводка для РОПа по всем менеджерам за день."""
+    start, end, _ = get_yesterday_range()
+
+    def in_day(c):
+        return in_range(c, start, end)
+
+    def get_an(c):
+        return (analyses.get(c["activity_id"]) or {}).get("analysis") or {}
+
+    def is_excluded(c):
+        an = get_an(c)
+        return bool(an.get("not_sales")) or bool(an.get("poor_audio"))
+
+    day_calls = [c for c in calls if in_day(c) and not is_excluded(c)]
+
+    if not day_calls:
+        return None
+
+    # Общая статистика
+    total = len(day_calls)
+    analyzed = [c for c in day_calls if get_an(c).get("overall_score") is not None]
+    critical = [c for c in day_calls if get_an(c).get("is_critical")]
+    all_scores = [float(get_an(c)["overall_score"]) for c in analyzed]
+    avg_total = round(sum(all_scores) / len(all_scores), 1) if all_scores else None
+
+    # По каждому менеджеру
+    mgr_stats = {}
+    for user_id, name in MANAGERS.items():
+        my = [c for c in day_calls if c.get("manager", {}).get("id") == user_id]
+        my_analyzed = [c for c in my if get_an(c).get("overall_score") is not None]
+        my_scores = [float(get_an(c)["overall_score"]) for c in my_analyzed]
+        my_critical = [c for c in my if get_an(c).get("is_critical")]
+        mgr_stats[name] = {
+            "total": len(my),
+            "analyzed": len(my_analyzed),
+            "avg": round(sum(my_scores)/len(my_scores), 1) if my_scores else None,
+            "critical": len(my_critical),
+            "user_id": user_id,
+        }
+
+    def fmt(score):
+        if score is None: return "—"
+        if score >= 8: return f"✅ {score}"
+        if score >= 6: return f"👍 {score}"
+        if score >= 4: return f"⚠️ {score}"
+        return f"🔴 {score}"
+
+    lines = []
+    lines.append(f"Доброе утречко, {ROP_NAME}! ☀️ Я ИИгорь")
+    lines.append(f"Вот сводка по отделу за {date_label}:\n")
+    lines.append(f"📊 *Всего звонков:* {total} | Проанализировано: {len(analyzed)}")
+    if avg_total:
+        lines.append(f"⭐ *Средняя оценка по отделу:* {fmt(avg_total)}/10")
+    if critical:
+        lines.append(f"🔴 *Требуют внимания:* {len(critical)} звонков")
+    lines.append("")
+
+    lines.append("👥 *По менеджерам:*")
+    for name, st in mgr_stats.items():
+        avg_str = f"{fmt(st['avg'])}/10" if st["avg"] else "нет данных"
+        crit_str = f" | 🔴 {st['critical']} срочных" if st["critical"] else ""
+        lines.append(f"   • {name}: {st['total']} зв., оценка {avg_str}{crit_str}")
+    lines.append("")
+
+    # Критичные звонки
+    if critical:
+        lines.append("🚨 *Срочно разобрать:*")
+        for c in critical[:5]:
+            an = get_an(c)
+            client = c.get("client", {}).get("name", "Неизвестный")
+            mgr = c.get("manager", {}).get("name", "").split()[0]
+            score = an.get("overall_score", "—")
+            reason = (an.get("critical_reason") or an.get("score_explanation", ""))[:70]
+            lines.append(f"   🔴 {mgr} → {client} ({score}/10)")
+            if reason:
+                lines.append(f"      {reason}")
+            lines.append(f"      👉 {APP_URL}/calls/{c['activity_id']}")
+        lines.append("")
+
+    lines.append(f"🔍 *Полный отчёт:* {APP_URL}/rop")
+    lines.append(f"📋 *Сравнение менеджеров:* {APP_URL}/compare")
+
+    return "\n".join(lines)
+
+
+
     """Создаёт задачу менеджеру в Bitrix24 с текстом отчёта."""
     if not WEBHOOK_URL:
         print(f"⚠ BITRIX_WEBHOOK_URL не задан")
@@ -268,7 +358,16 @@ def main():
         if send_message(user_id, text, date_label):
             sent += 1
 
-    print(f"\n✅ Отправлено {sent}/{len(MANAGERS)} отчётов")
+    print(f"\n--- РОП {ROP_NAME} (ID {ROP_USER_ID}) ---")
+    rop_text = build_rop_report(calls, analyses, date_label)
+    if rop_text:
+        print(f"   Сводка готова ({len(rop_text)} символов)")
+        if send_message(ROP_USER_ID, rop_text, date_label):
+            sent += 1
+    else:
+        print(f"   Нет данных за {date_label}")
+
+    print(f"\n✅ Отправлено {sent}/{len(MANAGERS)+1} отчётов")
 
 if __name__ == "__main__":
     main()
