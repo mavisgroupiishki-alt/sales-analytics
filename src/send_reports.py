@@ -10,6 +10,8 @@ import requests
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from bitrix_url import normalize_bitrix_webhook_url
+
 # ============================================================
 # НАСТРОЙКИ
 # ============================================================
@@ -26,7 +28,11 @@ MANAGERS = {
 ROP_USER_ID = int(os.environ.get("ROP_BITRIX_ID", "2210"))  # Саша, ID 2210
 ROP_NAME = "Саша"
 
-WEBHOOK_URL = os.environ.get("BITRIX_WEBHOOK_URL", "").rstrip("/")
+_RAW_WEBHOOK_URL = os.environ.get("BITRIX_WEBHOOK_URL", "")
+try:
+    WEBHOOK_URL = normalize_bitrix_webhook_url(_RAW_WEBHOOK_URL) if _RAW_WEBHOOK_URL else ""
+except ValueError:
+    WEBHOOK_URL = ""
 APP_URL = os.environ.get("APP_URL", "https://sales-analytics-qyf6.onrender.com")
 
 # ============================================================

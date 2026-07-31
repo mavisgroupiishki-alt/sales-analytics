@@ -18,6 +18,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 
+from bitrix_url import normalize_bitrix_webhook_url
+
 logger = logging.getLogger(__name__)
 
 ACTIVITY_TYPE_CALL = 2
@@ -47,7 +49,7 @@ class Bitrix24Client:
         url = webhook_url or os.environ.get("BITRIX_WEBHOOK_URL")
         if not url:
             raise RuntimeError("BITRIX_WEBHOOK_URL не задан.")
-        self.webhook = url.rstrip("/") + "/"
+        self.webhook = normalize_bitrix_webhook_url(url).rstrip("/") + "/"
 
     def call(self, method: str, params: dict = None) -> dict:
         response = requests.post(self.webhook + method, json=params or {}, timeout=DEFAULT_REQUEST_TIMEOUT)

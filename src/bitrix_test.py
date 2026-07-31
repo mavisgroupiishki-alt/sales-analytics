@@ -8,14 +8,14 @@ import json
 import requests
 from datetime import datetime, timedelta
 
+from bitrix_url import normalize_bitrix_webhook_url
+
 
 def get_webhook_url() -> str:
     url = os.environ.get("BITRIX_WEBHOOK_URL")
     if not url:
         raise RuntimeError("Не найден BITRIX_WEBHOOK_URL")
-    if not url.endswith("/"):
-        url += "/"
-    return url
+    return normalize_bitrix_webhook_url(url).rstrip("/") + "/"
 
 
 def call_bitrix(method: str, params: dict = None) -> dict:
