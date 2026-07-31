@@ -15,6 +15,10 @@ services:
         sync: false
       - key: PROXY_URL
         sync: false
+      - key: BITRIX_WEBHOOK_URL
+        sync: false
+      - key: USE_AUDIO_PROXY
+        value: "1"
       - key: DATA_DIR
         value: .
     autoDeploy: true
