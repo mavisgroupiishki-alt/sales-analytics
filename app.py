@@ -1323,11 +1323,20 @@ def api_correct():
 @app.route("/audio/<activity_id>")
 @login_required
 def serve_audio(activity_id):
-    """Проксирует аудио с Bitrix через наш сервер, с поддержкой перемотки (Range-запросы).
-    Получает СВЕЖУЮ ссылку на скачивание через disk.file.get,
-    так как сохранённый в calls_data.json URL содержит временный токен и протухает."""
+    """Проксирует аудио Bitrix24 и поддерживает перемотку через Range.
+
+    Сначала получает свежий DOWNLOAD_URL через disk.file.get. Если это не
+    удалось, восстанавливает прямую crm_show_file.php ссылку, подставляя в
+    пустой параметр auth секрет текущего webhook.
+    """
     import requests as _req
     from flask import Response as _Resp
+    from bitrix_url import (
+        add_webhook_auth_to_file_url,
+        build_bitrix_method_url,
+        normalize_bitrix_webhook_url,
+        safe_webhook_label,
+    )
 
     calls = load_calls()
     call = next((c for c in calls if c["activity_id"] == activity_id), None)
@@ -1335,59 +1344,114 @@ def serve_audio(activity_id):
         abort(404)
 
     user = current_user()
-    if user["role"] == "manager" and call.get("manager",{}).get("id") != user["manager_id"]:
+    if user["role"] == "manager" and call.get("manager", {}).get("id") != user["manager_id"]:
         abort(403)
 
     audio_meta = call.get("audio") or {}
     file_id = audio_meta.get("file_id")
-    webhook = os.environ.get("BITRIX_WEBHOOK_URL", "").rstrip("/")
+    raw_webhook = os.environ.get("BITRIX_WEBHOOK_URL", "")
+
+    webhook = ""
+    if raw_webhook:
+        try:
+            webhook = normalize_bitrix_webhook_url(raw_webhook)
+            if webhook.rstrip("/") != raw_webhook.rstrip("/"):
+                app.logger.warning(
+                    "BITRIX_WEBHOOK_URL contained an extra REST method; normalized to %s",
+                    safe_webhook_label(raw_webhook),
+                )
+        except ValueError as exc:
+            app.logger.error("Invalid BITRIX_WEBHOOK_URL configuration: %s", exc)
 
     audio_url = ""
     if file_id and webhook:
         try:
-            meta_resp = _req.get(f"{webhook}/disk.file.get", params={"id": file_id}, timeout=15)
-            meta_resp.raise_for_status()
-            file_data = (meta_resp.json() or {}).get("result", {})
-            audio_url = file_data.get("DOWNLOAD_URL", "")
-        except Exception as e:
-            app.logger.warning(f"Failed to get fresh download URL for file_id={file_id}: {e}")
+            meta_resp = _req.post(
+                build_bitrix_method_url(webhook, "disk.file.get"),
+                json={"id": file_id},
+                timeout=15,
+            )
+            if not meta_resp.ok:
+                app.logger.warning(
+                    "disk.file.get failed for file_id=%s: HTTP %s",
+                    file_id,
+                    meta_resp.status_code,
+                )
+            else:
+                payload = meta_resp.json() or {}
+                if payload.get("error"):
+                    app.logger.warning(
+                        "disk.file.get returned Bitrix error for file_id=%s: %s",
+                        file_id,
+                        payload.get("error"),
+                    )
+                else:
+                    file_data = payload.get("result") or {}
+                    audio_url = file_data.get("DOWNLOAD_URL", "")
+        except (_req.RequestException, ValueError, TypeError) as exc:
+            # Не пишем exception целиком: requests включает секретный URL в текст ошибки.
+            app.logger.warning(
+                "Could not refresh audio URL for file_id=%s (%s)",
+                file_id,
+                type(exc).__name__,
+            )
 
     if not audio_url:
-        audio_url = audio_meta.get("url", "")
+        stored_url = audio_meta.get("url", "")
+        if stored_url and webhook:
+            try:
+                audio_url = add_webhook_auth_to_file_url(stored_url, webhook)
+            except ValueError:
+                audio_url = stored_url
+        else:
+            audio_url = stored_url
 
     if not audio_url:
         abort(404)
 
-    # Кэшируем файл целиком в памяти процесса на короткое время, чтобы
-    # перемотка (Range-запросы браузера) не дёргала Bitrix повторно и работала мгновенно.
+    # Кэшируем файл целиком в памяти процесса на 10 минут, чтобы браузерные
+    # Range-запросы не обращались к Bitrix повторно при каждой перемотке.
     cache_key = f"audio_{activity_id}"
     cached = _AUDIO_CACHE.get(cache_key)
     if cached and (datetime.now() - cached["ts"]).total_seconds() < 600:
         data, ctype = cached["data"], cached["ctype"]
     else:
         try:
-            r = _req.get(audio_url, timeout=30)
-            r.raise_for_status()
-            ctype = r.headers.get("Content-Type", "audio/mpeg")
-            if "audio" not in ctype and "octet-stream" not in ctype and "video" not in ctype:
-                app.logger.warning(f"Audio proxy got non-audio content-type={ctype} for {activity_id}: {r.content[:200]}")
+            upstream = _req.get(audio_url, timeout=30, allow_redirects=True)
+            upstream.raise_for_status()
+            ctype = (upstream.headers.get("Content-Type") or "audio/mpeg").lower()
+            if not any(kind in ctype for kind in ("audio", "octet-stream", "video")):
+                app.logger.warning(
+                    "Audio upstream returned non-media response for activity_id=%s: HTTP %s, content-type=%s",
+                    activity_id,
+                    upstream.status_code,
+                    ctype,
+                )
                 abort(502)
-            data = r.content
+            data = upstream.content
+            if not data:
+                app.logger.warning("Audio upstream returned an empty body for activity_id=%s", activity_id)
+                abort(502)
             _AUDIO_CACHE[cache_key] = {"data": data, "ctype": ctype, "ts": datetime.now()}
-        except Exception:
+        except _req.RequestException as exc:
+            app.logger.warning(
+                "Audio download failed for activity_id=%s (%s)",
+                activity_id,
+                type(exc).__name__,
+            )
             abort(502)
 
     total_len = len(data)
     range_header = request.headers.get("Range")
 
     if range_header:
-        # Пример заголовка: "bytes=12345-"
         try:
             range_val = range_header.replace("bytes=", "").split("-")
             start = int(range_val[0]) if range_val[0] else 0
             end = int(range_val[1]) if len(range_val) > 1 and range_val[1] else total_len - 1
-            end = min(end, total_len - 1)
-        except Exception:
+            start = max(0, min(start, total_len - 1))
+            end = max(start, min(end, total_len - 1))
+        except (TypeError, ValueError):
             start, end = 0, total_len - 1
 
         chunk = data[start:end + 1]
@@ -1396,13 +1460,94 @@ def serve_audio(activity_id):
         resp.headers["Accept-Ranges"] = "bytes"
         resp.headers["Content-Length"] = str(len(chunk))
         resp.headers["Cache-Control"] = "private, max-age=3600"
+        resp.headers["X-Content-Type-Options"] = "nosniff"
         return resp
 
     resp = _Resp(data, status=200, mimetype=ctype)
     resp.headers["Accept-Ranges"] = "bytes"
     resp.headers["Content-Length"] = str(total_len)
     resp.headers["Cache-Control"] = "private, max-age=3600"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
     return resp
+
+
+_AUDIO_HEALTH_CACHE = {"ts": None, "payload": None, "status": 503}
+
+
+@app.route("/health/audio")
+def audio_health():
+    """Безопасная проверка цепочки Render → Bitrix → аудиофайл.
+
+    Эндпоинт не раскрывает webhook и подходит для отдельной проверки UptimeRobot.
+    Результат кэшируется на пять минут.
+    """
+    import requests as _req
+    from bitrix_url import build_bitrix_method_url, normalize_bitrix_webhook_url
+
+    cached_at = _AUDIO_HEALTH_CACHE.get("ts")
+    if cached_at and (datetime.now() - cached_at).total_seconds() < 300:
+        return jsonify(_AUDIO_HEALTH_CACHE["payload"]), _AUDIO_HEALTH_CACHE["status"]
+
+    raw_webhook = os.environ.get("BITRIX_WEBHOOK_URL", "")
+    try:
+        webhook = normalize_bitrix_webhook_url(raw_webhook)
+    except ValueError as exc:
+        payload, status = {"status": "error", "stage": "config", "message": str(exc)}, 503
+    else:
+        latest = next(
+            (c for c in load_calls() if (c.get("audio") or {}).get("file_id")),
+            None,
+        )
+        if not latest:
+            payload, status = {"status": "error", "stage": "data", "message": "Нет звонков с file_id"}, 503
+        else:
+            file_id = latest["audio"]["file_id"]
+            try:
+                meta = _req.post(
+                    build_bitrix_method_url(webhook, "disk.file.get"),
+                    json={"id": file_id},
+                    timeout=15,
+                )
+                meta.raise_for_status()
+                meta_json = meta.json() or {}
+                download_url = (meta_json.get("result") or {}).get("DOWNLOAD_URL", "")
+                if meta_json.get("error") or not download_url:
+                    payload, status = {
+                        "status": "error",
+                        "stage": "disk.file.get",
+                        "message": meta_json.get("error") or "DOWNLOAD_URL отсутствует",
+                    }, 503
+                else:
+                    media = _req.get(
+                        download_url,
+                        headers={"Range": "bytes=0-1023"},
+                        stream=True,
+                        timeout=15,
+                        allow_redirects=True,
+                    )
+                    ctype = (media.headers.get("Content-Type") or "").lower()
+                    ok = media.status_code in (200, 206) and any(
+                        kind in ctype for kind in ("audio", "octet-stream", "video")
+                    )
+                    media.close()
+                    if ok:
+                        payload, status = {"status": "ok", "stage": "audio", "file_id": file_id}, 200
+                    else:
+                        payload, status = {
+                            "status": "error",
+                            "stage": "download",
+                            "http_status": media.status_code,
+                            "content_type": ctype,
+                        }, 503
+            except (_req.RequestException, ValueError, TypeError) as exc:
+                payload, status = {
+                    "status": "error",
+                    "stage": "request",
+                    "message": type(exc).__name__,
+                }, 503
+
+    _AUDIO_HEALTH_CACHE.update({"ts": datetime.now(), "payload": payload, "status": status})
+    return jsonify(payload), status
 
 @app.route("/calls/<activity_id>/reanalyze", methods=["POST"])
 @rop_required
