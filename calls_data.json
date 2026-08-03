@@ -1,1 +1,4781 @@
-[]
+[
+  {
+    "activity_id": "461094",
+    "created": "2026-08-03T18:03:44+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 918-72-01",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Андрей ( белорусский номер)",
+      "company": "ООО Алексеев А.Г.",
+      "phone": "+375299187201",
+      "phone_masked": "+375***7201"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "31954",
+      "stage_name": "7",
+      "stage_id": "7",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501626,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501626&ownerTypeId=6&ownerId=461094&auth="
+    }
+  },
+  {
+    "activity_id": "461096",
+    "created": "2026-08-03T18:01:16+03:00",
+    "duration_sec": 232,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 130-87-67",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Неизвестный клиент",
+      "company": "",
+      "phone": "+375291308767",
+      "phone_masked": "+375***8767"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36744",
+      "stage_name": "Конвертирован",
+      "stage_id": "CONVERTED",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501628,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501628&ownerTypeId=6&ownerId=461096&auth=",
+      "local_path": "audio_temp/501628_CRM6a70ad3d7462f4.a88987c.mp3",
+      "size_bytes": 990936
+    }
+  },
+  {
+    "activity_id": "461092",
+    "created": "2026-08-03T17:52:30+03:00",
+    "duration_sec": 56,
+    "direction": "incoming",
+    "subject": "Входящий от +375 29 331-33-99",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Виктория Пожстроймонтаж",
+      "company": "Пожстроймонтаж, ООО",
+      "phone": "+375293313399",
+      "phone_masked": "+375***3399"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37844",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501624,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501624&ownerTypeId=6&ownerId=461092&auth=",
+      "local_path": "audio_temp/501624_ATS6a70ab2e1bb8c.82b9d06.mp3",
+      "size_bytes": 245160
+    }
+  },
+  {
+    "activity_id": "461086",
+    "created": "2026-08-03T17:45:52+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 857-52-52",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Андрей",
+      "company": "УКС Жабинковского района, Унитарное предприятие",
+      "phone": "+375298575252",
+      "phone_masked": "+375***5252"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37744",
+      "stage_name": "8",
+      "stage_id": "8",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T18:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501618,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501618&ownerTypeId=6&ownerId=461086&auth="
+    }
+  },
+  {
+    "activity_id": "461078",
+    "created": "2026-08-03T17:39:11+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 350-55-60",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Игорь \\",
+      "company": "ООО ИВИСпецСтрой",
+      "phone": "375293505560",
+      "phone_masked": "3752***5560"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37816",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T10:10:00+03:00"
+    },
+    "audio": {
+      "file_id": 501616,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501616&ownerTypeId=6&ownerId=461078&auth="
+    }
+  },
+  {
+    "activity_id": "461074",
+    "created": "2026-08-03T17:35:58+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 178-78-06",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Диана (Рабочий номер)",
+      "company": "ООО \"Экотермент Групп\"",
+      "phone": "+375291787806",
+      "phone_masked": "+375***7806"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36650",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501608,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501608&ownerTypeId=6&ownerId=461074&auth="
+    }
+  },
+  {
+    "activity_id": "461076",
+    "created": "2026-08-03T17:35:41+03:00",
+    "duration_sec": 136,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 518-19-22",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Руслан",
+      "company": "РуВит Энерго,",
+      "phone": "+375295181922",
+      "phone_masked": "+375***1922"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37836",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501614,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501614&ownerTypeId=6&ownerId=461076&auth=",
+      "local_path": "audio_temp/501614_CRM6a70a73e01c736.eac7325.mp3",
+      "size_bytes": 587232
+    }
+  },
+  {
+    "activity_id": "461072",
+    "created": "2026-08-03T17:33:05+03:00",
+    "duration_sec": 98,
+    "direction": "incoming",
+    "subject": "Входящий от +375 33 603-68-70",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Анна",
+      "company": "СМК316,ООО",
+      "phone": "+375336036870",
+      "phone_masked": "+375***6870"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37838",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T18:03:00+03:00"
+    },
+    "audio": {
+      "file_id": 501606,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501606&ownerTypeId=6&ownerId=461072&auth=",
+      "local_path": "audio_temp/501606_ATS6a70a6a170c69.cf3370a.mp3",
+      "size_bytes": 426024
+    }
+  },
+  {
+    "activity_id": "461068",
+    "created": "2026-08-03T17:32:35+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 33 603-68-70",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Анна",
+      "company": "СМК316,ООО",
+      "phone": "+375336036870",
+      "phone_masked": "+375***6870"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37838",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T18:03:00+03:00"
+    },
+    "audio": {
+      "file_id": 501604,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501604&ownerTypeId=6&ownerId=461068&auth="
+    }
+  },
+  {
+    "activity_id": "461060",
+    "created": "2026-08-03T17:27:40+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 763-32-30",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Юлия бух.",
+      "company": "ЭкоРеверс, ООО",
+      "phone": "+375447633230",
+      "phone_masked": "+375***3230"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36676",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T18:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501600,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501600&ownerTypeId=6&ownerId=461060&auth="
+    }
+  },
+  {
+    "activity_id": "461058",
+    "created": "2026-08-03T17:26:19+03:00",
+    "duration_sec": 95,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 25 524-40-25",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Владимир",
+      "company": "Лид с формы в услугах остались вопросы",
+      "phone": "+375255244025",
+      "phone_masked": "+375***4025"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37842",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501598,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501598&ownerTypeId=6&ownerId=461058&auth=",
+      "local_path": "audio_temp/501598_CRM6a70a50c483571.0547fec.mp3",
+      "size_bytes": 412560
+    }
+  },
+  {
+    "activity_id": "461052",
+    "created": "2026-08-03T17:24:33+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 331-33-99",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Виктория Пожстроймонтаж",
+      "company": "Пожстроймонтаж, ООО",
+      "phone": "+375293313399",
+      "phone_masked": "+375***3399"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37844",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501596,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501596&ownerTypeId=6&ownerId=461052&auth="
+    }
+  },
+  {
+    "activity_id": "461048",
+    "created": "2026-08-03T17:22:50+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 33 601-56-28",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Дмитрий",
+      "company": "",
+      "phone": "375336015628",
+      "phone_masked": "3753***5628"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "35134",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:44:00+03:00"
+    },
+    "audio": {
+      "file_id": 501594,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501594&ownerTypeId=6&ownerId=461048&auth="
+    }
+  },
+  {
+    "activity_id": "461042",
+    "created": "2026-08-03T17:21:56+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 567-66-33",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Владимир",
+      "company": "ООО \"ОББАЛТ РЕГИОН\"",
+      "phone": "375295676633",
+      "phone_masked": "3752***6633"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36022",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:30:00+03:00"
+    },
+    "audio": {
+      "file_id": 501590,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501590&ownerTypeId=6&ownerId=461042&auth="
+    }
+  },
+  {
+    "activity_id": "461044",
+    "created": "2026-08-03T17:21:48+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 561-80-86",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Юрий",
+      "company": "ЭлектроМонтажные Технологии, ООО",
+      "phone": "+375295618086",
+      "phone_masked": "+375***8086"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37092",
+      "stage_name": "8",
+      "stage_id": "8",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T18:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501592,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501592&ownerTypeId=6&ownerId=461044&auth="
+    }
+  },
+  {
+    "activity_id": "461036",
+    "created": "2026-08-03T17:20:48+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 115-60-50",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Николай",
+      "company": "ООО \"Хитинг Хом\"",
+      "phone": "+375291156050",
+      "phone_masked": "+375***6050"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "35166",
+      "stage_name": "10",
+      "stage_id": "10",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T18:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501586,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501586&ownerTypeId=6&ownerId=461036&auth="
+    }
+  },
+  {
+    "activity_id": "461034",
+    "created": "2026-08-03T17:19:29+03:00",
+    "duration_sec": 45,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 162-63-34",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "владимир",
+      "company": "строй инженеринг",
+      "phone": "+375291626334",
+      "phone_masked": "+375***6334"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37590",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501584,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501584&ownerTypeId=6&ownerId=461034&auth=",
+      "local_path": "audio_temp/501584_CRM6a70a371eb9031.d461bcb.mp3",
+      "size_bytes": 201816
+    }
+  },
+  {
+    "activity_id": "461030",
+    "created": "2026-08-03T17:16:40+03:00",
+    "duration_sec": 92,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 165-22-82",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Иван",
+      "company": "",
+      "phone": "+375291652282",
+      "phone_masked": "+375***2282"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37874",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:41:00+03:00"
+    },
+    "audio": {
+      "file_id": 501582,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501582&ownerTypeId=6&ownerId=461030&auth=",
+      "local_path": "audio_temp/501582_CRM6a70a2c8f10af0.138fc70.mp3",
+      "size_bytes": 407304
+    }
+  },
+  {
+    "activity_id": "461026",
+    "created": "2026-08-03T17:10:05+03:00",
+    "duration_sec": 125,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 536-62-64",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Максим",
+      "company": "",
+      "phone": "375295366264",
+      "phone_masked": "3752***6264"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36712",
+      "stage_name": "Некачественный",
+      "stage_id": "JUNK",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501578,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501578&ownerTypeId=6&ownerId=461026&auth=",
+      "local_path": "audio_temp/501578_CRM6a70a13d9b7b47.f9f3dcd.mp3",
+      "size_bytes": 547056
+    }
+  },
+  {
+    "activity_id": "461022",
+    "created": "2026-08-03T17:07:34+03:00",
+    "duration_sec": 69,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 189-04-92",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Евгений",
+      "company": "",
+      "phone": "+375291890492",
+      "phone_masked": "+375***0492"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36680",
+      "stage_name": "UC_AV3188",
+      "stage_id": "UC_AV3188",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:27:00+03:00"
+    },
+    "audio": {
+      "file_id": 501574,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501574&ownerTypeId=6&ownerId=461022&auth=",
+      "local_path": "audio_temp/501574_CRM6a70a0a7091a27.0a17d08.mp3",
+      "size_bytes": 301680
+    }
+  },
+  {
+    "activity_id": "461012",
+    "created": "2026-08-03T17:01:07+03:00",
+    "duration_sec": 54,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 500-40-75",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "виталий",
+      "company": "",
+      "phone": "375295004075",
+      "phone_masked": "3752***4075"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37840",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501570,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501570&ownerTypeId=6&ownerId=461012&auth=",
+      "local_path": "audio_temp/501570_CRM6a709f23d98c00.3fcbea5.mp3",
+      "size_bytes": 241200
+    }
+  },
+  {
+    "activity_id": "461004",
+    "created": "2026-08-03T16:58:12+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 8 033 681-36-66",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Екатерина Bahdanava",
+      "company": "МелДанСтрой, ООО",
+      "phone": "80336813666",
+      "phone_masked": "8033***3666"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37504",
+      "stage_name": "UC_B9P2EQ",
+      "stage_id": "UC_B9P2EQ",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501568,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501568&ownerTypeId=6&ownerId=461004&auth="
+    }
+  },
+  {
+    "activity_id": "461000",
+    "created": "2026-08-03T16:57:10+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 656-16-60",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Наталья",
+      "company": "ООО \"Бауман Строй\"",
+      "phone": "375296561660",
+      "phone_masked": "3752***1660"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37806",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T11:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501564,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501564&ownerTypeId=6&ownerId=461000&auth="
+    }
+  },
+  {
+    "activity_id": "460992",
+    "created": "2026-08-03T16:50:46+03:00",
+    "duration_sec": 26,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 778-63-53",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "антон",
+      "company": "Антон открыл компанию",
+      "phone": "+375447786353",
+      "phone_masked": "+375***6353"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37886",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T15:04:00+03:00"
+    },
+    "audio": {
+      "file_id": 501556,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501556&ownerTypeId=6&ownerId=460992&auth=",
+      "local_path": "audio_temp/501556_CRM6a709cb77fa356.a314c03.mp3",
+      "size_bytes": 114624
+    }
+  },
+  {
+    "activity_id": "460972",
+    "created": "2026-08-03T16:37:28+03:00",
+    "duration_sec": 102,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 384-42-79",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей",
+      "company": "Управление специальных строительных работ Стройтрест №7, ОАО",
+      "phone": "+375293844279",
+      "phone_masked": "+375***4279"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37684",
+      "stage_name": "8",
+      "stage_id": "8",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501544,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501544&ownerTypeId=6&ownerId=460972&auth=",
+      "local_path": "audio_temp/501544_CRM6a709999075988.9ba8f9a.mp3",
+      "size_bytes": 443088
+    }
+  },
+  {
+    "activity_id": "460968",
+    "created": "2026-08-03T16:33:39+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 384-42-79",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей",
+      "company": "Управление специальных строительных работ Стройтрест №7, ОАО",
+      "phone": "+375293844279",
+      "phone_masked": "+375***4279"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37684",
+      "stage_name": "8",
+      "stage_id": "8",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501540,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501540&ownerTypeId=6&ownerId=460968&auth="
+    }
+  },
+  {
+    "activity_id": "460950",
+    "created": "2026-08-03T16:22:18+03:00",
+    "duration_sec": 37,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 371-51-60",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Ольга ВВС",
+      "company": "ВВС-СПЕЦСТРОЙМОНТАЖ,ООО",
+      "phone": "+375293715160",
+      "phone_masked": "+375***5160"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37226",
+      "stage_name": "UC_B9P2EQ",
+      "stage_id": "UC_B9P2EQ",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T15:01:00+03:00"
+    },
+    "audio": {
+      "file_id": 501526,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501526&ownerTypeId=6&ownerId=460950&auth=",
+      "local_path": "audio_temp/501526_CRM6a70960b9c8928.60c02f2.mp3",
+      "size_bytes": 165312
+    }
+  },
+  {
+    "activity_id": "460952",
+    "created": "2026-08-03T16:21:22+03:00",
+    "duration_sec": 84,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 711-40-59",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Илья Иванович",
+      "company": "",
+      "phone": "+375447114059",
+      "phone_masked": "+375***4059"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36454",
+      "stage_name": "В работе",
+      "stage_id": "IN_PROCESS",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T10:21:00+03:00"
+    },
+    "audio": {
+      "file_id": 501528,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501528&ownerTypeId=6&ownerId=460952&auth=",
+      "local_path": "audio_temp/501528_CRM6a7095d2b5ee13.c9d6184.mp3",
+      "size_bytes": 361296
+    }
+  },
+  {
+    "activity_id": "460942",
+    "created": "2026-08-03T16:14:52+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 356-40-04",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей",
+      "company": "Бирдорстрой",
+      "phone": "+375293564004",
+      "phone_masked": "+375***4004"
+    },
+    "crm": {
+      "owner_type": "contact",
+      "owner_id": "1492",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501522,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501522&ownerTypeId=6&ownerId=460942&auth="
+    }
+  },
+  {
+    "activity_id": "460934",
+    "created": "2026-08-03T15:59:02+03:00",
+    "duration_sec": 100,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 623-70-28",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Александрович Смольский Сергей",
+      "company": "",
+      "phone": "+375296237028",
+      "phone_masked": "+375***7028"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36708",
+      "stage_name": "Некачественный",
+      "stage_id": "JUNK",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501514,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501514&ownerTypeId=6&ownerId=460934&auth=",
+      "local_path": "audio_temp/501514_CRM6a709096f22f08.457ba88.mp3",
+      "size_bytes": 445104
+    }
+  },
+  {
+    "activity_id": "460928",
+    "created": "2026-08-03T15:56:48+03:00",
+    "duration_sec": 74,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 128-05-58",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Юрий \"ЮВС ЭнергоСтрой\"",
+      "company": "ООО \"ЮВС ЭнергоСтрой\"",
+      "phone": "+375291280558",
+      "phone_masked": "+375***0558"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "34794",
+      "stage_name": "14",
+      "stage_id": "14",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501510,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501510&ownerTypeId=6&ownerId=460928&auth=",
+      "local_path": "audio_temp/501510_CRM6a7090112fe560.4d129fd.mp3",
+      "size_bytes": 321912
+    }
+  },
+  {
+    "activity_id": "460924",
+    "created": "2026-08-03T15:54:48+03:00",
+    "duration_sec": 26,
+    "direction": "incoming",
+    "subject": "Входящий от +375 29 128-05-58",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Юрий \"ЮВС ЭнергоСтрой\"",
+      "company": "ООО \"ЮВС ЭнергоСтрой\"",
+      "phone": "+375291280558",
+      "phone_masked": "+375***0558"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "34794",
+      "stage_name": "14",
+      "stage_id": "14",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501506,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501506&ownerTypeId=6&ownerId=460924&auth=",
+      "local_path": "audio_temp/501506_ATS6a708f984f426.262dccb.mp3",
+      "size_bytes": 110952
+    }
+  },
+  {
+    "activity_id": "460936",
+    "created": "2026-08-03T15:54:28+03:00",
+    "duration_sec": 370,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 166-82-45",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Денис",
+      "company": "Фортис Глобал",
+      "phone": "375291668245",
+      "phone_masked": "3752***8245"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36746",
+      "stage_name": "Сделка провалена",
+      "stage_id": "LOSE",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501516,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501516&ownerTypeId=6&ownerId=460936&auth=",
+      "local_path": "audio_temp/501516_CRM6a708f84ec5534.6251e4a.mp3",
+      "size_bytes": 1602360
+    }
+  },
+  {
+    "activity_id": "460922",
+    "created": "2026-08-03T15:53:02+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 782-55-82",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Юрий МЧС огнезащита древесина",
+      "company": "",
+      "phone": "+375447825582",
+      "phone_masked": "+375***5582"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37800",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T13:41:00+03:00"
+    },
+    "audio": {
+      "file_id": 501502,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501502&ownerTypeId=6&ownerId=460922&auth="
+    }
+  },
+  {
+    "activity_id": "460912",
+    "created": "2026-08-03T15:42:09+03:00",
+    "duration_sec": 88,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 635-40-05",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Руслан",
+      "company": "",
+      "phone": "+375296354005",
+      "phone_masked": "+375***4005"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37796",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T10:10:00+03:00"
+    },
+    "audio": {
+      "file_id": 501476,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501476&ownerTypeId=6&ownerId=460912&auth=",
+      "local_path": "audio_temp/501476_CRM6a708ca1cac803.4ad4597.mp3",
+      "size_bytes": 376128
+    }
+  },
+  {
+    "activity_id": "460908",
+    "created": "2026-08-03T15:41:53+03:00",
+    "duration_sec": 56,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 680-98-49",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Геннадий",
+      "company": "ООО \"ЭталонЛельСтрой\"",
+      "phone": "375296809849",
+      "phone_masked": "3752***9849"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37662",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501474,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501474&ownerTypeId=6&ownerId=460908&auth=",
+      "local_path": "audio_temp/501474_CRM6a708c9244be26.b6ccd73.mp3",
+      "size_bytes": 244368
+    }
+  },
+  {
+    "activity_id": "460894",
+    "created": "2026-08-03T15:32:19+03:00",
+    "duration_sec": 125,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 25 634-72-36",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Ирина СтройГармония",
+      "company": "СтройГармония, Частное предприятие",
+      "phone": "375256347236",
+      "phone_masked": "3752***7236"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "35872",
+      "stage_name": "12",
+      "stage_id": "12",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501470,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501470&ownerTypeId=6&ownerId=460894&auth=",
+      "local_path": "audio_temp/501470_CRM6a708a54cd4eb3.8e74414.mp3",
+      "size_bytes": 542448
+    }
+  },
+  {
+    "activity_id": "460886",
+    "created": "2026-08-03T15:25:16+03:00",
+    "duration_sec": 100,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 625-32-54",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Евгений ТрансСпецМонтаж",
+      "company": "ТрансСпецМонтаж, ООО",
+      "phone": "+375296253254",
+      "phone_masked": "+375***3254"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37738",
+      "stage_name": "Сделка провалена",
+      "stage_id": "LOSE",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501436,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501436&ownerTypeId=6&ownerId=460886&auth=",
+      "local_path": "audio_temp/501436_CRM6a7088ad281d06.3e24885.mp3",
+      "size_bytes": 434016
+    }
+  },
+  {
+    "activity_id": "460880",
+    "created": "2026-08-03T15:23:30+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 33 381-61-26",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Евгений",
+      "company": "ООО СтройТехКонтур",
+      "phone": "375333816126",
+      "phone_masked": "3753***6126"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "35512",
+      "stage_name": "12",
+      "stage_id": "12",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501434,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501434&ownerTypeId=6&ownerId=460880&auth="
+    }
+  },
+  {
+    "activity_id": "460878",
+    "created": "2026-08-03T15:21:09+03:00",
+    "duration_sec": 199,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 583-48-14",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Никита Парфенюк",
+      "company": "",
+      "phone": "+375295834814",
+      "phone_masked": "+375***4814"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36698",
+      "stage_name": "Конвертирован",
+      "stage_id": "CONVERTED",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501432,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501432&ownerTypeId=6&ownerId=460878&auth=",
+      "local_path": "audio_temp/501432_CRM6a7087b5daa051.480bb5d.mp3",
+      "size_bytes": 915840
+    }
+  },
+  {
+    "activity_id": "460870",
+    "created": "2026-08-03T15:19:13+03:00",
+    "duration_sec": 130,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 33 626-63-00",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Ольга",
+      "company": "ООО «ВелесПрофиБел»",
+      "phone": "+375336266300",
+      "phone_masked": "+375***6300"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37810",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501430,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501430&ownerTypeId=6&ownerId=460870&auth=",
+      "local_path": "audio_temp/501430_CRM6a70874245bb78.84f6ed1.mp3",
+      "size_bytes": 581400
+    }
+  },
+  {
+    "activity_id": "460868",
+    "created": "2026-08-03T15:16:51+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 522-95-45",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Андрей Газстройпласт",
+      "company": "Газстройпласт, ОДО",
+      "phone": "+375445229545",
+      "phone_masked": "+375***9545"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37770",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T15:53:00+03:00"
+    },
+    "audio": {
+      "file_id": 501428,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501428&ownerTypeId=6&ownerId=460868&auth="
+    }
+  },
+  {
+    "activity_id": "460866",
+    "created": "2026-08-03T15:14:15+03:00",
+    "duration_sec": 108,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 688-25-31",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Светлана",
+      "company": "",
+      "phone": "+375296882531",
+      "phone_masked": "+375***2531"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36706",
+      "stage_name": "Некачественный",
+      "stage_id": "JUNK",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501426,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501426&ownerTypeId=6&ownerId=460866&auth=",
+      "local_path": "audio_temp/501426_CRM6a708617ec7d51.be591ed.mp3",
+      "size_bytes": 475704
+    }
+  },
+  {
+    "activity_id": "460864",
+    "created": "2026-08-03T15:11:57+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 44 525-05-40",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Игорь",
+      "company": "ООО КруВелСтрой",
+      "phone": "375445250540",
+      "phone_masked": "3754***0540"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37114",
+      "stage_name": "UC_B9P2EQ",
+      "stage_id": "UC_B9P2EQ",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:48:00+03:00"
+    },
+    "audio": {
+      "file_id": 501424,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501424&ownerTypeId=6&ownerId=460864&auth="
+    }
+  },
+  {
+    "activity_id": "460858",
+    "created": "2026-08-03T15:06:45+03:00",
+    "duration_sec": 30,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 528-42-96",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Евгений ДиЭлБетонГрупп",
+      "company": "",
+      "phone": "+375295284296",
+      "phone_masked": "+375***4296"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36040",
+      "stage_name": "14",
+      "stage_id": "14",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501418,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501418&ownerTypeId=6&ownerId=460858&auth=",
+      "local_path": "audio_temp/501418_CRM6a708455b94f15.36c8deb.mp3",
+      "size_bytes": 130824
+    }
+  },
+  {
+    "activity_id": "460860",
+    "created": "2026-08-03T15:06:25+03:00",
+    "duration_sec": 93,
+    "direction": "incoming",
+    "subject": "Входящий от +375 29 698-88-61",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей",
+      "company": "Закрытое акционерное общество БЕЛТЯЖМАШ",
+      "phone": "+375296988861",
+      "phone_masked": "+375***8861"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "17472",
+      "stage_name": "C22:PREPAYMENT_INVOIC",
+      "stage_id": "C22:PREPAYMENT_INVOIC",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501420,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501420&ownerTypeId=6&ownerId=460860&auth=",
+      "local_path": "audio_temp/501420_ATS6a708440b835f.db48899.mp3",
+      "size_bytes": 411264
+    }
+  },
+  {
+    "activity_id": "460838",
+    "created": "2026-08-03T14:39:00+03:00",
+    "duration_sec": 150,
+    "direction": "incoming",
+    "subject": "Входящий от +375 44 778-63-53",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "антон",
+      "company": "Антон открыл компанию",
+      "phone": "+375447786353",
+      "phone_masked": "+375***6353"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37886",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T15:04:00+03:00"
+    },
+    "audio": {
+      "file_id": 501408,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501408&ownerTypeId=6&ownerId=460838&auth=",
+      "local_path": "audio_temp/501408_ATS6a707dd3d8f99.b7be357.mp3",
+      "size_bytes": 656136
+    }
+  },
+  {
+    "activity_id": "460836",
+    "created": "2026-08-03T14:30:25+03:00",
+    "duration_sec": 467,
+    "direction": "incoming",
+    "subject": "Входящий от +375 44 778-63-53",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "антон",
+      "company": "Антон открыл компанию",
+      "phone": "+375447786353",
+      "phone_masked": "+375***6353"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37886",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T15:04:00+03:00"
+    },
+    "audio": {
+      "file_id": 501406,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501406&ownerTypeId=6&ownerId=460836&auth=",
+      "local_path": "audio_temp/501406_ATS6a707bd133672.7a37235.mp3",
+      "size_bytes": 2076048
+    }
+  },
+  {
+    "activity_id": "460822",
+    "created": "2026-08-03T14:25:38+03:00",
+    "duration_sec": 70,
+    "direction": "incoming",
+    "subject": "Входящий от +375 44 545-03-77",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Анастасия",
+      "company": "Стеклостройинвест, ООО",
+      "phone": "+375445450377",
+      "phone_masked": "+375***0377"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37718",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501388,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501388&ownerTypeId=6&ownerId=460822&auth=",
+      "local_path": "audio_temp/501388_ATS6a707ab18e25d.922ec43.mp3",
+      "size_bytes": 313416
+    }
+  },
+  {
+    "activity_id": "460808",
+    "created": "2026-08-03T14:20:27+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 128-05-58",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Юрий \"ЮВС ЭнергоСтрой\"",
+      "company": "ООО \"ЮВС ЭнергоСтрой\"",
+      "phone": "+375291280558",
+      "phone_masked": "+375***0558"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "34794",
+      "stage_name": "14",
+      "stage_id": "14",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501380,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501380&ownerTypeId=6&ownerId=460808&auth="
+    }
+  },
+  {
+    "activity_id": "460800",
+    "created": "2026-08-03T14:18:36+03:00",
+    "duration_sec": 36,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 174-35-77",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Владимир новый номер",
+      "company": "Софтстройресурс",
+      "phone": "+375291743577",
+      "phone_masked": "+375***3577"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36274",
+      "stage_name": "13",
+      "stage_id": "13",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501376,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501376&ownerTypeId=6&ownerId=460800&auth=",
+      "local_path": "audio_temp/501376_CRM6a70790db83463.ec7572e.mp3",
+      "size_bytes": 149544
+    }
+  },
+  {
+    "activity_id": "460812",
+    "created": "2026-08-03T14:16:58+03:00",
+    "duration_sec": 384,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 775-97-48",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Неизвестный клиент",
+      "company": "",
+      "phone": "375297759748",
+      "phone_masked": "3752***9748"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36718",
+      "stage_name": "Конвертирован",
+      "stage_id": "CONVERTED",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501384,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501384&ownerTypeId=6&ownerId=460812&auth=",
+      "local_path": "audio_temp/501384_CRM6a7078ab32d3e3.6596a84.mp3",
+      "size_bytes": 1702080
+    }
+  },
+  {
+    "activity_id": "460794",
+    "created": "2026-08-03T14:16:39+03:00",
+    "duration_sec": 73,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 647-07-58",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Денис М350",
+      "company": "М350, ООО",
+      "phone": "375296470758",
+      "phone_masked": "3752***0758"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36104",
+      "stage_name": "14",
+      "stage_id": "14",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501374,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501374&ownerTypeId=6&ownerId=460794&auth=",
+      "local_path": "audio_temp/501374_CRM6a707898757ea0.2839823.mp3",
+      "size_bytes": 315576
+    }
+  },
+  {
+    "activity_id": "460778",
+    "created": "2026-08-03T14:11:32+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 545-03-77",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Анастасия",
+      "company": "Стеклостройинвест, ООО",
+      "phone": "+375445450377",
+      "phone_masked": "+375***0377"
+    },
+    "crm": {
+      "owner_type": "contact",
+      "owner_id": "18074",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501364,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501364&ownerTypeId=6&ownerId=460778&auth="
+    }
+  },
+  {
+    "activity_id": "460774",
+    "created": "2026-08-03T14:10:12+03:00",
+    "duration_sec": 59,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 646-11-45",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Неизвестный клиент",
+      "company": "",
+      "phone": "375296461145",
+      "phone_masked": "3752***1145"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36716",
+      "stage_name": "В работе",
+      "stage_id": "IN_PROCESS",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T10:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501362,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501362&ownerTypeId=6&ownerId=460774&auth=",
+      "local_path": "audio_temp/501362_CRM6a7077148935d4.46a8c2c.mp3",
+      "size_bytes": 263088
+    }
+  },
+  {
+    "activity_id": "460770",
+    "created": "2026-08-03T14:06:58+03:00",
+    "duration_sec": 31,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 345-93-45",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Дмитрий Акроис",
+      "company": "",
+      "phone": "+375293459345",
+      "phone_masked": "+375***9345"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36690",
+      "stage_name": "UC_AV3188",
+      "stage_id": "UC_AV3188",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T09:33:00+03:00"
+    },
+    "audio": {
+      "file_id": 501358,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501358&ownerTypeId=6&ownerId=460770&auth=",
+      "local_path": "audio_temp/501358_CRM6a707652dd28b1.9006d7b.mp3",
+      "size_bytes": 138240
+    }
+  },
+  {
+    "activity_id": "460764",
+    "created": "2026-08-03T14:05:17+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 545-03-77",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Анастасия",
+      "company": "Стеклостройинвест, ООО",
+      "phone": "+375445450377",
+      "phone_masked": "+375***0377"
+    },
+    "crm": {
+      "owner_type": "contact",
+      "owner_id": "18074",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501352,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501352&ownerTypeId=6&ownerId=460764&auth="
+    }
+  },
+  {
+    "activity_id": "460766",
+    "created": "2026-08-03T14:05:14+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 623-78-24",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Александрович Смольский Сергей",
+      "company": "",
+      "phone": "+375296237824",
+      "phone_masked": "+375***7824"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36708",
+      "stage_name": "Некачественный",
+      "stage_id": "JUNK",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501354,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501354&ownerTypeId=6&ownerId=460766&auth="
+    }
+  },
+  {
+    "activity_id": "460768",
+    "created": "2026-08-03T14:01:10+03:00",
+    "duration_sec": 376,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 133-22-66",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Оксана/Владимир перила",
+      "company": "Амастрой, ООО",
+      "phone": "+375291332266",
+      "phone_masked": "+375***2266"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37808",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T15:23:00+03:00"
+    },
+    "audio": {
+      "file_id": 501356,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501356&ownerTypeId=6&ownerId=460768&auth=",
+      "local_path": "audio_temp/501356_CRM6a7074f7218574.c8ef378.mp3",
+      "size_bytes": 1657656
+    }
+  },
+  {
+    "activity_id": "460756",
+    "created": "2026-08-03T14:00:37+03:00",
+    "duration_sec": 82,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 778-63-53",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "антон",
+      "company": "Антон открыл компанию",
+      "phone": "+375447786353",
+      "phone_masked": "+375***6353"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37886",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T15:04:00+03:00"
+    },
+    "audio": {
+      "file_id": 501340,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501340&ownerTypeId=6&ownerId=460756&auth=",
+      "local_path": "audio_temp/501340_CRM6a7074d5e99c78.0ada981.mp3",
+      "size_bytes": 370440
+    }
+  },
+  {
+    "activity_id": "460744",
+    "created": "2026-08-03T13:27:25+03:00",
+    "duration_sec": 482,
+    "direction": "incoming",
+    "subject": "Входящий от +375 44 778-63-53",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "антон",
+      "company": "Антон открыл компанию",
+      "phone": "+375447786353",
+      "phone_masked": "+375***6353"
+    },
+    "crm": {
+      "owner_type": "contact",
+      "owner_id": "17124",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501316,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501316&ownerTypeId=6&ownerId=460744&auth=",
+      "local_path": "audio_temp/501316_ATS6a706d0d6cc60.35cddcd.mp3",
+      "size_bytes": 2119680
+    }
+  },
+  {
+    "activity_id": "460718",
+    "created": "2026-08-03T12:53:12+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 575-42-62",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Кирилл",
+      "company": "АльпинТрейд",
+      "phone": "+375445754262",
+      "phone_masked": "+375***4262"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37822",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:22:00+03:00"
+    },
+    "audio": {
+      "file_id": 501310,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501310&ownerTypeId=6&ownerId=460718&auth="
+    }
+  },
+  {
+    "activity_id": "460712",
+    "created": "2026-08-03T12:50:59+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 778-90-06",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Анастасия ВремяСтрой",
+      "company": "ВремяСтрой, ООО",
+      "phone": "+375447789006",
+      "phone_masked": "+375***9006"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37826",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:29:00+03:00"
+    },
+    "audio": {
+      "file_id": 501306,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501306&ownerTypeId=6&ownerId=460712&auth="
+    }
+  },
+  {
+    "activity_id": "460710",
+    "created": "2026-08-03T12:49:12+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 335-00-28",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Александр Викторович",
+      "company": "",
+      "phone": "+375293350028",
+      "phone_masked": "+375***0028"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37828",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:39:00+03:00"
+    },
+    "audio": {
+      "file_id": 501304,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501304&ownerTypeId=6&ownerId=460710&auth="
+    }
+  },
+  {
+    "activity_id": "460704",
+    "created": "2026-08-03T12:45:06+03:00",
+    "duration_sec": 28,
+    "direction": "incoming",
+    "subject": "Входящий от +375 25 936-08-41",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Стройкрат",
+      "company": "Стройкрат, ООО",
+      "phone": "+375259360841",
+      "phone_masked": "+375***0841"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37634",
+      "stage_name": "C26:NEW",
+      "stage_id": "C26:NEW",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501302,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501302&ownerTypeId=6&ownerId=460704&auth=",
+      "local_path": "audio_temp/501302_ATS6a706322241ec.4859afb.mp3",
+      "size_bytes": 123120
+    }
+  },
+  {
+    "activity_id": "460714",
+    "created": "2026-08-03T12:43:50+03:00",
+    "duration_sec": 484,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 573-38-64",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Алена Михайловна",
+      "company": "Поставы ФорПостСтрой, ООО",
+      "phone": "+375295733864",
+      "phone_masked": "+375***3864"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37118",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T11:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501308,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501308&ownerTypeId=6&ownerId=460714&auth=",
+      "local_path": "audio_temp/501308_CRM6a7062d79e7323.b883831.mp3",
+      "size_bytes": 2137536
+    }
+  },
+  {
+    "activity_id": "460702",
+    "created": "2026-08-03T12:43:06+03:00",
+    "duration_sec": 32,
+    "direction": "incoming",
+    "subject": "Входящий от +375 29 698-88-61",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей",
+      "company": "Закрытое акционерное общество БЕЛТЯЖМАШ",
+      "phone": "+375296988861",
+      "phone_masked": "+375***8861"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "17472",
+      "stage_name": "C22:PREPAYMENT_INVOIC",
+      "stage_id": "C22:PREPAYMENT_INVOIC",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501300,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501300&ownerTypeId=6&ownerId=460702&auth=",
+      "local_path": "audio_temp/501300_ATS6a7062aa86e80.5434398.mp3",
+      "size_bytes": 143856
+    }
+  },
+  {
+    "activity_id": "460698",
+    "created": "2026-08-03T12:38:45+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 610-08-60",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "СЕРГЕЙ",
+      "company": "бэлкос М РАСШИРЕНИЕ",
+      "phone": "+375296100860",
+      "phone_masked": "+375***0860"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "32126",
+      "stage_name": "13",
+      "stage_id": "13",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501298,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501298&ownerTypeId=6&ownerId=460698&auth="
+    }
+  },
+  {
+    "activity_id": "460696",
+    "created": "2026-08-03T12:37:25+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 33 601-56-28",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Дмитрий",
+      "company": "",
+      "phone": "375336015628",
+      "phone_masked": "3753***5628"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "35134",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:44:00+03:00"
+    },
+    "audio": {
+      "file_id": 501296,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501296&ownerTypeId=6&ownerId=460696&auth="
+    }
+  },
+  {
+    "activity_id": "460690",
+    "created": "2026-08-03T12:35:36+03:00",
+    "duration_sec": 111,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 620-49-14",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Алексей",
+      "company": "Драйв Климат, ООО",
+      "phone": "+375296204914",
+      "phone_masked": "+375***4914"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "32664",
+      "stage_name": "12",
+      "stage_id": "12",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T13:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501294,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501294&ownerTypeId=6&ownerId=460690&auth=",
+      "local_path": "audio_temp/501294_CRM6a7060e8eda481.66d4979.mp3",
+      "size_bytes": 497016
+    }
+  },
+  {
+    "activity_id": "460688",
+    "created": "2026-08-03T12:34:52+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 538-48-68",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Лика",
+      "company": "ПрофСетьИнжиниринг, ООО",
+      "phone": "+375295384868",
+      "phone_masked": "+375***4868"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36420",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501292,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501292&ownerTypeId=6&ownerId=460688&auth="
+    }
+  },
+  {
+    "activity_id": "460684",
+    "created": "2026-08-03T12:32:23+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 567-66-33",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Владимир",
+      "company": "ООО \"ОББАЛТ РЕГИОН\"",
+      "phone": "375295676633",
+      "phone_masked": "3752***6633"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36022",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:30:00+03:00"
+    },
+    "audio": {
+      "file_id": 501288,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501288&ownerTypeId=6&ownerId=460684&auth="
+    }
+  },
+  {
+    "activity_id": "460680",
+    "created": "2026-08-03T12:22:45+03:00",
+    "duration_sec": 100,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 140-87-40",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Иван",
+      "company": "ООО \"ГомельОснова\"",
+      "phone": "375291408740",
+      "phone_masked": "3752***8740"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37050",
+      "stage_name": "12",
+      "stage_id": "12",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501286,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501286&ownerTypeId=6&ownerId=460680&auth=",
+      "local_path": "audio_temp/501286_CRM6a705de6aa8c22.946a70c.mp3",
+      "size_bytes": 432864
+    }
+  },
+  {
+    "activity_id": "460686",
+    "created": "2026-08-03T12:21:09+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 545-03-77",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Анастасия",
+      "company": "Стеклостройинвест, ООО",
+      "phone": "+375445450377",
+      "phone_masked": "+375***0377"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37718",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501290,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501290&ownerTypeId=6&ownerId=460686&auth="
+    }
+  },
+  {
+    "activity_id": "460678",
+    "created": "2026-08-03T12:20:27+03:00",
+    "duration_sec": 29,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 751-77-73",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Гузенков Иван Иванович, ИП",
+      "company": "Гузенков Иван Иванович, ИП",
+      "phone": "+375447517773",
+      "phone_masked": "+375***7773"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36948",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T11:21:00+03:00"
+    },
+    "audio": {
+      "file_id": 501276,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501276&ownerTypeId=6&ownerId=460678&auth=",
+      "local_path": "audio_temp/501276_CRM6a705d5bb8c303.43201c4.mp3",
+      "size_bytes": 122616
+    }
+  },
+  {
+    "activity_id": "460674",
+    "created": "2026-08-03T12:16:56+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 583-48-14",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Никита Парфенюк",
+      "company": "",
+      "phone": "+375295834814",
+      "phone_masked": "+375***4814"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36698",
+      "stage_name": "Конвертирован",
+      "stage_id": "CONVERTED",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501272,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501272&ownerTypeId=6&ownerId=460674&auth="
+    }
+  },
+  {
+    "activity_id": "460672",
+    "created": "2026-08-03T12:12:40+03:00",
+    "duration_sec": 134,
+    "direction": "incoming",
+    "subject": "Входящий от +375 29 345-93-45",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Дмитрий Акроис",
+      "company": "",
+      "phone": "+375293459345",
+      "phone_masked": "+375***9345"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36690",
+      "stage_name": "UC_AV3188",
+      "stage_id": "UC_AV3188",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T09:33:00+03:00"
+    },
+    "audio": {
+      "file_id": 501270,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501270&ownerTypeId=6&ownerId=460672&auth=",
+      "local_path": "audio_temp/501270_ATS6a705b8831984.33854ca.mp3",
+      "size_bytes": 596736
+    }
+  },
+  {
+    "activity_id": "460664",
+    "created": "2026-08-03T12:10:52+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 345-93-45",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Дмитрий Акроис",
+      "company": "",
+      "phone": "+375293459345",
+      "phone_masked": "+375***9345"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36690",
+      "stage_name": "UC_AV3188",
+      "stage_id": "UC_AV3188",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T09:33:00+03:00"
+    },
+    "audio": {
+      "file_id": 501264,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501264&ownerTypeId=6&ownerId=460664&auth="
+    }
+  },
+  {
+    "activity_id": "460662",
+    "created": "2026-08-03T12:09:18+03:00",
+    "duration_sec": 91,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 506-54-63",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Анна Электротехмонтаж",
+      "company": "Электротехнические решения, ООО",
+      "phone": "+375295065463",
+      "phone_masked": "+375***5463"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36422",
+      "stage_name": "Сделка провалена",
+      "stage_id": "LOSE",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501262,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501262&ownerTypeId=6&ownerId=460662&auth=",
+      "local_path": "audio_temp/501262_CRM6a705abeea6aa7.5b19376.mp3",
+      "size_bytes": 393984
+    }
+  },
+  {
+    "activity_id": "460666",
+    "created": "2026-08-03T12:08:18+03:00",
+    "duration_sec": 160,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 797-79-87",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей Нордмис",
+      "company": "НордМис, ООО",
+      "phone": "+375447977987",
+      "phone_masked": "+375***7987"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36668",
+      "stage_name": "10",
+      "stage_id": "10",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501266,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501266&ownerTypeId=6&ownerId=460666&auth=",
+      "local_path": "audio_temp/501266_CRM6a705a83a610d9.9433b8d.mp3",
+      "size_bytes": 711504
+    }
+  },
+  {
+    "activity_id": "460658",
+    "created": "2026-08-03T12:02:25+03:00",
+    "duration_sec": 77,
+    "direction": "incoming",
+    "subject": "Входящий от +375 33 334-05-89",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Виталий Михайлович Кличевская ПМК № 258",
+      "company": "Кличевская ПМК № 258",
+      "phone": "+375333340589",
+      "phone_masked": "+375***0589"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37880",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501258,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501258&ownerTypeId=6&ownerId=460658&auth=",
+      "local_path": "audio_temp/501258_ATS6a705921a343a.fa5724c.mp3",
+      "size_bytes": 339696
+    }
+  },
+  {
+    "activity_id": "460646",
+    "created": "2026-08-03T12:01:05+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 33 334-05-89",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Виталий Михайлович Кличевская ПМК № 258",
+      "company": "Кличевская ПМК № 258",
+      "phone": "+375333340589",
+      "phone_masked": "+375***0589"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37880",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501254,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501254&ownerTypeId=6&ownerId=460646&auth="
+    }
+  },
+  {
+    "activity_id": "460638",
+    "created": "2026-08-03T11:51:37+03:00",
+    "duration_sec": 101,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 349-34-63",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Илья",
+      "company": "Апекс ремонт, ООО",
+      "phone": "+375293493463",
+      "phone_masked": "+375***3463"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37882",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501250,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501250&ownerTypeId=6&ownerId=460638&auth=",
+      "local_path": "audio_temp/501250_CRM6a70569ab0b049.b0f39b9.mp3",
+      "size_bytes": 446112
+    }
+  },
+  {
+    "activity_id": "460634",
+    "created": "2026-08-03T11:51:02+03:00",
+    "duration_sec": 32,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 118-33-10",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Дмитрий Промстроймет",
+      "company": "ПромСтройМет, ООО",
+      "phone": "+375291183310",
+      "phone_masked": "+375***3310"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37778",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501246,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501246&ownerTypeId=6&ownerId=460634&auth=",
+      "local_path": "audio_temp/501246_CRM6a70567785eed9.f717218.mp3",
+      "size_bytes": 138672
+    }
+  },
+  {
+    "activity_id": "460630",
+    "created": "2026-08-03T11:46:37+03:00",
+    "duration_sec": 55,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 500-40-75",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "виталий",
+      "company": "",
+      "phone": "375295004075",
+      "phone_masked": "3752***4075"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37840",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501238,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501238&ownerTypeId=6&ownerId=460630&auth=",
+      "local_path": "audio_temp/501238_CRM6a70556e58bbc4.0b130d2.mp3",
+      "size_bytes": 249192
+    }
+  },
+  {
+    "activity_id": "460626",
+    "created": "2026-08-03T11:44:46+03:00",
+    "duration_sec": 94,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 456-83-66",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "директор видиан андрей",
+      "company": "ВиДиАнПроект",
+      "phone": "+375444568366",
+      "phone_masked": "+375***8366"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37840",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501234,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501234&ownerTypeId=6&ownerId=460626&auth=",
+      "local_path": "audio_temp/501234_CRM6a7054ff6a9594.561e087.mp3",
+      "size_bytes": 413856
+    }
+  },
+  {
+    "activity_id": "460628",
+    "created": "2026-08-03T11:39:49+03:00",
+    "duration_sec": 411,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 692-60-50",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Марина Химспецмонтаж",
+      "company": "ХимСпецМонтаж, ООО",
+      "phone": "+375296926050",
+      "phone_masked": "+375***6050"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37132",
+      "stage_name": "10",
+      "stage_id": "10",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501236,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501236&ownerTypeId=6&ownerId=460628&auth=",
+      "local_path": "audio_temp/501236_CRM6a7053d77c6eb6.9927d2d.mp3",
+      "size_bytes": 1797552
+    }
+  },
+  {
+    "activity_id": "460624",
+    "created": "2026-08-03T11:39:40+03:00",
+    "duration_sec": 84,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 118-33-10",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Дмитрий Промстроймет",
+      "company": "ПромСтройМет, ООО",
+      "phone": "+375291183310",
+      "phone_masked": "+375***3310"
+    },
+    "crm": {
+      "owner_type": "contact",
+      "owner_id": "2720",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501226,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501226&ownerTypeId=6&ownerId=460624&auth=",
+      "local_path": "audio_temp/501226_CRM6a7053cdb468c8.d92a84b.mp3",
+      "size_bytes": 359280
+    }
+  },
+  {
+    "activity_id": "460620",
+    "created": "2026-08-03T11:37:46+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 806-15-72",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Артем  КомфортСтройКомпани",
+      "company": "КомфортСтройКомпани, ООО",
+      "phone": "+375298061572",
+      "phone_masked": "+375***1572"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "34056",
+      "stage_name": "13",
+      "stage_id": "13",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T12:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501224,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501224&ownerTypeId=6&ownerId=460620&auth="
+    }
+  },
+  {
+    "activity_id": "460610",
+    "created": "2026-08-03T11:31:42+03:00",
+    "duration_sec": 24,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 379-20-00",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Дмитрий ас билдинг ЛПР",
+      "company": "АС-БилдингГрупп, ООО",
+      "phone": "+375293792000",
+      "phone_masked": "+375***2000"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36678",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T12:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501218,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501218&ownerTypeId=6&ownerId=460610&auth=",
+      "local_path": "audio_temp/501218_CRM6a7051ef08cc27.f257c00.mp3",
+      "size_bytes": 101952
+    }
+  },
+  {
+    "activity_id": "460604",
+    "created": "2026-08-03T11:25:40+03:00",
+    "duration_sec": 124,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 692-60-50",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Марина Химспецмонтаж",
+      "company": "ХимСпецМонтаж, ООО",
+      "phone": "+375296926050",
+      "phone_masked": "+375***6050"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37132",
+      "stage_name": "10",
+      "stage_id": "10",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501212,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501212&ownerTypeId=6&ownerId=460604&auth=",
+      "local_path": "audio_temp/501212_CRM6a70508517f2a5.31ecb70.mp3",
+      "size_bytes": 551016
+    }
+  },
+  {
+    "activity_id": "460608",
+    "created": "2026-08-03T11:22:38+03:00",
+    "duration_sec": 386,
+    "direction": "incoming",
+    "subject": "Входящий от +375 33 688-88-57",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Антон",
+      "company": "ООО \"РАНАДАР групп\"",
+      "phone": "+375336888857",
+      "phone_masked": "+375***8857"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36990",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501216,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501216&ownerTypeId=6&ownerId=460608&auth=",
+      "local_path": "audio_temp/501216_ATS6a704fce0f160.2398a6f.mp3",
+      "size_bytes": 1695024
+    }
+  },
+  {
+    "activity_id": "460600",
+    "created": "2026-08-03T11:21:16+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 690-35-97",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Марина",
+      "company": "энерготемп",
+      "phone": "+375296903597",
+      "phone_masked": "+375***3597"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36946",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T12:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501210,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501210&ownerTypeId=6&ownerId=460600&auth="
+    }
+  },
+  {
+    "activity_id": "460598",
+    "created": "2026-08-03T11:20:33+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 528-42-96",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Евгений ДиЭлБетонГрупп",
+      "company": "",
+      "phone": "+375295284296",
+      "phone_masked": "+375***4296"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36040",
+      "stage_name": "14",
+      "stage_id": "14",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501208,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501208&ownerTypeId=6&ownerId=460598&auth="
+    }
+  },
+  {
+    "activity_id": "460594",
+    "created": "2026-08-03T11:18:33+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 698-88-61",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей",
+      "company": "Закрытое акционерное общество БЕЛТЯЖМАШ",
+      "phone": "+375296988861",
+      "phone_masked": "+375***8861"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37532",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T12:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501206,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501206&ownerTypeId=6&ownerId=460594&auth="
+    }
+  },
+  {
+    "activity_id": "460592",
+    "created": "2026-08-03T11:18:25+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 698-88-61",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей",
+      "company": "Закрытое акционерное общество БЕЛТЯЖМАШ",
+      "phone": "+375296988861",
+      "phone_masked": "+375***8861"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37532",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T12:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501204,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501204&ownerTypeId=6&ownerId=460592&auth="
+    }
+  },
+  {
+    "activity_id": "460590",
+    "created": "2026-08-03T11:16:29+03:00",
+    "duration_sec": 45,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 346-99-05",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей Едарс",
+      "company": "Едарс",
+      "phone": "+375293469905",
+      "phone_masked": "+375***9905"
+    },
+    "crm": {
+      "owner_type": "contact",
+      "owner_id": "10848",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501202,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501202&ownerTypeId=6&ownerId=460590&auth=",
+      "local_path": "audio_temp/501202_CRM6a704e5e9acf41.bdeea17.mp3",
+      "size_bytes": 193320
+    }
+  },
+  {
+    "activity_id": "460584",
+    "created": "2026-08-03T11:16:04+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 33 688-88-57",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Антон",
+      "company": "ООО \"РАНАДАР групп\"",
+      "phone": "375336888857",
+      "phone_masked": "3753***8857"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36990",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501192,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501192&ownerTypeId=6&ownerId=460584&auth="
+    }
+  },
+  {
+    "activity_id": "460580",
+    "created": "2026-08-03T11:15:16+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 346-99-05",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей Едарс",
+      "company": "Едарс",
+      "phone": "+375293469905",
+      "phone_masked": "+375***9905"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36364",
+      "stage_name": "12",
+      "stage_id": "12",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T11:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501190,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501190&ownerTypeId=6&ownerId=460580&auth="
+    }
+  },
+  {
+    "activity_id": "460578",
+    "created": "2026-08-03T11:13:25+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 396-88-88",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Дмитрий Владимирович",
+      "company": "Автотанкер УП",
+      "phone": "+375293968888",
+      "phone_masked": "+375***8888"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37564",
+      "stage_name": "UC_1HFCFO",
+      "stage_id": "UC_1HFCFO",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T13:41:00+03:00"
+    },
+    "audio": {
+      "file_id": 501188,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501188&ownerTypeId=6&ownerId=460578&auth="
+    }
+  },
+  {
+    "activity_id": "460576",
+    "created": "2026-08-03T11:10:51+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 641-11-50",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Денис",
+      "company": "Промэлитмонтаж, ООО",
+      "phone": "+375296411150",
+      "phone_masked": "+375***1150"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "34024",
+      "stage_name": "12",
+      "stage_id": "12",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-05T10:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501186,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501186&ownerTypeId=6&ownerId=460576&auth="
+    }
+  },
+  {
+    "activity_id": "460568",
+    "created": "2026-08-03T11:05:01+03:00",
+    "duration_sec": 109,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 292-92-99",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Андрей С. Егоров",
+      "company": "ОптЭнергоПром, ООО",
+      "phone": "+375292929299",
+      "phone_masked": "+375***9299"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37706",
+      "stage_name": "12",
+      "stage_id": "12",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501182,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501182&ownerTypeId=6&ownerId=460568&auth=",
+      "local_path": "audio_temp/501182_CRM6a704bae37b146.17a3473.mp3",
+      "size_bytes": 479520
+    }
+  },
+  {
+    "activity_id": "460554",
+    "created": "2026-08-03T10:52:22+03:00",
+    "duration_sec": 288,
+    "direction": "incoming",
+    "subject": "Входящий от +375 29 698-88-61",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Сергей",
+      "company": "Закрытое акционерное общество БЕЛТЯЖМАШ",
+      "phone": "+375296988861",
+      "phone_masked": "+375***8861"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "17472",
+      "stage_name": "C22:PREPAYMENT_INVOIC",
+      "stage_id": "C22:PREPAYMENT_INVOIC",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501174,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501174&ownerTypeId=6&ownerId=460554&auth=",
+      "local_path": "audio_temp/501174_ATS6a7048b617880.e23264e.mp3",
+      "size_bytes": 1264608
+    }
+  },
+  {
+    "activity_id": "460552",
+    "created": "2026-08-03T10:51:38+03:00",
+    "duration_sec": 309,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 33 399-39-78",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Ольга",
+      "company": "Анлиар, ООО",
+      "phone": "+375333993978",
+      "phone_masked": "+375***3978"
+    },
+    "crm": {
+      "owner_type": "contact",
+      "owner_id": "12796",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501172,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501172&ownerTypeId=6&ownerId=460552&auth=",
+      "local_path": "audio_temp/501172_CRM6a70488bca5561.078bccb.mp3",
+      "size_bytes": 1344384
+    }
+  },
+  {
+    "activity_id": "460558",
+    "created": "2026-08-03T10:45:04+03:00",
+    "duration_sec": 874,
+    "direction": "incoming",
+    "subject": "Входящий от +375 33 688-88-57",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Антон",
+      "company": "ООО \"РАНАДАР групп\"",
+      "phone": "+375336888857",
+      "phone_masked": "+375***8857"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36990",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501176,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501176&ownerTypeId=6&ownerId=460558&auth=",
+      "local_path": "audio_temp/501176_ATS6a7046ffb41c4.dd3edc8.mp3",
+      "size_bytes": 3840120
+    }
+  },
+  {
+    "activity_id": "460536",
+    "created": "2026-08-03T10:37:39+03:00",
+    "duration_sec": 154,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 611-25-97",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Неизвестный клиент",
+      "company": "",
+      "phone": "+375296112597",
+      "phone_masked": "+375***2597"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36734",
+      "stage_name": "Конвертирован",
+      "stage_id": "CONVERTED",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501162,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501162&ownerTypeId=6&ownerId=460536&auth=",
+      "local_path": "audio_temp/501162_CRM6a70454420d0e3.703c801.mp3",
+      "size_bytes": 692136
+    }
+  },
+  {
+    "activity_id": "460534",
+    "created": "2026-08-03T10:36:16+03:00",
+    "duration_sec": 199,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 776-92-04",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Андрей",
+      "company": "",
+      "phone": "375297769204",
+      "phone_masked": "3752***9204"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "35116",
+      "stage_name": "12",
+      "stage_id": "12",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501160,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501160&ownerTypeId=6&ownerId=460534&auth=",
+      "local_path": "audio_temp/501160_CRM6a7044f1c432f6.12d75cd.mp3",
+      "size_bytes": 854568
+    }
+  },
+  {
+    "activity_id": "460532",
+    "created": "2026-08-03T10:32:03+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 33 688-88-57",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Антон",
+      "company": "ООО \"РАНАДАР групп\"",
+      "phone": "375336888857",
+      "phone_masked": "3753***8857"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36990",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501156,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501156&ownerTypeId=6&ownerId=460532&auth="
+    }
+  },
+  {
+    "activity_id": "460530",
+    "created": "2026-08-03T10:30:49+03:00",
+    "duration_sec": 79,
+    "direction": "incoming",
+    "subject": "Входящий от +375 33 399-39-78",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Ольга",
+      "company": "Анлиар, ООО",
+      "phone": "+375333993978",
+      "phone_masked": "+375***3978"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "34356",
+      "stage_name": "C20:NEW",
+      "stage_id": "C20:NEW",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501154,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501154&ownerTypeId=6&ownerId=460530&auth=",
+      "local_path": "audio_temp/501154_ATS6a7043a8e2612.bbacd0b.mp3",
+      "size_bytes": 348408
+    }
+  },
+  {
+    "activity_id": "460524",
+    "created": "2026-08-03T10:30:14+03:00",
+    "duration_sec": null,
+    "direction": "incoming",
+    "subject": "Входящий от +375 33 688-88-57",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Антон",
+      "company": "ООО \"РАНАДАР групп\"",
+      "phone": "+375336888857",
+      "phone_masked": "+375***8857"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36990",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501148,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501148&ownerTypeId=6&ownerId=460524&auth="
+    }
+  },
+  {
+    "activity_id": "460526",
+    "created": "2026-08-03T10:29:08+03:00",
+    "duration_sec": 79,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 615-87-45",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "ООО ЛВА СтройПроект",
+      "company": "ООО ЛВА СтройПроект",
+      "phone": "375296158745",
+      "phone_masked": "3752***8745"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "35976",
+      "stage_name": "Сделка провалена",
+      "stage_id": "LOSE",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501150,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501150&ownerTypeId=6&ownerId=460526&auth=",
+      "local_path": "audio_temp/501150_CRM6a7043469991e5.3d6ce21.mp3",
+      "size_bytes": 349344
+    }
+  },
+  {
+    "activity_id": "460528",
+    "created": "2026-08-03T10:26:06+03:00",
+    "duration_sec": 275,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 611-25-97",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Неизвестный клиент",
+      "company": "",
+      "phone": "+375296112597",
+      "phone_masked": "+375***2597"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36734",
+      "stage_name": "Конвертирован",
+      "stage_id": "CONVERTED",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501152,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501152&ownerTypeId=6&ownerId=460528&auth=",
+      "local_path": "audio_temp/501152_CRM6a70428f8d9a82.9d70190.mp3",
+      "size_bytes": 1228896
+    }
+  },
+  {
+    "activity_id": "460516",
+    "created": "2026-08-03T10:23:41+03:00",
+    "duration_sec": 18,
+    "direction": "incoming",
+    "subject": "Входящий от +375 29 611-25-97",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Неизвестный клиент",
+      "company": "",
+      "phone": "+375296112597",
+      "phone_masked": "+375***2597"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36734",
+      "stage_name": "Конвертирован",
+      "stage_id": "CONVERTED",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501146,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501146&ownerTypeId=6&ownerId=460516&auth=",
+      "local_path": "audio_temp/501146_ATS6a7041fd2440e.a8927c8.mp3",
+      "size_bytes": 307656
+    }
+  },
+  {
+    "activity_id": "460498",
+    "created": "2026-08-03T10:14:59+03:00",
+    "duration_sec": 123,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 699-46-40",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Юрий",
+      "company": "Инжиниринговая компания Н-Строй, ООО",
+      "phone": "+375296994640",
+      "phone_masked": "+375***4640"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37600",
+      "stage_name": "Подготовка КП",
+      "stage_id": "PREPARATION",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501140,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501140&ownerTypeId=6&ownerId=460498&auth=",
+      "local_path": "audio_temp/501140_CRM6a703ff46bfb30.44e73eb.mp3",
+      "size_bytes": 546048
+    }
+  },
+  {
+    "activity_id": "460502",
+    "created": "2026-08-03T10:14:48+03:00",
+    "duration_sec": 259,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 165-22-82",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Иван",
+      "company": "",
+      "phone": "+375291652282",
+      "phone_masked": "+375***2282"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37874",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:41:00+03:00"
+    },
+    "audio": {
+      "file_id": 501142,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501142&ownerTypeId=6&ownerId=460502&auth=",
+      "local_path": "audio_temp/501142_CRM6a703fe99b2781.6d099d2.mp3",
+      "size_bytes": 1145448
+    }
+  },
+  {
+    "activity_id": "460488",
+    "created": "2026-08-03T10:11:24+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 165-22-82",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Иван",
+      "company": "",
+      "phone": "+375291652282",
+      "phone_masked": "+375***2282"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37874",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T16:41:00+03:00"
+    },
+    "audio": {
+      "file_id": 501116,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501116&ownerTypeId=6&ownerId=460488&auth="
+    }
+  },
+  {
+    "activity_id": "460482",
+    "created": "2026-08-03T10:06:47+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 704-89-73",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Юрий Лисин",
+      "company": "Вишлен, ОДО",
+      "phone": "+375297048973",
+      "phone_masked": "+375***8973"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "33288",
+      "stage_name": "12",
+      "stage_id": "12",
+      "has_next_activity": true,
+      "next_activity_date": "2026-08-04T10:00:00+03:00"
+    },
+    "audio": {
+      "file_id": 501094,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501094&ownerTypeId=6&ownerId=460482&auth="
+    }
+  },
+  {
+    "activity_id": "460472",
+    "created": "2026-08-03T09:56:56+03:00",
+    "duration_sec": 64,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 44 781-12-49",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Светлана",
+      "company": "ВедизЭлектроСтрой",
+      "phone": "+375447811249",
+      "phone_masked": "+375***1249"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36692",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501082,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501082&ownerTypeId=6&ownerId=460472&auth=",
+      "local_path": "audio_temp/501082_CRM6a703bb95d5dc5.e4f4785.mp3",
+      "size_bytes": 279504
+    }
+  },
+  {
+    "activity_id": "460470",
+    "created": "2026-08-03T09:53:25+03:00",
+    "duration_sec": 16,
+    "direction": "incoming",
+    "subject": "Входящий от +375 25 904-33-69",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Роман",
+      "company": "Этернастройлайн",
+      "phone": "+375259043369",
+      "phone_masked": "+375***3369"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37710",
+      "stage_name": "Сделка успешна",
+      "stage_id": "WON",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501080,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501080&ownerTypeId=6&ownerId=460470&auth=",
+      "local_path": "audio_temp/501080_ATS6a703ae515907.ffb3cb5.mp3",
+      "size_bytes": 68256
+    }
+  },
+  {
+    "activity_id": "460466",
+    "created": "2026-08-03T09:51:32+03:00",
+    "duration_sec": 28,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 390-19-04",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Игорь Лидский ПМУ",
+      "company": "Лидский ПМУ ООО",
+      "phone": "+375293901904",
+      "phone_masked": "+375***1904"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37802",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501078,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501078&ownerTypeId=6&ownerId=460466&auth=",
+      "local_path": "audio_temp/501078_CRM6a703a75b8da36.ec4f1be.mp3",
+      "size_bytes": 119664
+    }
+  },
+  {
+    "activity_id": "460464",
+    "created": "2026-08-03T09:45:09+03:00",
+    "duration_sec": 117,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 29 356-35-93",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Павел",
+      "company": "ООО Строительное управление № 356",
+      "phone": "375293563593",
+      "phone_masked": "3752***3593"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37818",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501076,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501076&ownerTypeId=6&ownerId=460464&auth=",
+      "local_path": "audio_temp/501076_CRM6a7038f697ab29.dfbb190.mp3",
+      "size_bytes": 521784
+    }
+  },
+  {
+    "activity_id": "460462",
+    "created": "2026-08-03T09:44:54+03:00",
+    "duration_sec": null,
+    "direction": "outgoing",
+    "subject": "Исходящий на 375 33 688-88-57",
+    "manager": {
+      "id": 2196,
+      "name": "Анна Абушкевич",
+      "email": "Ann.abushkevich111@gmail.com",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2196,
+      "created_by_id": 0,
+      "responsible_id": 2196,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Антон",
+      "company": "ООО \"РАНАДАР групп\"",
+      "phone": "375336888857",
+      "phone_masked": "3753***8857"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "36990",
+      "stage_name": "UC_NSAZEE",
+      "stage_id": "UC_NSAZEE",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501074,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501074&ownerTypeId=6&ownerId=460462&auth="
+    }
+  },
+  {
+    "activity_id": "460460",
+    "created": "2026-08-03T09:42:17+03:00",
+    "duration_sec": 60,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 25 904-33-69",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Роман",
+      "company": "Этернастройлайн",
+      "phone": "+375259043369",
+      "phone_masked": "+375***3369"
+    },
+    "crm": {
+      "owner_type": "deal",
+      "owner_id": "37710",
+      "stage_name": "Сделка успешна",
+      "stage_id": "WON",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501066,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501066&ownerTypeId=6&ownerId=460460&auth=",
+      "local_path": "audio_temp/501066_CRM6a70384a7198a1.a4fcd55.mp3",
+      "size_bytes": 255672
+    }
+  },
+  {
+    "activity_id": "460454",
+    "created": "2026-08-03T09:31:51+03:00",
+    "duration_sec": 38,
+    "direction": "incoming",
+    "subject": "Входящий от +375 29 500-40-75",
+    "manager": {
+      "id": 1286,
+      "name": "Роман Авсеенко",
+      "email": "roma.avseenko@bk.ru",
+      "avatar_file": "1286.png"
+    },
+    "manager_debug": {
+      "author_id": 1286,
+      "created_by_id": 0,
+      "responsible_id": 1286,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "виталий",
+      "company": "",
+      "phone": "+375295004075",
+      "phone_masked": "+375***4075"
+    },
+    "crm": {
+      "owner_type": "contact",
+      "owner_id": "17964",
+      "stage_name": "",
+      "stage_id": "",
+      "has_next_activity": false,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501062,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501062&ownerTypeId=6&ownerId=460454&auth=",
+      "local_path": "audio_temp/501062_ATS6a7035d71c540.9ad7515.mp3",
+      "size_bytes": 166680
+    }
+  },
+  {
+    "activity_id": "460452",
+    "created": "2026-08-03T09:29:16+03:00",
+    "duration_sec": 47,
+    "direction": "outgoing",
+    "subject": "Исходящий на +375 29 620-61-36",
+    "manager": {
+      "id": 2100,
+      "name": "Ирина Богомольцева",
+      "email": "",
+      "avatar_file": ""
+    },
+    "manager_debug": {
+      "author_id": 2100,
+      "created_by_id": 0,
+      "responsible_id": 2100,
+      "used_field": "author"
+    },
+    "client": {
+      "name": "Неизвестный клиент",
+      "company": "",
+      "phone": "+375296206136",
+      "phone_masked": "+375***6136"
+    },
+    "crm": {
+      "owner_type": "lead",
+      "owner_id": "36728",
+      "stage_name": "Конвертирован",
+      "stage_id": "CONVERTED",
+      "has_next_activity": true,
+      "next_activity_date": ""
+    },
+    "audio": {
+      "file_id": 501060,
+      "url": "https://mavisgroup.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=501060&ownerTypeId=6&ownerId=460452&auth=",
+      "local_path": "audio_temp/501060_CRM6a70353d50b7f6.6b2ce02.mp3",
+      "size_bytes": 204696
+    }
+  }
+]
