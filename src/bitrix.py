@@ -350,14 +350,31 @@ def _mask_phone(phone: str) -> str:
     return phone[:4] + "***" + phone[-4:]
 
 
+def fetch_status_labels(client: "Bitrix24Client", entity_ids: List[str]) -> Dict[str, str]:
+    """Resolve Bitrix status ids to the labels configured in this portal."""
+    labels: Dict[str, str] = {}
+    for entity_id in dict.fromkeys(entity_ids):
+        try:
+            rows = client.call_all("crm.status.list", {"filter": {"ENTITY_ID": entity_id}})
+        except Exception as exc:
+            logger.warning("Не удалось получить названия стадий %s: %s", entity_id, type(exc).__name__)
+            continue
+        for row in rows:
+            status_id = str(row.get("STATUS_ID") or "")
+            name = str(row.get("NAME") or "").strip()
+            if status_id and name:
+                labels[status_id] = name
+    return labels
+
+
 def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
     """Обогащает звонки данными о статусе сделки/лида и наличии следующего дела."""
     # Группируем по типу CRM объекта
     deal_ids = list(set(c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "deal" and c["crm"]["owner_id"]))
     lead_ids = list(set(c["crm"]["owner_id"] for c in calls if c["crm"]["owner_type"] == "lead" and c["crm"]["owner_id"]))
 
-    deal_stages = {}
-    lead_statuses = {}
+    deal_stages: Dict[str, Dict[str, str]] = {}
+    lead_statuses: Dict[str, Dict[str, str]] = {}
     next_activities = {}  # ключ: f"{owner_type}:{owner_id}"
 
     deal_stage_labels = {
@@ -379,10 +396,7 @@ def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
             })
             for d in (resp.get("result") or []):
                 stage = d.get("STAGE_ID", "")
-                deal_stages[str(d["ID"])] = {
-                    "stage_id": stage,
-                    "stage_name": deal_stage_labels.get(stage, stage),
-                }
+                deal_stages[str(d["ID"])] = {"stage_id": stage}
         except Exception as e:
             logger.warning(f"Не удалось получить статусы сделок: {e}")
 
@@ -395,12 +409,23 @@ def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
             })
             for ld in (resp.get("result") or []):
                 status = ld.get("STATUS_ID", "")
-                lead_statuses[str(ld["ID"])] = {
-                    "stage_id": status,
-                    "stage_name": lead_status_labels.get(status, status),
-                }
+                lead_statuses[str(ld["ID"])] = {"stage_id": status}
         except Exception as e:
             logger.warning(f"Не удалось получить статусы лидов: {e}")
+
+    deal_entities = ["DEAL_STAGE"]
+    for info in deal_stages.values():
+        match = re.match(r"^C(\d+):", info.get("stage_id", ""))
+        if match:
+            deal_entities.append(f"DEAL_STAGE_{match.group(1)}")
+    portal_deal_labels = fetch_status_labels(client, deal_entities)
+    portal_lead_labels = fetch_status_labels(client, ["STATUS"])
+    for info in deal_stages.values():
+        stage = info.get("stage_id", "")
+        info["stage_name"] = portal_deal_labels.get(stage) or deal_stage_labels.get(stage, stage)
+    for info in lead_statuses.values():
+        status = info.get("stage_id", "")
+        info["stage_name"] = portal_lead_labels.get(status) or lead_status_labels.get(status, status)
 
     # Проверяем наличие открытых дел (следующий контакт) — для сделок
     if deal_ids:

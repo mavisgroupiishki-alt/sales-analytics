@@ -19,6 +19,41 @@ from flask import Flask, request, redirect, url_for, session, abort, Response, j
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
+_SALES_SNAPSHOT_CACHE = {"at": None, "value": None}
+
+
+def load_operational_sales_snapshot():
+    """Read the existing operational dashboard's aggregate sales snapshot.
+
+    The response contains aggregated CRM metrics only.  A short in-process
+    cache keeps the Jarvis page fast and avoids coupling every page view to a
+    fresh Bitrix aggregation.
+    """
+    import time
+    import requests as _requests
+
+    now = time.monotonic()
+    cached_at = _SALES_SNAPSHOT_CACHE.get("at")
+    cached_value = _SALES_SNAPSHOT_CACHE.get("value")
+    if cached_at is not None and cached_value is not None and now - cached_at < 120:
+        return cached_value
+
+    month = datetime.now().strftime("%Y-%m")
+    base_url = os.environ.get(
+        "MAVIS_OPERATIONAL_DASHBOARD_URL",
+        "https://mavis-operational-dashboard.onrender.com",
+    ).rstrip("/")
+    response = _requests.get(
+        f"{base_url}/api/snapshot",
+        params={"month": month, "period": "month"},
+        timeout=25,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get("ok"):
+        raise RuntimeError("Operational sales snapshot is unavailable")
+    _SALES_SNAPSHOT_CACHE.update({"at": now, "value": payload})
+    return payload
 
 # ============================================================
 # КОНФИГИ (хранятся в JSON файлах)
@@ -1284,6 +1319,22 @@ def scripts_catalog():
     from jarvis_dashboard import render_scripts
     return html_response(render_scripts(scripts, user))
 
+
+@app.route("/funnel")
+@rop_required
+def sales_funnel():
+    user = current_user()
+    calls, _ = get_data(user)
+    try:
+        snapshot = load_operational_sales_snapshot()
+        source_error = ""
+    except Exception as exc:
+        app.logger.warning("Operational sales snapshot failed: %s", type(exc).__name__)
+        snapshot = {}
+        source_error = "Агрегаты продаж временно недоступны; стадии связанных звонков показаны из Bitrix24."
+    from jarvis_dashboard import render_funnel
+    return html_response(render_funnel(snapshot, calls, user, source_error=source_error))
+
 @app.route("/critical")
 @login_required
 def critical():
@@ -1615,6 +1666,7 @@ _JARVIS_BITRIX_METHODS = {
     "crm.activity.list",
     "crm.deal.list",
     "crm.lead.list",
+    "crm.status.list",
     "disk.file.get",
     "user.get",
 }

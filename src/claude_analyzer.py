@@ -400,6 +400,10 @@ _CALL_TYPE_CRITERIA = {
     "payment_push": ("opening", "need", "expertise", "objection", "closing", "next_step", "communication"),
     "successful_payment": ("opening", "expertise", "next_step", "communication"),
     "upsell": _FULL_SALES_RUBRIC,
+    # Even when the exact commercial scenario cannot be proven, every real
+    # conversation can be scored on these three universal facts. This keeps a
+    # 1–10 operational score without inventing a client type or sales stage.
+    "unknown": ("expertise", "next_step", "communication"),
 }
 EXPECTED_RUBRIC_CODE = "jarvis_rop"
 EXPECTED_RUBRIC_VERSION = 1
@@ -857,6 +861,8 @@ def build_analysis_prompt(
     - "poor_audio": true если запись с сильными помехами — текст расшифрован плохо. Укажи причину в poor_audio_reason.
     - "not_sales": true если звонок НЕ касается продаж: ошибочный номер, не тот человек, технический вопрос не по теме. Укажи причину в not_sales_reason.
 
+13. СООТВЕТСТВИЕ СКРИПТУ — перечисли только реально применимые этапы выбранного скрипта. Для каждого укажи `full`, `partial` или `miss`, короткий факт и точный таймкод. Не штрафуй за неприменимый этап.
+
 
 ОТВЕТ СТРОГО В JSON, БЕЗ ОБЁРТКИ ```json:
 
@@ -909,7 +915,10 @@ def build_analysis_prompt(
   "key_moments": [
     {{"type": "positive|negative|neutral", "time": "MM:SS", "text": "Краткое описание момента", "detail": "Цитата или пояснение"}}
   ],
-  "scripts_used": {json.dumps([n for n, _ in scripts], ensure_ascii=False)}
+  "scripts_used": {json.dumps([n for n, _ in scripts], ensure_ascii=False)},
+  "scripts_alignment": [
+    {{"stage": "Применимый этап скрипта", "status": "full|partial|miss", "evidence": "Что произошло", "time": "MM:SS"}}
+  ]
 }}"""
     return prompt
 
