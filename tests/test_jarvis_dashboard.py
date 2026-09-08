@@ -8,14 +8,15 @@ from jarvis_dashboard import dashboard_model  # noqa: E402
 
 
 class DashboardModelTests(unittest.TestCase):
-    def test_legacy_unproven_critical_is_review_not_urgent(self):
+    def test_legacy_unproven_critical_requires_reanalysis_not_rop_review(self):
         calls = [{"activity_id": "1", "manager": {"id": 1, "name": "Анна"}}]
         analyses = {"1": {"analysis": {"overall_score": 3, "flags": {"critical": True}}}}
 
         model = dashboard_model(calls, analyses)
 
         self.assertEqual(len(model["critical"]), 0)
-        self.assertEqual(len(model["review"]), 1)
+        self.assertEqual(len(model["review"]), 0)
+        self.assertEqual(len(model["reanalysis"]), 1)
 
     def test_evidenced_allowed_rule_is_urgent(self):
         calls = [{"activity_id": "1", "manager": {"id": 1, "name": "Анна"}}]

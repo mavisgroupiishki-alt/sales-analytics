@@ -40,7 +40,8 @@ class RopModelTests(unittest.TestCase):
         self.assertEqual(model["crm_coverage"], 50)
         self.assertEqual(model["next_activity"], 1)
         self.assertEqual(len(model["critical"]), 0)
-        self.assertEqual(len(model["review"]), 1)
+        self.assertEqual(len(model["review"]), 0)
+        self.assertEqual(len(model["reanalysis"]), 2)
 
 
 if __name__ == "__main__":

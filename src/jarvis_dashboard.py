@@ -84,6 +84,7 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
     analyzed = []
     critical = []
     review = []
+    reanalysis = []
     by_manager: Dict[int, Dict[str, Any]] = {}
 
     for call in calls:
@@ -92,7 +93,7 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         manager_id = int(manager.get("id") or 0)
         entry = by_manager.setdefault(
             manager_id,
-            {"manager": manager, "calls": 0, "analyzed": 0, "critical": 0, "review": 0, "scores": []},
+            {"manager": manager, "calls": 0, "analyzed": 0, "critical": 0, "review": 0, "reanalysis": 0, "scores": []},
         )
         entry["calls"] += 1
         if not analysis:
@@ -110,17 +111,35 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         elif status == "needs_review":
             review.append(record)
             entry["review"] += 1
+        elif status == "requires_reanalysis":
+            reanalysis.append(record)
+            entry["reanalysis"] += 1
 
     managers = []
     for entry in by_manager.values():
         scores = entry.pop("scores")
         entry["average"] = round(sum(scores) / len(scores), 1) if scores else None
         managers.append(entry)
-    managers.sort(key=lambda item: (item["critical"], item["review"], -(item["average"] or 0)), reverse=True)
+    managers.sort(key=lambda item: (item["critical"], item["review"], item["reanalysis"], -(item["average"] or 0)), reverse=True)
 
     newest = sorted(calls, key=lambda call: str(call.get("created") or ""), reverse=True)
     critical.sort(key=lambda item: str(item["call"].get("created") or ""), reverse=True)
     review.sort(key=lambda item: str(item["call"].get("created") or ""), reverse=True)
+    reanalysis.sort(key=lambda item: str(item["call"].get("created") or ""), reverse=True)
+    funnel: Dict[str, Dict[str, Any]] = {}
+    for call in calls:
+        crm = call.get("crm") or {}
+        if crm.get("owner_type") != "deal" or not crm.get("owner_id"):
+            continue
+        stage_id = str(crm.get("stage_id") or crm.get("stage_name") or "Не указана")
+        item = funnel.setdefault(stage_id, {"name": str(crm.get("stage_name") or stage_id), "deals": set(), "calls": 0})
+        item["deals"].add(str(crm["owner_id"]))
+        item["calls"] += 1
+    funnel_rows = [
+        {"name": item["name"], "deals": len(item["deals"]), "calls": item["calls"]}
+        for item in funnel.values()
+    ]
+    funnel_rows.sort(key=lambda item: (-item["deals"], item["name"]))
     return {
         "calls": len(calls),
         "analyzed": len(analyzed),
@@ -128,9 +147,11 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         "outgoing": sum(call.get("direction") == "outgoing" for call in calls),
         "critical": critical,
         "review": review,
+        "reanalysis": reanalysis,
         "managers": managers,
         "freshness": _freshness(calls),
         "newest": newest[:6],
+        "funnel": funnel_rows,
     }
 
 
@@ -153,6 +174,17 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
           <em>«{_text(str(quote)[:120])}»</em></span><span class="jd-arrow">→</span></a>'''
     if not alerts:
         alerts = '<div class="jd-empty"><b>Критичных звонков нет.</b><span>Ни один текущий флаг не прошёл проверку правила, цитаты и таймкода.</span></div>'
+
+    reanalysis_rows = ""
+    for item in model["reanalysis"][:5]:
+        call = item["call"]
+        client = (call.get("client") or {}).get("name") or "Клиент не определён"
+        manager = (call.get("manager") or {}).get("name") or "Менеджер не определён"
+        reanalysis_rows += f'''<a class="jd-review" href="/calls/{_text(call.get("activity_id"))}">
+          <span class="jd-review-score">↻</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get("created") or ""))}</small></span>
+          <span class="jd-review-reason">{_text(item["reason"])}</span></a>'''
+    if not reanalysis_rows:
+        reanalysis_rows = '<div class="jd-empty"><b>Старых несопоставимых разборов нет.</b><span>В этой выборке не требуется миграционный анализ.</span></div>'
 
     reviews = ""
     for item in model["review"][:5]:
@@ -186,7 +218,7 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or ""
         score = analysis.get("overall_score") if analysis else None
-        status_label = {"critical": "Критично", "needs_review": "Проверить", "normal": "Без риска", "excluded": "Исключён", "pending": "Ожидает AI"}[status]
+        status_label = {"critical": "Критично", "needs_review": "Проверить", "requires_reanalysis": "Переанализировать", "normal": "Без риска", "excluded": "Исключён", "pending": "Ожидает AI"}[status]
         feed += f'''<a class="jd-feed" href="/calls/{_text(call.get("activity_id"))}">
           <span class="jd-dot {status}"></span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get("created") or ""))}</small></span>
           <span class="jd-call-type">{_text((analysis.get("call_type") or {}).get("label") or "Тип не подтверждён")}</span>
@@ -199,15 +231,84 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
 <title>Джарвис — центр управления продажами</title><style>{_CSS}{_AQUA_CSS}</style></head>
 <body><!-- JARVIS-DIRECTION: THESIS: a ROP navigates one calm control surface, not a dark executive report. OWN-WORLD: turquoise rail, white data tiles, chart-like micro-structure and marine-blue type. STORY: the first thing seen is ДЖАРВИС and the work queue; every tile descends from a real source. FIRST VIEWPORT: the brand leads the left rail; a compact status row starts the workspace. FORM: bright analytics console from the supplied visual reference; seed jarvis-aqua-2026. FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md. -->
 <header class="jd-top"><a class="jd-brand" href="/"><span class="jd-mark">J</span><span><strong>ДЖАРВИС</strong><small>ЦЕНТР УПРАВЛЕНИЯ ПРОДАЖАМИ</small></span></a>
-<nav><a class="active" href="/">Обзор</a><a href="/calls">Звонки</a>{'<a href="/managers">Команда</a><a href="/rop">Отчёт РОПа</a>' if user.get('role') in {'rop', 'director'} else ''}</nav>
+<nav><a class="active" href="/">Обзор</a><a href="/calls">Звонки</a>{'<a href="/managers">Команда</a><a href="/rop">Отчёт РОПа</a><a href="/scripts">Скрипты</a>' if user.get('role') in {'rop', 'director'} else ''}</nav>
 <div class="jd-user"><span>{_text(role)} · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header>
 <main class="jd-shell"><section class="jd-heading"><div><p>{today}</p><h1>Картина продаж <span>на сейчас</span></h1></div><div class="jd-source {source_class}"><i></i><span>Bitrix24</span><b>{source_text}</b><small>последняя запись: {fresh_at}</small></div></section>
-<section class="jd-metrics"><div><small>Звонки в выборке</small><b>{model['calls']}</b><span>{model['incoming']} входящих · {model['outgoing']} исходящих</span></div><div><small>Разобрано AI</small><b>{model['analyzed']}</b><span>{round(model['analyzed'] / model['calls'] * 100) if model['calls'] else 0}% от выборки</span></div><div class="jd-metric-critical"><small>Срочно к РОПу</small><b>{len(model['critical'])}</b><span>только с правилом и доказательством</span></div><div class="jd-metric-review"><small>Нужна проверка</small><b>{len(model['review'])}</b><span>не является тревогой автоматически</span></div></section>
+<section class="jd-metrics"><div><small>Звонки в выборке</small><b>{model['calls']}</b><span>{model['incoming']} входящих · {model['outgoing']} исходящих</span></div><div><small>Разобрано AI</small><b>{model['analyzed']}</b><span>{round(model['analyzed'] / model['calls'] * 100) if model['calls'] else 0}% от выборки</span></div><div class="jd-metric-critical"><small>Срочно к РОПу</small><b>{len(model['critical'])}</b><span>только с правилом и доказательством</span></div><div class="jd-metric-review"><small>Нужен новый разбор</small><b>{len(model['reanalysis'])}</b><span>старые оценки не считаются проверкой</span></div></section>
 <section class="jd-grid"><section class="jd-panel jd-actions"><div class="jd-panel-head"><div><h2>Действия РОПа</h2><p>Подтверждённые риски, требующие вмешательства</p></div><a href="/critical">Вся очередь →</a></div>{alerts}</section>
 <section class="jd-panel jd-team"><div class="jd-panel-head"><div><h2>Команда</h2><p>Кого открыть первым</p></div><a href="/managers">Все менеджеры →</a></div><div class="jd-manager-list">{managers}</div></section>
-<section class="jd-panel jd-review-panel"><div class="jd-panel-head"><div><h2>На проверку</h2><p>AI увидел сигнал, но не доказал критичность</p></div><span>{len(model['review'])} звонков</span></div>{reviews}</section>
+<section class="jd-panel jd-review-panel"><div class="jd-panel-head"><div><h2>Переанализировать</h2><p>Старые результаты не перенесены в очередь РОПа</p></div><span>{len(model['reanalysis'])} звонков</span></div>{reanalysis_rows}</section>
 <section class="jd-panel jd-feed-panel"><div class="jd-panel-head"><div><h2>Последние звонки</h2><p>Первичные записи в хронологическом порядке</p></div><a href="/calls">Открыть журнал →</a></div>{feed}</section></section>
-<section class="jd-limits"><b>Граница данных</b><span>План/факт, оплаты, маркетинг и CRM Health ещё не подключены — Джарвис не подменяет их нулевыми или вымышленными показателями.</span></section></main></body></html>'''
+<section class="jd-panel jd-funnel"><div class="jd-panel-head"><div><h2>Воронка по связанным сделкам</h2><p>Текущие стадии сделок, которые Bitrix связал со звонками выборки</p></div><a href="/calls">Открыть звонки →</a></div><div class="jd-funnel-list">{''.join(f'<div><b>{_text(item["name"] or "Стадия не указана")}</b><span>{item["deals"]} сделок · {item["calls"]} звонков</span></div>' for item in model['funnel']) or '<div><b>Нет подтверждённых сделок</b><span>В выборке нет звонков со связью со сделкой Bitrix24.</span></div>'}</div></section>
+<section class="jd-panel jd-review-panel"><div class="jd-panel-head"><div><h2>Нужна проверка РОПом</h2><p>Только новый разбор с неполными основаниями</p></div><span>{len(model['review'])} звонков</span></div>{reviews}</section>
+<section class="jd-limits"><b>Граница данных</b><span>Воронка отражает только связанные со звонками сделки и их текущую стадию в Bitrix24. План, деньги и конверсию Джарвис не выдумывает.</span></section></main></body></html>'''
+
+
+def _console_page(title: str, active: str, body: str, user: Dict[str, Any]) -> str:
+    links = '<a href="/">Обзор</a><a href="/calls">Звонки</a><a href="/managers">Команда</a><a href="/rop">Отчёт РОПа</a><a href="/scripts">Скрипты</a>'
+    links = links.replace(f'href="/{active}"', f'class="active" href="/{active}"')
+    return f'''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Джарвис — {_text(title)}</title><style>{_CSS}{_AQUA_CSS}{_CONSOLE_CSS}</style></head><body><header class="jd-top"><a class="jd-brand" href="/"><span class="jd-mark">J</span><span><strong>ДЖАРВИС</strong><small>ЦЕНТР УПРАВЛЕНИЯ ПРОДАЖАМИ</small></span></a><nav>{links}</nav><div class="jd-user"><span>РОП · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header><main class="jd-shell jc-shell">{body}</main></body></html>'''
+
+
+def _status_label(status: str) -> str:
+    return {"critical": "Срочно к РОПу", "needs_review": "Нужна проверка", "requires_reanalysis": "Нужен новый разбор", "normal": "Без риска", "excluded": "Исключён", "pending": "Ожидает AI"}.get(status, "Ожидает AI")
+
+
+def render_calls(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any]) -> str:
+    rows = ""
+    for call in sorted(calls, key=lambda item: str(item.get("created") or ""), reverse=True):
+        analysis = _analysis_for(analyses, call)
+        status = triage_for(analysis)[0] if analysis else "pending"
+        client = (call.get("client") or {}).get("name") or "Клиент не определён"
+        manager = (call.get("manager") or {}).get("name") or "—"
+        crm = call.get("crm") or {}
+        score = analysis.get("overall_score") if analysis else "—"
+        rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}"><span class="jc-status {status}">{_text(_status_label(status))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text((analysis.get('call_type') or {}).get('label') or 'Тип не подтверждён')}</span><span>{_text(crm.get('stage_name') or 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
+    content = f'''<section class="jc-heading"><p>Журнал звонков</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>«Нужен новый разбор» — старый алгоритм, не задача РОПа. «Нужна проверка» — новый разбор с неполными основаниями.</small></section><section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
+    return _console_page("Звонки", "calls", content, user)
+
+
+def render_managers(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any]) -> str:
+    model = dashboard_model(calls, analyses)
+    rows = ""
+    for item in model["managers"]:
+        manager = item["manager"]
+        score = f"{item['average']:.1f}" if item["average"] is not None else "—"
+        signal = "Срочно" if item["critical"] else ("Проверить" if item["review"] else ("Переанализировать" if item["reanalysis"] else "В норме"))
+        rows += f'''<a class="jc-manager-row" href="/managers/{_text(manager.get('id'))}">{_avatar(manager)}<span><b>{_text(manager.get('name') or 'Менеджер')}</b><small>{item['calls']} звонков · AI-покрытие {round(item['analyzed'] / item['calls'] * 100) if item['calls'] else 0}%</small></span><strong>{score}</strong><span>{item['critical']} срочно · {item['review']} проверить</span><em>{_text(signal)}</em><i>→</i></a>'''
+    content = f'''<section class="jc-heading"><p>Команда</p><h1>Качество — <span>без ложных рейтингов.</span></h1><small>Средний балл строится только по новому применимому рубрикатору; старые результаты не ухудшают оценку менеджера.</small></section><section class="jc-table jc-managers"><div class="jc-table-head"><span></span><span>Менеджер</span><span>Балл</span><span>Сигналы</span><span>Статус</span><span></span></div>{rows or '<div class="jd-empty"><b>Нет менеджеров в выборке.</b></div>'}</section>'''
+    return _console_page("Команда", "managers", content, user)
+
+
+def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[str, Any]) -> str:
+    analysis = (stored or {}).get("analysis") or {}
+    status, reason, _ = triage_for(analysis) if analysis else ("pending", "Звонок ещё не разобран", "")
+    client = (call.get("client") or {}).get("name") or "Клиент не определён"
+    crm = call.get("crm") or {}
+    score = analysis.get("overall_score") if analysis.get("overall_score") is not None else "—"
+    moments = analysis.get("key_moments") or []
+    moment_rows = ''.join(f'<li><b>{_text(item.get("time") or "—")}</b><span>{_text(item.get("text") or item.get("detail") or "")}</span></li>' for item in moments[:8]) or '<li><span>Для этого результата нет сохранённых ключевых моментов.</span></li>'
+    evidence = (analysis.get("flags") or {}).get("critical_evidence") or {}
+    quote = f'<blockquote>«{_text(evidence.get("quote"))}»<small>{_text(evidence.get("time"))}</small></blockquote>' if evidence.get("quote") else ""
+    content = f'''<a class="jc-back" href="/calls">← Все звонки</a><section class="jc-heading"><p>{_text(_format_timestamp(str(call.get('created') or '')))}</p><h1>{_text(client)} <span>· {score} балла</span></h1><div class="jc-call-meta"><span class="jc-status {status}">{_text(_status_label(status))}</span><span>{_text((call.get('manager') or {}).get('name') or 'Менеджер не определён')}</span><span>Сделка: {_text(crm.get('stage_name') or 'не связана')}</span></div></section><section class="jc-detail-grid"><article><h2>Вывод Джарвиса</h2><p>{_text(reason or analysis.get('summary') or analysis.get('recommendation') or 'Ожидается анализ.')}</p>{quote}<h3>Рекомендованное действие</h3><p>{_text(analysis.get('recommended_action') or analysis.get('recommendation') or 'Нет рекомендации до завершения разбора.')}</p></article><article><h2>Ключевые моменты</h2><ul class="jc-moments">{moment_rows}</ul></article></section>'''
+    return _console_page("Карточка звонка", "calls", content, user)
+
+
+def render_scripts(scripts: Dict[str, Any], user: Dict[str, Any]) -> str:
+    cards = ""
+    for name, script in scripts.items():
+        if not isinstance(script, dict):
+            continue
+        text = str(script.get("text") or "")
+        topics = ", ".join(str(topic) for topic in (script.get("topics") or [])[:4]) or "Не размечены"
+        cards += f'''<article class="jc-script"><span>СКРИПТ ПРОДАЖ</span><h2>{_text(name)}</h2><p>{_text(text[:420])}{'…' if len(text) > 420 else ''}</p><small>Темы: {_text(topics)}</small></article>'''
+    content = f'''<section class="jc-heading"><p>База скриптов</p><h1>Что считать <span>эталоном разговора.</span></h1><small>Скрипты доступны отдельно от оценок: Джарвис использует их как контекст, а не подменяет ими фактические данные звонка.</small></section><section class="jc-scripts">{cards or '<div class="jd-empty"><b>Скрипты пока не загружены.</b></div>'}</section>'''
+    return _console_page("Скрипты", "scripts", content, user)
+
+
+_CONSOLE_CSS = r'''
+.jc-shell{max-width:1470px}.jc-heading{margin-bottom:24px}.jc-heading p{margin:0 0 8px;color:#149c99;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}.jc-heading h1{margin:0;color:var(--ink);font-size:32px;letter-spacing:-.04em}.jc-heading h1 span{color:#7a9ca7;font-weight:600}.jc-heading small{display:block;max-width:720px;margin-top:10px;color:var(--muted);font-size:12px}.jc-table,.jc-detail-grid,.jc-scripts{background:#fff;border-radius:11px;box-shadow:0 7px 21px rgba(30,88,98,.1);overflow:hidden}.jc-table-head,.jc-row{display:grid;grid-template-columns:130px minmax(170px,1.25fr) minmax(130px,1fr) minmax(115px,.7fr) 44px 18px;gap:15px;align-items:center}.jc-table-head{padding:11px 18px;background:#effafa;color:#6c8991;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.jc-row{padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-row:hover,.jc-manager-row:hover{background:#f1fffe}.jc-row b,.jc-manager-row b{display:block;font-size:13px}.jc-row small,.jc-manager-row small{display:block;margin-top:4px;color:var(--muted);font-size:11px}.jc-row>span:nth-child(3),.jc-row>span:nth-child(4){color:#5f7d88;font-size:12px}.jc-row strong{font-size:16px;text-align:right}.jc-row i,.jc-manager-row i{font-style:normal;color:#11a4a0}.jc-status{display:inline-block;width:max-content;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:900}.jc-status.critical{background:var(--red-soft);color:var(--red)}.jc-status.needs_review{background:var(--amber-soft);color:var(--amber)}.jc-status.requires_reanalysis{background:#edf3ff;color:#326bcc}.jc-status.normal{background:var(--green-soft);color:var(--green)}.jc-status.pending{background:#edf3f4;color:#617982}.jc-managers .jc-table-head,.jc-manager-row{grid-template-columns:40px minmax(180px,1fr) 70px minmax(150px,.7fr) 130px 18px}.jc-manager-row{display:grid;gap:15px;align-items:center;padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-manager-row>.jd-avatar{width:36px;height:36px}.jc-manager-row strong{font-size:17px;color:#159b98}.jc-manager-row>span:nth-of-type(2){font-size:11px;color:var(--muted)}.jc-manager-row em{font-style:normal;color:#59808a;font-size:11px;font-weight:800}.jc-back{display:inline-block;margin-bottom:20px;color:#159d9a;font-weight:800;text-decoration:none}.jc-call-meta{display:flex;gap:12px;align-items:center;margin-top:14px;color:#65818d;font-size:12px;flex-wrap:wrap}.jc-detail-grid{display:grid;grid-template-columns:1.05fr .95fr}.jc-detail-grid article{padding:24px;border-right:1px solid var(--line)}.jc-detail-grid article:last-child{border:0}.jc-detail-grid h2,.jc-script h2{margin:0 0 11px;color:var(--ink);font-size:18px;letter-spacing:-.02em}.jc-detail-grid h3{margin:21px 0 7px;color:#169b98;font-size:11px;text-transform:uppercase}.jc-detail-grid p{margin:0;color:#567580;font-size:13px;line-height:1.55}.jc-detail-grid blockquote{margin:19px 0;padding:13px 15px;border-left:3px solid #15c8c3;background:#effbfa;color:#315f6e;font-size:13px}.jc-detail-grid blockquote small{display:block;margin-top:7px;color:#169b98;font-weight:800}.jc-moments{display:grid;gap:0;padding:0;margin:0;list-style:none}.jc-moments li{display:grid;grid-template-columns:48px 1fr;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);color:#557783;font-size:12px}.jc-moments b{color:#159b98}.jc-scripts{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1px;background:var(--line)}.jc-script{min-height:250px;padding:21px;background:#fff}.jc-script span{color:#14a09d;font-size:10px;font-weight:900;letter-spacing:.1em}.jc-script p{color:#587681;font-size:12px;line-height:1.55}.jc-script small{display:block;margin-top:15px;color:#758c95;font-size:10px}@media(max-width:900px){.jc-table-head{display:none}.jc-row{grid-template-columns:1fr 25px;gap:8px}.jc-row>span:not(:nth-child(2)),.jc-row strong{display:none}.jc-managers .jc-manager-row{grid-template-columns:36px minmax(0,1fr) 42px 18px}.jc-manager-row>span:nth-of-type(2),.jc-manager-row em{display:none}.jc-detail-grid{grid-template-columns:1fr}.jc-detail-grid article{border-right:0;border-bottom:1px solid var(--line)}.jc-heading h1{font-size:27px}}
+'''
 
 
 _CSS = r'''

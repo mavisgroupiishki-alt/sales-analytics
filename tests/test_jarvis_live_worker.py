@@ -18,8 +18,8 @@ class _Pipeline:
         self.state = {"status": "idle", "last_error": None}
         self.modes = []
 
-    def start(self, *, reanalyze_today=False):
-        self.modes.append(reanalyze_today)
+    def start(self, *, reanalyze_today=False, reanalysis_date=None):
+        self.modes.append((reanalyze_today, reanalysis_date))
         return True
 
 
@@ -50,4 +50,13 @@ class LiveWorkerTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 202)
-        self.assertEqual(self.pipeline.modes, [True])
+        self.assertEqual(self.pipeline.modes, [(True, None)])
+
+    def test_historical_reanalysis_requires_a_valid_explicit_date(self):
+        response = self.client.post(
+            "/internal/sync", json={"mode": "reanalyze_day", "date": "2026-09-07"},
+            headers={"x-jarvis-sync-secret": "test-private-secret"},
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(self.pipeline.modes, [(True, "2026-09-07")])

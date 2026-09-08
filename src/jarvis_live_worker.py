@@ -39,32 +39,32 @@ class LivePipeline:
             "mode": None,
         }
 
-    def start(self, *, reanalyze_today: bool = False) -> bool:
+    def start(self, *, reanalyze_today: bool = False, reanalysis_date: str | None = None) -> bool:
         if not self.lock.acquire(blocking=False):
             return False
         thread = threading.Thread(
             target=self._run,
-            kwargs={"reanalyze_today": reanalyze_today},
+            kwargs={"reanalyze_today": reanalyze_today, "reanalysis_date": reanalysis_date},
             daemon=True,
             name="jarvis-live-sync",
         )
         thread.start()
         return True
 
-    def _run(self, *, reanalyze_today: bool) -> None:
+    def _run(self, *, reanalyze_today: bool, reanalysis_date: str | None = None) -> None:
         self.state.update(
             {
                 "status": "running",
                 "started_at": datetime.now().astimezone().isoformat(),
                 "finished_at": None,
                 "last_error": None,
-                "mode": "reanalyze_today" if reanalyze_today else "sync_today",
+                "mode": f"reanalyze_day:{reanalysis_date}" if reanalysis_date else ("reanalyze_today" if reanalyze_today else "sync_today"),
             }
         )
         try:
             self._validate_environment()
             self._prepare_runtime()
-            with self._runtime_environment(reanalyze_today):
+            with self._runtime_environment(reanalyze_today, reanalysis_date):
                 # Import here so these modules receive the controlled runtime
                 # directory instead of the container source directory.
                 from bitrix import main as bitrix_main
@@ -107,14 +107,15 @@ class LivePipeline:
             shutil.copy2(PROJECT_DIR / "scripts.json", scripts)
 
     @contextmanager
-    def _runtime_environment(self, reanalyze_today: bool) -> Iterator[None]:
+    def _runtime_environment(self, reanalyze_today: bool, reanalysis_date: str | None = None) -> Iterator[None]:
         previous_cwd = Path.cwd()
         changed = {
-            "DATE_FROM": datetime.now().date().isoformat(),
+            "DATE_FROM": reanalysis_date or datetime.now().date().isoformat(),
             "DAYS_BACK": None,
             "DOWNLOAD_AUDIO_COUNT": "-1",
             "NOTIFY_MANAGERS": "0",
             "REANALYZE_TODAY": "1" if reanalyze_today else None,
+            "REANALYZE_DATE": reanalysis_date if reanalyze_today else None,
             "JARVIS_FORCE_ANALYSIS_VERSION": "1" if reanalyze_today else None,
         }
         before = {key: os.environ.get(key) for key in changed}
@@ -153,10 +154,17 @@ def create_app(pipeline: LivePipeline | None = None) -> Flask:
         if not authorized():
             return jsonify({"error": "unauthorized"}), 401
         body = request.get_json(silent=True) or {}
-        reanalyze_today = body.get("mode") == "reanalyze_today"
-        if not live_pipeline.start(reanalyze_today=reanalyze_today):
+        reanalyze_today = body.get("mode") in {"reanalyze_today", "reanalyze_day"}
+        reanalysis_date = None
+        if body.get("mode") == "reanalyze_day":
+            try:
+                reanalysis_date = datetime.fromisoformat(str(body.get("date") or "")).date().isoformat()
+            except ValueError:
+                return jsonify({"error": "invalid reanalysis date"}), 400
+        if not live_pipeline.start(reanalyze_today=reanalyze_today, reanalysis_date=reanalysis_date):
             return jsonify({"status": "already_running"}), 409
-        return jsonify({"status": "accepted", "mode": "reanalyze_today" if reanalyze_today else "sync_today"}), 202
+        mode = f"reanalyze_day:{reanalysis_date}" if reanalysis_date else ("reanalyze_today" if reanalyze_today else "sync_today")
+        return jsonify({"status": "accepted", "mode": mode}), 202
 
     return app
 

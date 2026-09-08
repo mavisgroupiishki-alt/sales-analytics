@@ -38,8 +38,14 @@ class JarvisStoreTests(unittest.TestCase):
     def test_payload_hash_is_stable_for_equivalent_dicts(self):
         self.assertEqual(payload_sha256({"a": 1, "b": 2}), payload_sha256({"b": 2, "a": 1}))
 
-    def test_low_score_is_review_not_critical(self):
+    def test_legacy_low_score_requires_reanalysis_not_critical(self):
         status, _, rule = evaluate_triage({"overall_score": 2.5, "flags": {}})
+
+        self.assertEqual(status, "requires_reanalysis")
+        self.assertEqual(rule, "")
+
+    def test_current_low_score_is_review_not_critical(self):
+        status, _, rule = evaluate_triage({"overall_score": 2.5, "overall_score_method": "applicable_rubric_v1", "flags": {}})
 
         self.assertEqual(status, "needs_review")
         self.assertEqual(rule, "")
@@ -58,7 +64,7 @@ class JarvisStoreTests(unittest.TestCase):
 
         self.assertEqual(status, "critical")
 
-    def test_unproven_critical_flag_is_review_not_alert(self):
+    def test_legacy_unproven_critical_requires_reanalysis_not_alert(self):
         status, _, _ = evaluate_triage(
             {
                 "flags": {
@@ -69,7 +75,7 @@ class JarvisStoreTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(status, "needs_review")
+        self.assertEqual(status, "requires_reanalysis")
 
     def test_excluded_call_remains_excluded_when_read_back(self):
         status, reason, rule = evaluate_triage(
@@ -107,13 +113,13 @@ class JarvisStoreTests(unittest.TestCase):
     def test_missing_applicable_criterion_is_not_silently_reweighted(self):
         self.assertIsNone(compute_applicable_score("payment_push", [{"code": "next_step", "applicable": True, "score": 10}]))
 
-    def test_invalid_critical_timecode_is_review_not_alert(self):
+    def test_legacy_invalid_critical_timecode_requires_reanalysis(self):
         status, _, _ = evaluate_triage({"flags": {"critical": True, "critical_rule_id": "confirmed_rudeness", "critical_evidence": {"time": "later", "quote": "Больше мне не звоните"}}})
-        self.assertEqual(status, "needs_review")
+        self.assertEqual(status, "requires_reanalysis")
 
-    def test_critical_timecode_cannot_exceed_source_recording(self):
+    def test_legacy_timecode_over_recording_requires_reanalysis(self):
         status, _, _ = evaluate_triage({"source_duration_seconds": 30, "flags": {"critical": True, "critical_rule_id": "confirmed_rudeness", "critical_evidence": {"time": "01:00", "quote": "Больше мне не звоните"}}})
-        self.assertEqual(status, "needs_review")
+        self.assertEqual(status, "requires_reanalysis")
 
     def test_today_reanalysis_is_limited_to_source_date(self):
         ids, date = reanalysis_scope({"REANALYZE_TODAY": "1"}, today="2026-09-08")

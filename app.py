@@ -1217,10 +1217,8 @@ def all_calls():
     calls, analyses = get_data(user)
     from jarvis_rop import filter_calls
     calls = filter_calls(calls, analyses, request.args)
-    from report_generator import render_all_calls, compute_stats
-    stats = compute_stats(calls, analyses)
-    html = render_all_calls(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
-    return html_response(inject_and_fix(html, user))
+    from jarvis_dashboard import render_calls
+    return html_response(render_calls(calls, analyses, user))
 
 @app.route("/calls/<activity_id>")
 @app.route("/calls/<activity_id>.html")
@@ -1232,13 +1230,8 @@ def call_detail(activity_id):
     if not call: abort(404)
     if user["role"] == "manager" and call.get("manager",{}).get("id") != user["manager_id"]:
         abort(403)
-    from report_generator import render_call_page, compute_stats
-    stats = compute_stats(calls, analyses)
-    # Передаём PROXY_URL через env
-    os.environ["PROXY_URL"] = os.environ.get("PROXY_URL", "")
-    html = render_call_page(call, analyses.get(activity_id), datetime.now().isoformat(), stats["critical_count"])
-    # Фиксируем относительные пути calls/ → /calls/
-    return html_response(inject_and_fix(html, user))
+    from jarvis_dashboard import render_call_detail
+    return html_response(render_call_detail(call, analyses.get(activity_id) or {}, user))
 
 @app.route("/rop")
 @rop_required
@@ -1257,10 +1250,8 @@ def rop_report():
 def managers():
     user = current_user()
     calls, analyses = get_data(user)
-    from report_generator import render_managers_list, compute_stats
-    stats = compute_stats(calls, analyses)
-    html = render_managers_list(stats, datetime.now().isoformat())
-    return html_response(inject_and_fix(html, user))
+    from jarvis_dashboard import render_managers
+    return html_response(render_managers(calls, analyses, user))
 
 @app.route("/managers/<int:manager_id>")
 @app.route("/managers/<int:manager_id>.html")
@@ -1269,14 +1260,24 @@ def manager_detail(manager_id):
     user = current_user()
     if user["role"] == "manager" and user["manager_id"] != manager_id:
         abort(403)
-    all_calls_data = load_calls()
-    analyses = load_analyses()
-    from report_generator import render_manager_page, compute_stats
-    stats = compute_stats(all_calls_data, analyses)
-    manager = next((m for m in stats["managers"] if m["id"] == manager_id), None)
-    if not manager: abort(404)
-    html = render_manager_page(manager, analyses, datetime.now().isoformat(), stats["critical_count"])
-    return html_response(inject_and_fix(html, user))
+    calls, analyses = get_data(user)
+    manager_calls = [call for call in calls if (call.get("manager") or {}).get("id") == manager_id]
+    if not manager_calls:
+        abort(404)
+    from jarvis_dashboard import render_calls
+    return html_response(render_calls(manager_calls, analyses, user))
+
+@app.route("/scripts")
+@rop_required
+def scripts_catalog():
+    user = current_user()
+    scripts_path = DATA_DIR / "scripts.json"
+    try:
+        scripts = json.loads(scripts_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        scripts = {}
+    from jarvis_dashboard import render_scripts
+    return html_response(render_scripts(scripts, user))
 
 @app.route("/critical")
 @login_required

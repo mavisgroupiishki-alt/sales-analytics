@@ -491,6 +491,12 @@ def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
 
     if flags.get("critical") and rule_id in CRITICAL_RULE_IDS and len(quote) >= 8 and valid_timecode(time, analysis.get("source_duration_seconds")):
         return "critical", str(flags.get("critical_reason") or rule_id), rule_id
+    # Results from before the applicable-rubric protocol are not comparable to
+    # current scores. They wait for a fresh versioned analysis, not ROP review.
+    # This comes after documented critical evidence so a real incident is never
+    # hidden by a migration marker.
+    if analysis.get("overall_score_method") != "applicable_rubric_v1":
+        return "requires_reanalysis", "Нужен новый разбор по текущей методике: старый результат несопоставим", ""
     if flags.get("critical"):
         return "needs_review", "Нужна проверка РОПом: критичный флаг не подтверждён доказательством", ""
 
