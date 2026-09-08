@@ -22,6 +22,26 @@ from bitrix_url import normalize_bitrix_webhook_url
 
 logger = logging.getLogger(__name__)
 
+
+def mirror_snapshot_to_jarvis(calls: List[Dict[str, Any]]) -> None:
+    """Optionally mirror the merged snapshot to Jarvis Postgres.
+
+    The legacy JSON export remains active until the web application is switched
+    to database reads. Without JARVIS_DATABASE_URL this is intentionally a no-op.
+    """
+    database_url = os.environ.get("JARVIS_DATABASE_URL")
+    if not database_url:
+        logger.info("JARVIS_DATABASE_URL is not configured; skipping Jarvis mirror")
+        return
+    from jarvis_store import JarvisStore
+
+    store = JarvisStore.connect(database_url)
+    try:
+        written = store.write_bitrix_snapshot(calls)
+        logger.info("Jarvis mirror completed: %s calls", written)
+    finally:
+        store.close()
+
 ACTIVITY_TYPE_CALL = 2
 DEFAULT_REQUEST_TIMEOUT = 60
 MIN_AUDIO_SIZE_BYTES = 10_000
@@ -616,6 +636,7 @@ def main():
 
     out_file.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nГотово! Новых звонков: {len(new_calls)}, всего в базе: {len(merged)}, JSON: {out_file.stat().st_size:,} б")
+    mirror_snapshot_to_jarvis(merged)
 
 
 

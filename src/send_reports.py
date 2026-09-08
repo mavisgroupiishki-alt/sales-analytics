@@ -230,7 +230,7 @@ def send_message(user_id, text, date_label):
     url = f"{WEBHOOK_URL}/tasks.task.add"
     payload = {
         "fields": {
-            "TITLE": f"📊 Отчёт ИИгорь за {date_label}",
+            "TITLE": f"📊 Отчёт Джарвис за {date_label}",
             "DESCRIPTION": text,
             "RESPONSIBLE_ID": user_id,
             "PRIORITY": "1",
@@ -304,7 +304,7 @@ def build_rop_report(calls, analyses, date_label):
         return f"🔴 {score}"
 
     lines = []
-    lines.append(f"Доброе утречко, {ROP_NAME}! ☀️ Я ИИгорь")
+    lines.append(f"Доброе утро, {ROP_NAME}! ☀️ Я Джарвис")
     lines.append(f"Вот сводка по отделу за {date_label}:\n")
     lines.append(f"📊 *Всего звонков:* {total} | Проанализировано: {len(analyzed)}")
     if avg_total:
@@ -350,7 +350,7 @@ def build_rop_report(calls, analyses, date_label):
     url = f"{WEBHOOK_URL}/tasks.task.add"
     payload = {
         "fields": {
-            "TITLE": f"📊 Отчёт ИИгорь за {date_label}",
+            "TITLE": f"📊 Отчёт Джарвис за {date_label}",
             "DESCRIPTION": text,
             "RESPONSIBLE_ID": user_id,
             "CREATED_BY": user_id,

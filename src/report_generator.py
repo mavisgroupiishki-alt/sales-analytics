@@ -179,10 +179,11 @@ def compute_stats(calls: List[Dict], analyses: Dict) -> Dict[str, Any]:
     total = len(main_calls)
     incoming = sum(1 for c in main_calls if c.get("direction") == "incoming")
     outgoing = sum(1 for c in main_calls if c.get("direction") == "outgoing")
+    # Считать только записи, которые относятся к текущей выборке звонков.
+    # Иначе исторический analyses.json завышает показатель «срочно» на экране.
     critical = sum(
-        1 for a in analyses.values()
-        if (a.get("analysis") or {}).get("is_critical")
-        and not (a.get("analysis") or {}).get("exclude_from_stats")
+        1 for c in main_calls
+        if (analyses.get(c["activity_id"], {}).get("analysis") or {}).get("is_critical")
     )
 
     by_manager = defaultdict(lambda: {
@@ -639,7 +640,7 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{esc(title)} — ИИгорь · {esc(COMPANY_NAME)}</title>
+  <title>{esc(title)} — Джарвис · {esc(COMPANY_NAME)}</title>
   <style>{CSS}</style>
   {extra_head}
 </head>
@@ -648,7 +649,7 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
     <a href="{base_path}index.html" class="logo">
       <img class="logo-img" src="{base_path}logo.png" alt="{esc(COMPANY_NAME)}" onerror="this.style.display='none'">
       <div class="logo-text">
-        <span class="brand">ИИгорь</span>
+        <span class="brand">Джарвис</span>
         <span class="sub">{esc(COMPANY_NAME)}</span>
       </div>
     </a>
@@ -659,7 +660,7 @@ def page_template(title: str, body: str, active_nav: str, generated_at: str,
   <div class="footer-note">
     <div class="footer-brand">{esc(COMPANY_NAME).upper()}</div>
     <div class="footer-divider"></div>
-    <div>ИИгорь · Автоматический анализ звонков отдела продаж</div>
+    <div>Джарвис · Автоматический анализ звонков отдела продаж</div>
     <div style="margin-top:6px; font-size:11px;">Bitrix24 · GitHub Actions · BitrixGPT · © {year}</div>
   </div>
 </body>
@@ -2386,14 +2387,14 @@ def build_ai_chat_widget(call: Dict, analysis: Dict, vibe_api_note: str = "") ->
 ">
   <div style="background:var(--brand-dark);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;">
     <div>
-      <div style="font-weight:600;font-size:14px;">🤖 ИИгорь</div>
+      <div style="font-weight:600;font-size:14px;">🤖 Джарвис</div>
       <div style="font-size:11px;opacity:0.7;margin-top:2px;">Слушал этот звонок внимательнее чем сам менеджер</div>
     </div>
     <button onclick="toggleAiChat()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0 4px;">×</button>
   </div>
   <div id="aiChatMessages" style="height:280px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;">
     <div style="background:var(--brand-paper);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--brand-dark);">
-      Здарова! Я ИИгорь — слушал этот звонок внимательнее чем сам менеджер 😄<br><br>
+      Здравствуйте! Я Джарвис — подготовил разбор этого звонка.<br><br>
       <span style="color:var(--text-muted);">— Почему такая оценка?<br>— Что конкретно не так с возражением?<br>— Как менеджеру улучшиться?</span>
     </div>
   </div>
@@ -2441,7 +2442,7 @@ async function sendAiMessage() {{
 
   var thinking = appendMsg('assistant', '...');
 
-  var systemPrompt = `Ты — ИИгорь, ИИ-ассистент компании Mavis Group для анализа звонков. Ты слушал этот звонок внимательнее чем сам менеджер 😄 Тебе известен полный анализ конкретного звонка:
+  var systemPrompt = `Ты — Джарвис, AI-ассистент компании Mavis Group для анализа звонков. Тебе известен полный анализ конкретного звонка:
 ${{_callCtx}}
 
 Отвечай кратко и по делу. Используй контекст этого звонка. Пиши на русском.`;

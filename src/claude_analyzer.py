@@ -280,6 +280,15 @@ CALL_TYPES = {
         ],
         "success_criteria": "Клиент проявил интерес, назначен следующий шаг по допродаже",
     },
+    "unknown": {
+        "label": "Тип звонка требует проверки",
+        "description": "CRM-контекста и содержания недостаточно для безопасной классификации",
+        "keywords": [],
+        "crm_context": "не подтверждён",
+        "stages": [],
+        "critical_stages": [],
+        "success_criteria": "Сначала подтвердить цель звонка и CRM-контекст",
+    },
 }
 
 # ============================================================
@@ -354,9 +363,13 @@ TRIGGERS = [
     "Пропущены критические стадии для данного типа звонка",
 ]
 
-CRITICAL_TRIGGER_RUDENESS = "Грубость или непрофессионализм"
-CRITICAL_SCORE_THRESHOLD = 5.0
-CRITICAL_TRIGGERS_COUNT = 2
+CRITICAL_RULE_IDS = {
+    "payment_commitment_broken",
+    "ready_to_buy_not_closed",
+    "material_objection_unhandled",
+    "confirmed_rudeness",
+    "promised_action_missing_crm",
+}
 
 
 # ============================================================
@@ -381,21 +394,37 @@ def compute_weighted_score(scores: Dict[str, float]) -> float:
     return round(total, 1)
 
 
-def is_critical(analysis: Dict[str, Any]) -> Tuple[bool, str]:
-    score = analysis.get("overall_score", 10)
-    triggers = analysis.get("triggers", []) or []
-    trigger_names = [t.get("name", "") for t in triggers]
+def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
+    """Return `(status, reason, rule_id)` without treating score as an incident.
 
-    if any(CRITICAL_TRIGGER_RUDENESS.lower() in n.lower() for n in trigger_names):
-        return True, "Грубость в разговоре"
+    A model may suggest a critical flag, but it is accepted only when it names an
+    allowed rule and provides a quote plus a timestamp. Ambiguity is visible to
+    the ROP as `needs_review`, not silently converted into a false alarm.
+    """
+    flags = analysis.get("flags") or {}
+    evidence = flags.get("critical_evidence") or {}
+    rule_id = str(flags.get("critical_rule_id") or "")
+    quote = str(evidence.get("quote") or "").strip()
+    time = str(evidence.get("time") or "").strip()
+
+    if flags.get("critical") and rule_id in CRITICAL_RULE_IDS and len(quote) >= 8 and time:
+        return "critical", str(flags.get("critical_reason") or rule_id), rule_id
+    if flags.get("critical"):
+        return "needs_review", "Нужна проверка РОПом: критичный флаг не подтверждён доказательством", ""
+
     try:
-        if float(score) < CRITICAL_SCORE_THRESHOLD:
-            return True, f"Низкая оценка ({score}/10)"
+        low_score = float(analysis.get("overall_score")) < 4.0
     except (TypeError, ValueError):
-        pass
-    if len(triggers) >= CRITICAL_TRIGGERS_COUNT:
-        return True, f"{len(triggers)} триггеров"
-    return False, ""
+        low_score = False
+    if low_score or analysis.get("call_type", {}).get("key") == "unknown":
+        return "needs_review", "Нужна проверка РОПом: недостаточно надёжных оснований для критичности", ""
+    return "normal", "", ""
+
+
+def is_critical(analysis: Dict[str, Any]) -> Tuple[bool, str]:
+    """Backward-compatible helper for legacy report code."""
+    status, reason, _ = evaluate_triage(analysis)
+    return status == "critical", reason
 
 
 # ============================================================
@@ -620,10 +649,8 @@ def detect_call_type(transcript: str, call_meta: Dict) -> str:
     except Exception as e:
         logger.warning(f"Ошибка определения типа звонка: {e}")
 
-    # Эвристика по метаданным
-    if call_meta.get("direction") == "incoming":
-        return "primary_incoming_new"
-    return "cold_new"
+    # Нельзя по одному направлению звонка угадывать тип клиента или цель.
+    return "unknown"
 
 
 # ============================================================
@@ -725,21 +752,14 @@ def build_analysis_prompt(
     - neutral: важный факт о клиенте или ситуации
 
 12. Флаги — только если реально есть:
-    - "critical": true если выполняется ХОТЯ БЫ ОДНО из условий:
-      • клиент проявил интерес, но менеджер не сделал попытку закрытия
-      • не зафиксирована дата следующего контакта при договорённости о повторной связи
-      • клиент был готов купить, но менеджер ушёл в лишние объяснения и не подвёл к оплате
-      • клиент озвучил возражение, а менеджер его не обработал
-      • была возможность допродажи, но менеджер её не использовал
-      • эмоциональный фон разговора негативный — клиент раздражён или недоволен
-      • менеджер дал некорректное или спорное обещание клиенту
-      • звонок завершился без понятного результата
-      • клиент фактически готов продолжать обсуждение, но менеджер преждевременно завершил разговор
-      • клиент сам ведёт разговор и задаёт все ключевые вопросы, менеджер не управляет диалогом
-      • сделка потеряна или зависла, но по содержанию звонка неясна причина потери
-      • менеджер обещает отправить счёт, КП или материалы, но это не отражено в договорённостях
-      • грубость, скандал, откровенная потеря клиента по вине менеджера
-      ВАЖНО: звонок с оценкой 7+ и конкретным следующим шагом НЕ должен быть critical
+    - "critical": true ТОЛЬКО при подтверждённом высоком риске. Выбери один `critical_rule_id`:
+      • `payment_commitment_broken` — сорвана подтверждённая договорённость об оплате/закрытии;
+      • `ready_to_buy_not_closed` — клиент прямо готов купить/продолжить, но менеджер не подвёл к обязательному следующему шагу;
+      • `material_objection_unhandled` — существенное возражение осталось без ответа, после чего возможность потеряна;
+      • `confirmed_rudeness` — есть дословная грубость менеджера, а не предположение по тону транскрипта;
+      • `promised_action_missing_crm` — менеджер обещал действие, а CRM-контекст явно подтверждает его отсутствие.
+      Для `critical=true` ОБЯЗАТЕЛЬНЫ точная цитата и таймкод в `critical_evidence`. Неиспользованная допродажа,
+      общий низкий балл, короткий звонок, непонятный результат или сомнение в транскрипте — это не critical.
     - "missed_deal": true если клиент был готов купить а менеджер не закрыл
     - "no_next_step": true если важный звонок завершился без договорённости о следующем шаге
     - "poor_audio": true если запись с сильными помехами — текст расшифрован плохо. Укажи причину в poor_audio_reason.
@@ -782,6 +802,8 @@ def build_analysis_prompt(
   "flags": {{
     "critical": false,
     "critical_reason": null,
+    "critical_rule_id": null,
+    "critical_evidence": {{"time": null, "quote": null}},
     "missed_deal": false,
     "no_next_step": false,
     "poor_audio": false,
@@ -839,16 +861,7 @@ def analyze_transcript(
         result["overall_score"] = 0.0
     result["overall_score_method"] = "rop_judgement"
 
-    # Критичность — из флагов которые поставила модель
     flags = result.get("flags", {}) or {}
-    is_crit = bool(flags.get("critical", False))
-    crit_reason = flags.get("critical_reason") or ""
-    # Дополнительно: оценка ниже 4 = критично
-    if result["overall_score"] < 4.0:
-        is_crit = True
-        crit_reason = crit_reason or f"Низкая оценка ({result['overall_score']}/10)"
-    result["is_critical"] = is_crit
-    result["critical_reason"] = crit_reason
 
     # Плохое качество записи — проверяем программно ДО вызова ИИ
     result["poor_audio"] = bool(flags.get("poor_audio", False))
@@ -874,6 +887,15 @@ def analyze_transcript(
     if result["poor_audio"] or result["not_sales"]:
         result["exclude_from_stats"] = True
         result["is_critical"] = False  # не показываем в срочных
+        result["review_status"] = "excluded"
+        result["critical_reason"] = ""
+        result["critical_rule_id"] = ""
+    else:
+        status, reason, rule_id = evaluate_triage(result)
+        result["review_status"] = status
+        result["is_critical"] = status == "critical"
+        result["critical_reason"] = reason
+        result["critical_rule_id"] = rule_id
 
     result["_meta"] = meta
     return result
