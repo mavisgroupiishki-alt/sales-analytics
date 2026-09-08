@@ -232,7 +232,7 @@ class JarvisStore:
             """
             insert into jarvis.transcripts
                 (call_id, version, provider, language_code, transcript, diarization, confidence, status)
-            values (%s, %s, 'bitrix_vibe_whisper', 'ru', %s, %s::jsonb, %s, 'completed')
+            values (%s, %s, 'bitrix_vibe_whisper', 'ru', %s, %s::jsonb, %s, 'complete')
             returning id
             """,
             (call_id, version, text, json.dumps(segments, ensure_ascii=False), transcription.get("confidence")),

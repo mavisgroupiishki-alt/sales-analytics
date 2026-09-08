@@ -8,7 +8,8 @@ services:
       dockerfile: deploy/Dockerfile.live-worker
     restart: unless-stopped
     environment:
-      BITRIX_WEBHOOK_URL: ${BITRIX_WEBHOOK_URL:?set in .env}
+      BITRIX_WEBHOOK_URL: ${BITRIX_WEBHOOK_URL:-}
+      BITRIX_PROXY_URL: ${BITRIX_PROXY_URL:-}
       VIBE_API_KEY: ${VIBE_API_KEY:?set in .env}
       JARVIS_DATABASE_URL: ${JARVIS_DATABASE_URL:?set in .env}
       JARVIS_RUBRIC_ID: ${JARVIS_RUBRIC_ID:?set in .env}

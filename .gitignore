@@ -5,6 +5,8 @@ calls_data.json
 analyses.json
 manual_corrections.json
 config_*.json
+__pycache__/
+*.py[cod]
 
 # Local and server credentials.
 .env

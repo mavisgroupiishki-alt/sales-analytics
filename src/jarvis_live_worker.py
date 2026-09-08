@@ -90,8 +90,10 @@ class LivePipeline:
             self.lock.release()
 
     def _validate_environment(self) -> None:
-        required = ("BITRIX_WEBHOOK_URL", "VIBE_API_KEY", "JARVIS_DATABASE_URL", "JARVIS_RUBRIC_ID")
+        required = ("VIBE_API_KEY", "JARVIS_DATABASE_URL", "JARVIS_RUBRIC_ID")
         missing = [name for name in required if not os.environ.get(name)]
+        if not (os.environ.get("BITRIX_WEBHOOK_URL") or os.environ.get("BITRIX_PROXY_URL")):
+            missing.append("BITRIX_WEBHOOK_URL or BITRIX_PROXY_URL")
         if missing:
             raise RuntimeError("Missing required live worker configuration")
         try:

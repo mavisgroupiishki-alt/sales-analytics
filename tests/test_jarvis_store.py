@@ -9,6 +9,30 @@ from jarvis_store import JarvisRepository, JarvisStore, normalize_bitrix_call, p
 
 
 class JarvisStoreTests(unittest.TestCase):
+    def test_transcript_status_matches_database_contract(self):
+        class Cursor:
+            def __init__(self):
+                self.statements = []
+                self.results = [(2,), (11,)]
+
+            def execute(self, statement, params):
+                self.statements.append(statement)
+
+            def fetchone(self):
+                return self.results.pop(0)
+
+        cursor = Cursor()
+        transcript_id = JarvisStore._write_transcript(
+            None,
+            cursor,
+            call_id=7,
+            transcription={"text": "Тест", "segments": [], "confidence": 0.9},
+        )
+
+        self.assertEqual(transcript_id, 11)
+        self.assertIn("'complete'", cursor.statements[1])
+        self.assertNotIn("'completed'", cursor.statements[1])
+
     def test_normalizes_confirmed_crm_owner_without_guessing_client_type(self):
         normalized = normalize_bitrix_call(
             {

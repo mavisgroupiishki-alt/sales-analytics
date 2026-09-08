@@ -6,6 +6,7 @@ Flask веб-приложение для Sales Analytics с авторизаци
 import json
 import os
 import hashlib
+import hmac
 import sys
 import math
 from pathlib import Path
@@ -1608,6 +1609,48 @@ def audio_health():
 
     _AUDIO_HEALTH_CACHE.update({"ts": datetime.now(), "payload": payload, "status": status})
     return jsonify(payload), status
+
+
+_JARVIS_BITRIX_METHODS = {
+    "crm.activity.list",
+    "crm.deal.list",
+    "crm.lead.list",
+    "disk.file.get",
+    "user.get",
+}
+
+
+@app.post("/internal/bitrix/<method>")
+def jarvis_bitrix_proxy(method):
+    """Forward the worker's small Bitrix allowlist without exposing its webhook."""
+    import requests as _req
+    from bitrix_url import build_bitrix_method_url, normalize_bitrix_webhook_url
+
+    configured_secret = os.environ.get("JARVIS_SYNC_SECRET", "")
+    supplied_secret = request.headers.get("x-jarvis-sync-secret", "")
+    if not configured_secret or not hmac.compare_digest(supplied_secret, configured_secret):
+        return jsonify({"error": "unauthorized"}), 401
+    if method not in _JARVIS_BITRIX_METHODS:
+        return jsonify({"error": "method_not_allowed"}), 403
+    if request.content_length is not None and request.content_length > 65_536:
+        return jsonify({"error": "payload_too_large"}), 413
+    try:
+        webhook = normalize_bitrix_webhook_url(os.environ.get("BITRIX_WEBHOOK_URL", ""))
+        upstream = _req.post(
+            build_bitrix_method_url(webhook, method),
+            json=request.get_json(silent=True) or {},
+            timeout=60,
+        )
+    except (ValueError, _req.RequestException) as exc:
+        app.logger.error("Jarvis Bitrix proxy failed for %s: %s", method, type(exc).__name__)
+        return jsonify({"error": "bitrix_unavailable", "kind": type(exc).__name__}), 502
+    response = Response(
+        upstream.content,
+        status=upstream.status_code,
+        content_type=upstream.headers.get("Content-Type", "application/json"),
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 @app.route("/calls/<activity_id>/reanalyze", methods=["POST"])
 @rop_required

@@ -65,14 +65,30 @@ ALLOWED_MANAGER_IDS = [1286, 2154, 2100, 2196, 2212]
 
 
 class Bitrix24Client:
-    def __init__(self, webhook_url: Optional[str] = None):
+    def __init__(self, webhook_url: Optional[str] = None, proxy_url: Optional[str] = None):
+        proxy = proxy_url or os.environ.get("BITRIX_PROXY_URL")
+        if proxy:
+            secret = os.environ.get("JARVIS_SYNC_SECRET", "")
+            if not secret:
+                raise RuntimeError("JARVIS_SYNC_SECRET не задан для Bitrix proxy.")
+            self.endpoint = proxy.rstrip("/") + "/internal/bitrix/"
+            self.headers = {"x-jarvis-sync-secret": secret}
+            self.webhook = ""
+            return
         url = webhook_url or os.environ.get("BITRIX_WEBHOOK_URL")
         if not url:
             raise RuntimeError("BITRIX_WEBHOOK_URL не задан.")
         self.webhook = normalize_bitrix_webhook_url(url).rstrip("/") + "/"
+        self.endpoint = self.webhook
+        self.headers = {}
 
     def call(self, method: str, params: dict = None) -> dict:
-        response = requests.post(self.webhook + method, json=params or {}, timeout=DEFAULT_REQUEST_TIMEOUT)
+        response = requests.post(
+            self.endpoint + method,
+            json=params or {},
+            headers=self.headers,
+            timeout=DEFAULT_REQUEST_TIMEOUT,
+        )
         response.raise_for_status()
         data = response.json()
         if "error" in data:
