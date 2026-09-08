@@ -17,6 +17,8 @@ services:
         sync: false
       - key: BITRIX_WEBHOOK_URL
         sync: false
+      - key: JARVIS_DATABASE_URL
+        sync: false
       - key: USE_AUDIO_PROXY
         value: "1"
       - key: DATA_DIR

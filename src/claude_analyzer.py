@@ -12,6 +12,7 @@
 import os
 import json
 import logging
+import re
 import requests
 from pathlib import Path
 from datetime import datetime
@@ -371,6 +372,38 @@ CRITICAL_RULE_IDS = {
     "promised_action_missing_crm",
 }
 
+# The model returns an evidenced observation per criterion.  This deterministic
+# table, not its free-form final score, decides which observations count and
+# how much. Narrow calls therefore are not penalised for irrelevant stages.
+RUBRIC_CRITERIA = {
+    "opening": ("Понятное начало и цель разговора", 0.06),
+    "need": ("Выявление потребности или причины решения", 0.16),
+    "presentation": ("Презентация через пользу клиента", 0.16),
+    "expertise": ("Экспертность и точность ответа", 0.10),
+    "objection": ("Распознавание и отработка существенного возражения", 0.18),
+    "closing": ("Продвижение сделки к решению", 0.14),
+    "next_step": ("Конкретный следующий шаг", 0.16),
+    "communication": ("Корректность и ясность общения", 0.04),
+}
+
+_FULL_SALES_RUBRIC = ("opening", "need", "presentation", "expertise", "objection", "closing", "next_step", "communication")
+_CALL_TYPE_CRITERIA = {
+    "primary_incoming_new": _FULL_SALES_RUBRIC,
+    "primary_incoming_existing": _FULL_SALES_RUBRIC,
+    "cold_new": _FULL_SALES_RUBRIC,
+    "cold_periodika": _FULL_SALES_RUBRIC,
+    "cold_reactivation": _FULL_SALES_RUBRIC,
+    "kp_defense": _FULL_SALES_RUBRIC,
+    "kp_feedback": ("opening", "need", "presentation", "expertise", "objection", "next_step", "communication"),
+    "counteroffer": _FULL_SALES_RUBRIC,
+    "objection_handling": ("opening", "need", "expertise", "objection", "closing", "next_step", "communication"),
+    "payment_push": ("opening", "need", "expertise", "objection", "closing", "next_step", "communication"),
+    "successful_payment": ("opening", "expertise", "next_step", "communication"),
+    "upsell": _FULL_SALES_RUBRIC,
+}
+EXPECTED_RUBRIC_CODE = "jarvis_rop"
+EXPECTED_RUBRIC_VERSION = 1
+
 
 # ============================================================
 # УТИЛИТЫ
@@ -394,6 +427,49 @@ def compute_weighted_score(scores: Dict[str, float]) -> float:
     return round(total, 1)
 
 
+def applicable_criteria(call_type_key: str) -> tuple[str, ...]:
+    """Return only criteria relevant to a confirmed call purpose."""
+    return _CALL_TYPE_CRITERIA.get(call_type_key, ())
+
+
+def compute_applicable_score(call_type_key: str, observations: Any) -> Optional[float]:
+    """Calculate a reproducible score from applicable AI observations only."""
+    applicable = applicable_criteria(call_type_key)
+    if not applicable or not isinstance(observations, list):
+        return None
+    ratings: Dict[str, float] = {}
+    for item in observations:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code") or "")
+        if code not in applicable or item.get("applicable") is not True:
+            continue
+        try:
+            score = float(item.get("score"))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= score <= 10:
+            ratings[code] = score
+    # Missing evidence is not silently reweighted away.  The ROP sees an
+    # incomplete rubric as a review item instead of an inflated score.
+    if set(ratings) != set(applicable):
+        return None
+    denominator = sum(RUBRIC_CRITERIA[code][1] for code in applicable)
+    return round(sum(ratings[code] * RUBRIC_CRITERIA[code][1] for code in applicable) / denominator, 1)
+
+
+def valid_timecode(value: str, duration_seconds: Any = None) -> bool:
+    """Accept only exact MM:SS evidence timestamps, never arbitrary text."""
+    match = re.fullmatch(r"(\d{2,}):([0-5]\d)", value or "")
+    if not match:
+        return False
+    try:
+        duration = float(duration_seconds)
+    except (TypeError, ValueError):
+        return True
+    return int(match.group(1)) * 60 + int(match.group(2)) <= duration
+
+
 def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
     """Return `(status, reason, rule_id)` without treating score as an incident.
 
@@ -401,13 +477,19 @@ def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
     allowed rule and provides a quote plus a timestamp. Ambiguity is visible to
     the ROP as `needs_review`, not silently converted into a false alarm.
     """
+    # Exclusions are deterministic pipeline outcomes (for example a call that is
+    # too short to judge).  They must never reappear as a normal or urgent call
+    # when a stored analysis is read back by the dashboard.
+    if analysis.get("review_status") == "excluded" or analysis.get("exclude_from_stats"):
+        return "excluded", str(analysis.get("exclusion_reason") or analysis.get("poor_audio_reason") or analysis.get("not_sales_reason") or "Звонок исключён из оценки"), ""
+
     flags = analysis.get("flags") or {}
     evidence = flags.get("critical_evidence") or {}
     rule_id = str(flags.get("critical_rule_id") or "")
     quote = str(evidence.get("quote") or "").strip()
     time = str(evidence.get("time") or "").strip()
 
-    if flags.get("critical") and rule_id in CRITICAL_RULE_IDS and len(quote) >= 8 and time:
+    if flags.get("critical") and rule_id in CRITICAL_RULE_IDS and len(quote) >= 8 and valid_timecode(time, analysis.get("source_duration_seconds")):
         return "critical", str(flags.get("critical_reason") or rule_id), rule_id
     if flags.get("critical"):
         return "needs_review", "Нужна проверка РОПом: критичный флаг не подтверждён доказательством", ""
@@ -416,7 +498,7 @@ def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
         low_score = float(analysis.get("overall_score")) < 4.0
     except (TypeError, ValueError):
         low_score = False
-    if low_score or analysis.get("call_type", {}).get("key") == "unknown":
+    if low_score or analysis.get("overall_score") is None or analysis.get("call_type", {}).get("key") == "unknown":
         return "needs_review", "Нужна проверка РОПом: недостаточно надёжных оснований для критичности", ""
     return "normal", "", ""
 
@@ -634,18 +716,16 @@ def detect_call_type(transcript: str, call_meta: Dict) -> str:
 ВОЗМОЖНЫЕ ТИПЫ ЗВОНКОВ:
 {types_list}
 
-Ответь ТОЛЬКО ключом из списка (например "primary_incoming_new"), без объяснений, без кавычек, без пробелов.
-Выбери наиболее подходящий тип. Если не уверен — выбери ближайший по смыслу."""
+    Ответь строго JSON: {"call_type_key":"ключ из списка или unknown","confirmed":true|false,"evidence":"короткая цитата или факт из транскрипта"}.
+    `confirmed=true` допустим только если тип прямо подтверждается транскриптом или CRM-контекстом. Не угадывай, является ли клиент новым, холодным или действующим: если основания нет, верни `unknown`."""
 
     try:
         text, _ = call_claude_api(prompt, max_tokens=50)
-        text = text.strip().strip('"\'').lower().replace(" ", "_")
-        if text in CALL_TYPES:
-            return text
-        # Fallback: поиск ключа в ответе
-        for key in CALL_TYPES:
-            if key in text:
-                return key
+        payload = json.loads(text.strip().removeprefix("```json").removesuffix("```").strip())
+        key = str(payload.get("call_type_key") or "").strip().lower()
+        evidence = str(payload.get("evidence") or "").strip()
+        if payload.get("confirmed") is True and key in CALL_TYPES and key != "unknown" and len(evidence) >= 8:
+            return key
     except Exception as e:
         logger.warning(f"Ошибка определения типа звонка: {e}")
 
@@ -663,7 +743,7 @@ def build_analysis_prompt(
     scripts: List[Tuple[str, str]],
     call_type_key: str,
 ) -> str:
-    call_type = CALL_TYPES.get(call_type_key, CALL_TYPES["primary_incoming_new"])
+    call_type = CALL_TYPES.get(call_type_key, CALL_TYPES["unknown"])
 
     call_info = (
         f"- Менеджер: {call_meta.get('manager', {}).get('name', 'неизвестно')}\n"
@@ -683,6 +763,9 @@ def build_analysis_prompt(
             scripts_block += f"\n=== {name} ===\n{text[:800]}\n"
 
     stages_list = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(call_type["stages"]))
+    criteria_contract = "\n".join(
+        f'- `{code}` — {RUBRIC_CRITERIA[code][0]}' for code in applicable_criteria(call_type_key)
+    ) or "Тип звонка не подтверждён: критерии не оценивай."
 
     prompt = f"""Ты — Игорь, лучший тренер по продажам в СНГ с 15-летним опытом в B2B.
 Ты лично закрыл сотни сложных сделок и обучил десятки отделов продаж.
@@ -736,6 +819,9 @@ def build_analysis_prompt(
 
 6. ОЦЕНКА 1-10 и объяснение — почему именно столько с точки зрения продажного результата.
 
+6a. ФАКТЫ ДЛЯ РАСЧЁТА БАЛЛА. Оцени ТОЛЬКО перечисленные критерии. Для каждого дай score 0–10, конкретный факт и цитату/таймкод. Не добавляй неприменимые критерии и не ставь им ноль:
+{criteria_contract}
+
 7. Что сделано хорошо (1-3 момента) — ТОЛЬКО реальные продажные действия с таймкодом и цитатой.
    НЕ хвали за "представился", "был вежлив", "уточнил контакт" — это базовый минимум.
 
@@ -786,6 +872,9 @@ def build_analysis_prompt(
   ],
   "overall_score": 7.0,
   "score_explanation": "...",
+  "criteria": [
+    {{"code": "one_of_the_listed_codes", "applicable": true, "score": 0.0, "finding": "конкретный факт", "time": "MM:SS", "quote": "..."}}
+  ],
   "strengths": [
     {{"text": "...", "time": "MM:SS"}}
   ],
@@ -854,12 +943,17 @@ def analyze_transcript(
     decoder = json.JSONDecoder()
     result, _ = decoder.raw_decode(text)
 
-    # Оценка берётся напрямую от модели (живая, не взвешенная)
+    result["source_duration_seconds"] = call_meta.get("duration_sec")
+
+    # The model's broad assessment stays as context. The stored score is
+    # calculated only from structured, applicable rubric observations.
     try:
-        result["overall_score"] = float(result.get("overall_score", 0))
+        result["model_overall_score"] = float(result.get("overall_score", 0))
     except (TypeError, ValueError):
-        result["overall_score"] = 0.0
-    result["overall_score_method"] = "rop_judgement"
+        result["model_overall_score"] = None
+    rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
+    result["overall_score"] = rubric_score
+    result["overall_score_method"] = "applicable_rubric_v1" if rubric_score is not None else "not_scored"
 
     flags = result.get("flags", {}) or {}
 
@@ -925,6 +1019,35 @@ def is_reanalysis_target(call: Dict[str, Any], ids: set[str], date: Optional[str
         return True
     return bool(date and str(call.get("created") or "")[:10] == date)
 
+
+def mirror_analyses_to_jarvis(calls: list[Dict[str, Any]], analyses: Dict[str, Any]) -> int:
+    """Persist completed analyses when the private worker has DB settings.
+
+    This is deliberately a no-op for local legacy runs.  Production requires an
+    explicitly configured rubric id, so no score is stored under an implicit
+    evaluation standard.
+    """
+    database_url = os.environ.get("JARVIS_DATABASE_URL")
+    if not database_url:
+        return 0
+    try:
+        rubric_id = int(os.environ.get("JARVIS_RUBRIC_ID", ""))
+    except ValueError as exc:
+        raise RuntimeError("JARVIS_RUBRIC_ID must be configured for private analysis storage") from exc
+
+    from jarvis_store import JarvisStore
+
+    store = JarvisStore.connect(database_url)
+    try:
+        return store.write_analysis_snapshot(
+            calls,
+            analyses,
+            rubric_id,
+            force_new_version=os.environ.get("JARVIS_FORCE_ANALYSIS_VERSION") == "1",
+        )
+    finally:
+        store.close()
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     print("=" * 60)
@@ -967,6 +1090,7 @@ def main():
     failed = 0
     critical_count = 0
     type_stats = {}
+    completed_activity_ids: set[str] = set()
 
     for i, audio_path in enumerate(audio_files, 1):
         print(f"\n{'='*60}")
@@ -1009,9 +1133,14 @@ def main():
                 analyses[activity_id] = {
                     "call_meta": call_meta,
                     "transcription": transcription,
-                    "analysis": None,
+                    "analysis": {
+                        "review_status": "excluded",
+                        "exclude_from_stats": True,
+                        "exclusion_reason": "Звонок короче 30 секунд: транскрипт сохранён без оценки качества",
+                    },
                     "analyzed_at": datetime.now().isoformat(),
                 }
+                completed_activity_ids.add(activity_id)
                 success += 1
                 continue
 
@@ -1047,6 +1176,7 @@ def main():
                 "analysis": analysis,
                 "analyzed_at": datetime.now().isoformat(),
             }
+            completed_activity_ids.add(activity_id)
             success += 1
 
             # РОП-поток не пишет сотрудникам автоматически. Уведомления —
@@ -1070,6 +1200,20 @@ def main():
             failed += 1
 
     analyses_path.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        completed_analyses = {
+            activity_id: analyses[activity_id]
+            for activity_id in completed_activity_ids
+            if activity_id in analyses
+        }
+        mirrored = mirror_analyses_to_jarvis(calls, completed_analyses)
+        if os.environ.get("JARVIS_DATABASE_URL"):
+            print(f"   🔒 В закрытую базу сохранено анализов: {mirrored}")
+    except Exception as exc:
+        # The process exits non-zero so n8n records a failed run instead of
+        # presenting stale data as successfully updated.
+        logger.error("Jarvis analysis persistence failed: %s", type(exc).__name__)
+        raise
 
     print(f"\n{'='*60}\nИТОГИ\n{'='*60}")
     print(f"   ✅ Успешно: {success}")

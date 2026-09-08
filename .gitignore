@@ -1,0 +1,12 @@
+# Private runtime data; Jarvis stores production facts in private Postgres.
+audio_temp/
+static/avatars/
+calls_data.json
+analyses.json
+manual_corrections.json
+config_*.json
+
+# Local and server credentials.
+.env
+.env.*
+!.env.example

@@ -932,12 +932,31 @@ def rop_required(f):
 # ============================================================
 
 def load_calls():
-    p = DATA_DIR / "calls_data.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+    return load_snapshot()[0]
 
 def load_analyses():
-    p = DATA_DIR / "analyses.json"
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+    return load_snapshot()[1]
+
+def load_snapshot():
+    """Read live Jarvis data when the private database is configured.
+
+    The JSON branch only preserves local/demo compatibility until the runtime
+    receives ``JARVIS_DATABASE_URL``.  A configured database never silently
+    falls back to stale files: an operational failure must stay visible.
+    """
+    database_url = os.environ.get("JARVIS_DATABASE_URL")
+    if database_url:
+        from jarvis_store import JarvisRepository
+        repository = JarvisRepository.connect(database_url)
+        try:
+            return repository.load_snapshot()
+        finally:
+            repository.close()
+    calls_path = DATA_DIR / "calls_data.json"
+    analyses_path = DATA_DIR / "analyses.json"
+    calls = json.loads(calls_path.read_text(encoding="utf-8")) if calls_path.exists() else []
+    analyses = json.loads(analyses_path.read_text(encoding="utf-8")) if analyses_path.exists() else {}
+    return calls, analyses
 
 def load_corrections():
     p = DATA_DIR / "manual_corrections.json"
@@ -965,8 +984,7 @@ def apply_corrections(analyses, corrections):
     return analyses
 
 def get_data(user=None):
-    calls = load_calls()
-    analyses = load_analyses()
+    calls, analyses = load_snapshot()
     corrections = load_corrections()
     analyses = apply_corrections(analyses, corrections)
     # Legacy records were marked critical by the model alone.  Re-classify every
@@ -984,6 +1002,12 @@ def get_data(user=None):
     if user and user.get("role") == "manager" and user.get("manager_id"):
         calls = [c for c in calls if c.get("manager",{}).get("id") == user["manager_id"]]
     return calls, analyses
+
+
+def latest_call_date(calls):
+    """Use a concrete source period instead of mixing the full archive by default."""
+    dates = [str(call.get("created") or "")[:10] for call in calls if str(call.get("created") or "")[:10]]
+    return max(dates) if dates else ""
 
 # ============================================================
 # ИНЪЕКЦИЯ НАВИГАЦИИ В HTML
@@ -1173,6 +1197,9 @@ def logout():
 def index():
     user = current_user()
     calls, analyses = get_data(user)
+    latest_date = latest_call_date(calls)
+    if latest_date:
+        calls = [call for call in calls if str(call.get("created") or "")[:10] == latest_date]
     from jarvis_dashboard import render_dashboard
     return html_response(render_dashboard(calls, analyses, user))
 
@@ -1219,8 +1246,11 @@ def rop_report():
     user = current_user()
     calls, analyses = get_data(user)
     from jarvis_rop import filter_calls, render_rop_report
-    filtered_calls = filter_calls(calls, analyses, request.args)
-    return html_response(render_rop_report(filtered_calls, analyses, user, request.args))
+    filters = request.args.to_dict(flat=True)
+    if not filters.get("date"):
+        filters["date"] = latest_call_date(calls)
+    filtered_calls = filter_calls(calls, analyses, filters)
+    return html_response(render_rop_report(filtered_calls, analyses, user, filters, available_calls=calls))
 
 @app.route("/managers")
 @rop_required

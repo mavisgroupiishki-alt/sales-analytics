@@ -1,4 +1,5 @@
 requests>=2.31.0
 psycopg[binary]>=3.2,<4
+Flask>=3.0,<4
 # openai-whisper убран — транскрибация через Vibe Code API (бесплатно)
 # anthropic убран — анализ через Vibe Code AI Router (бесплатно)

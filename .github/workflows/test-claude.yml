@@ -1,51 +1,14 @@
-name: Analyze Calls
+name: Retired JSON Call Pipeline
 
 on:
-  schedule:
-    - cron: '0 20 * * *'  # каждый день в 23:00 по Минску (20:00 UTC)
   workflow_dispatch:
-    inputs:
-      date_from:
-        description: 'Дата начала загрузки звонков (YYYY-MM-DD), например 2026-06-21. Оставь пустым для автоматического режима (вчера).'
-        required: false
-        default: ''
-      days_back:
-        description: 'Или укажи количество дней назад (1=вчера, 2=позавчера, 7=неделя). Игнорируется если указана date_from.'
-        required: false
-        default: '1'
 
 jobs:
-  analyze:
+  retired:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Download and analyze calls
-        env:
-          BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
-          VIBE_API_KEY: ${{ secrets.VIBE_API_KEY }}
-          DATE_FROM: ${{ github.event.inputs.date_from }}
-          DAYS_BACK: ${{ github.event.inputs.days_back || '1' }}
-        run: python src/bitrix.py
-
-      - name: Run AI analysis
-        env:
-          BITRIX_WEBHOOK_URL: ${{ secrets.BITRIX_WEBHOOK_URL }}
-          VIBE_API_KEY: ${{ secrets.VIBE_API_KEY }}
-        run: python src/claude_analyzer.py
-
-      - name: Commit results
+      - name: Explain migration
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add calls_data.json analyses.json
-          git diff --staged --quiet || git commit -m "Auto-analyze: $(date -u '+%Y-%m-%d %H:%M UTC')"
-          git push
+          echo "This JSON pipeline is retired."
+          echo "Jarvis live analysis runs privately on DigitalOcean and stores results in Supabase."
+          exit 1

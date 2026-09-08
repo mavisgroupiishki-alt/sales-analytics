@@ -4,8 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from claude_analyzer import evaluate_triage, is_reanalysis_target, reanalysis_scope  # noqa: E402
-from jarvis_store import normalize_bitrix_call, payload_sha256  # noqa: E402
+from claude_analyzer import compute_applicable_score, evaluate_triage, is_reanalysis_target, reanalysis_scope  # noqa: E402
+from jarvis_store import JarvisRepository, JarvisStore, normalize_bitrix_call, payload_sha256  # noqa: E402
 
 
 class JarvisStoreTests(unittest.TestCase):
@@ -69,6 +69,50 @@ class JarvisStoreTests(unittest.TestCase):
             }
         )
 
+        self.assertEqual(status, "needs_review")
+
+    def test_excluded_call_remains_excluded_when_read_back(self):
+        status, reason, rule = evaluate_triage(
+            {"review_status": "excluded", "exclusion_reason": "Короткий звонок"}
+        )
+
+        self.assertEqual(status, "excluded")
+        self.assertEqual(reason, "Короткий звонок")
+        self.assertEqual(rule, "")
+
+    def test_timecode_and_private_json_projection_are_deterministic(self):
+        self.assertEqual(JarvisStore._timecode_seconds("02:05"), 125)
+        self.assertIsNone(JarvisStore._timecode_seconds("unknown"))
+        self.assertEqual(JarvisRepository._json_object('{"crm":{"owner_id":"42"}}'), {"crm": {"owner_id": "42"}})
+        self.assertEqual(JarvisRepository._json_object("[]"), {})
+
+    def test_score_uses_only_criteria_that_fit_call_type(self):
+        score = compute_applicable_score(
+            "payment_push",
+            [
+                {"code": "opening", "applicable": True, "score": 8},
+                {"code": "need", "applicable": True, "score": 8},
+                {"code": "expertise", "applicable": True, "score": 8},
+                {"code": "next_step", "applicable": True, "score": 8},
+                {"code": "objection", "applicable": True, "score": 6},
+                {"code": "closing", "applicable": True, "score": 8},
+                {"code": "communication", "applicable": True, "score": 8},
+                {"code": "presentation", "applicable": True, "score": 0},
+            ],
+        )
+
+        # Presentation is not a required criterion for a payment follow-up.
+        self.assertEqual(score, 7.6)
+
+    def test_missing_applicable_criterion_is_not_silently_reweighted(self):
+        self.assertIsNone(compute_applicable_score("payment_push", [{"code": "next_step", "applicable": True, "score": 10}]))
+
+    def test_invalid_critical_timecode_is_review_not_alert(self):
+        status, _, _ = evaluate_triage({"flags": {"critical": True, "critical_rule_id": "confirmed_rudeness", "critical_evidence": {"time": "later", "quote": "Больше мне не звоните"}}})
+        self.assertEqual(status, "needs_review")
+
+    def test_critical_timecode_cannot_exceed_source_recording(self):
+        status, _, _ = evaluate_triage({"source_duration_seconds": 30, "flags": {"critical": True, "critical_rule_id": "confirmed_rudeness", "critical_evidence": {"time": "01:00", "quote": "Больше мне не звоните"}}})
         self.assertEqual(status, "needs_review")
 
     def test_today_reanalysis_is_limited_to_source_date(self):

@@ -39,11 +39,16 @@ def _format_timestamp(value: str) -> str:
 def _avatar(manager: Dict[str, Any]) -> str:
     name = str(manager.get("name") or "Менеджер")
     initials = "".join(part[:1] for part in name.split()[:2]).upper() or "М"
+    # A worker's local ``static/avatars`` is not mounted into Render.  Prefer
+    # the current Bitrix profile URL; retain the local route for local/demo
+    # environments that have already materialised the avatar.
     avatar_file = str(manager.get("avatar_file") or "")
+    photo_url = str(manager.get("photo_url") or "")
+    source = photo_url or (f"/avatars/{escape(avatar_file)}" if avatar_file else "")
     image = ""
-    if avatar_file:
+    if source:
         image = (
-            f'<img src="/avatars/{escape(avatar_file)}" alt="" '
+            f'<img src="{escape(source, quote=True)}" alt="" '
             "onload=\"this.parentElement.classList.add('has-image')\" "
             "onerror=\"this.remove()\">"
         )
@@ -51,6 +56,18 @@ def _avatar(manager: Dict[str, Any]) -> str:
 
 
 def _freshness(calls: Iterable[Dict[str, Any]]) -> tuple[str, str]:
+    syncs = [call.get("_jarvis_sync") or {} for call in calls]
+    syncs = [sync for sync in syncs if sync.get("at")]
+    if syncs:
+        latest_sync = max(syncs, key=lambda sync: str(sync.get("at")))
+        timestamp = str(latest_sync["at"])
+        if latest_sync.get("status") != "succeeded":
+            return _format_timestamp(timestamp), "stale"
+        try:
+            age = datetime.now(datetime.fromisoformat(timestamp.replace("Z", "+00:00")).tzinfo) - datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            return _format_timestamp(timestamp), "fresh" if age.total_seconds() <= 15 * 60 else "stale"
+        except ValueError:
+            return _format_timestamp(timestamp), "unknown"
     values = [str(call.get("created") or "") for call in calls if call.get("created")]
     if not values:
         return "нет данных", "unknown"
@@ -169,7 +186,7 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or ""
         score = analysis.get("overall_score") if analysis else None
-        status_label = {"critical": "Критично", "needs_review": "Проверить", "normal": "Без риска", "pending": "Ожидает AI"}[status]
+        status_label = {"critical": "Критично", "needs_review": "Проверить", "normal": "Без риска", "excluded": "Исключён", "pending": "Ожидает AI"}[status]
         feed += f'''<a class="jd-feed" href="/calls/{_text(call.get("activity_id"))}">
           <span class="jd-dot {status}"></span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get("created") or ""))}</small></span>
           <span class="jd-call-type">{_text((analysis.get("call_type") or {}).get("label") or "Тип не подтверждён")}</span>

@@ -274,6 +274,9 @@ def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str
         "name": manager_data["name"],
         "email": manager_data.get("email", ""),
         "avatar_file": manager_data.get("avatar_file", ""),
+        # Keep the Bitrix-origin image URL in the private raw event so the
+        # Render dashboard is not coupled to a worker-local avatar folder.
+        "photo_url": manager_data.get("photo_url", ""),
     }
 
     # Сохраняем для диагностики все поля «ответственных»
@@ -482,6 +485,10 @@ def main():
 
     if not raw_calls:
         Path("calls_data.json").write_text("[]", encoding="utf-8")
+        # A successful empty poll is still a successful source sync.  Without
+        # this marker the ROP cannot distinguish "no new calls" from a stalled
+        # worker in the live dashboard.
+        mirror_snapshot_to_jarvis([])
         return
 
     # Собираем ВСЕ возможные ID менеджеров (AUTHOR + CREATED_BY + RESPONSIBLE)

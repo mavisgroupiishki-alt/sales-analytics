@@ -147,10 +147,17 @@ def rop_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Dict[str
 
 
 def render_rop_report(
-    calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any], filters: Mapping[str, str]
+    calls: List[Dict[str, Any]],
+    analyses: Dict[str, Any],
+    user: Dict[str, Any],
+    filters: Mapping[str, str],
+    available_calls: Iterable[Dict[str, Any]] | None = None,
 ) -> str:
     model = rop_model(calls, analyses)
-    all_dates = sorted({_date(call.get("created")) for call in calls if _date(call.get("created"))}, reverse=True)
+    all_dates = sorted(
+        {_date(call.get("created")) for call in (available_calls or calls) if _date(call.get("created"))},
+        reverse=True,
+    )
     active_date = filters.get("date") or (all_dates[0] if all_dates else "")
     available_managers = sorted(
         {(str((call.get("manager") or {}).get("id") or ""), str((call.get("manager") or {}).get("name") or "Менеджер")) for call in calls},
