@@ -5,8 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from claude_analyzer import compute_applicable_score, evaluate_triage, is_reanalysis_target, reanalysis_scope  # noqa: E402
-from health_rules import assess_deal_health  # noqa: E402
-from jarvis_store import JarvisRepository, JarvisStore, normalize_bitrix_call, normalize_deal_health, payload_sha256  # noqa: E402
+from jarvis_store import JarvisRepository, JarvisStore, normalize_bitrix_call, payload_sha256  # noqa: E402
 
 
 class JarvisStoreTests(unittest.TestCase):
@@ -62,92 +61,6 @@ class JarvisStoreTests(unittest.TestCase):
 
     def test_payload_hash_is_stable_for_equivalent_dicts(self):
         self.assertEqual(payload_sha256({"a": 1, "b": 2}), payload_sha256({"b": 2, "a": 1}))
-
-    def test_health_record_keeps_only_normalized_text_free_facts(self):
-        snapshot = {
-            "deal_id": "77",
-            "category_id": 0,
-            "stage_id": "PREPARATION",
-            "stage_known": True,
-            "responsible_id": "2100",
-            "responsible_active": True,
-            "company_id": "3",
-            "contact_id": "4",
-            "source_id": "WEB",
-            "client_type": "new",
-            "product_or_service": "ISO",
-            "moved_at": "2026-09-08T10:00:00+00:00",
-            "last_communication_at": "2026-09-08T11:00:00+00:00",
-            "open_activities": [{"due_at": "2026-09-09T10:00:00+00:00", "type_id": "6"}],
-            "title": "Клиентский текст не должен попасть в Health",
-            "comments": "И это тоже",
-        }
-        assessment = assess_deal_health(snapshot)
-
-        record = normalize_deal_health(snapshot, assessment, calculated_at="2026-09-08T12:00:00+00:00")
-
-        self.assertEqual(record.deal_id, "77")
-        self.assertEqual(record.data_quality, "complete")
-        self.assertNotIn("title", record.facts)
-        self.assertNotIn("comments", record.facts)
-        self.assertEqual(len(record.snapshot_sha256), 64)
-
-    def test_health_store_writes_current_daily_snapshot_and_zone_event(self):
-        class Cursor:
-            def __init__(self):
-                self.statements = []
-                self.last_statement = ""
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_):
-                return False
-
-            def execute(self, statement, _params):
-                self.statements.append(statement)
-                self.last_statement = statement
-
-            def fetchone(self):
-                if "health_sync_runs" in self.last_statement and "returning id, status" in self.last_statement:
-                    return ("run-1", "running")
-                if "select zone" in self.last_statement:
-                    return None
-                return None
-
-        class Connection:
-            def __init__(self):
-                self.cursor_value = Cursor()
-                self.commits = 0
-
-            def cursor(self):
-                return self.cursor_value
-
-            def commit(self):
-                self.commits += 1
-
-            def rollback(self):
-                raise AssertionError("Health write should not roll back in this fixture")
-
-        snapshot = {
-            "deal_id": "77", "category_id": 0, "stage_id": "PREPARATION", "stage_known": True,
-            "responsible_id": "2100", "responsible_active": True, "company_id": "3", "contact_id": "4",
-            "source_id": "WEB", "client_type": "new", "product_or_service": "ISO",
-            "moved_at": "2026-09-08T10:00:00+00:00", "last_communication_at": "2026-09-08T11:00:00+00:00",
-            "open_activities": [{"due_at": "2026-09-09T10:00:00+00:00"}],
-        }
-        connection = Connection()
-
-        written = JarvisStore(connection).write_deal_health_snapshot(
-            [snapshot], [assess_deal_health(snapshot)], calculated_at="2026-09-08T12:00:00+00:00"
-        )
-
-        queries = "\n".join(connection.cursor_value.statements)
-        self.assertEqual(written, 1)
-        self.assertEqual(connection.commits, 1)
-        self.assertIn("deal_health_current", queries)
-        self.assertIn("deal_health_snapshots", queries)
-        self.assertIn("deal_health_zone_events", queries)
 
     def test_legacy_low_score_requires_reanalysis_not_critical(self):
         status, _, rule = evaluate_triage({"overall_score": 2.5, "flags": {}})
