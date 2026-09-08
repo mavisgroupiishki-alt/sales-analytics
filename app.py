@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from functools import wraps
-from flask import Flask, request, redirect, url_for, session, abort, Response, jsonify, Blueprint
+from flask import Flask, request, redirect, url_for, session, abort, Response, jsonify, Blueprint, send_from_directory
 
 # Admin module (встроен напрямую)
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -969,6 +969,18 @@ def get_data(user=None):
     analyses = load_analyses()
     corrections = load_corrections()
     analyses = apply_corrections(analyses, corrections)
+    # Legacy records were marked critical by the model alone.  Re-classify every
+    # record on read so old JSON cannot recreate false alerts in any Flask page.
+    from claude_analyzer import evaluate_triage
+    for record in analyses.values():
+        analysis = record.get("analysis") if isinstance(record, dict) else None
+        if not isinstance(analysis, dict):
+            continue
+        status, reason, rule_id = evaluate_triage(analysis)
+        analysis["review_status"] = status
+        analysis["is_critical"] = status == "critical"
+        analysis["critical_reason"] = reason
+        analysis["critical_rule_id"] = rule_id
     if user and user.get("role") == "manager" and user.get("manager_id"):
         calls = [c for c in calls if c.get("manager",{}).get("id") == user["manager_id"]]
     return calls, analyses
@@ -1099,8 +1111,10 @@ def fix_links(html):
         ('.html"',                   '"'),  # убираем .html из всех ссылок
         ('href="managers/',          'href="/managers/'),
         ('href="../managers/',       'href="/managers/'),
-        ('src="../avatars/',         'src="/static/avatars/'),
-        ('src="avatars/',            'src="/static/avatars/'),
+        # Profile pictures live in docs/avatars.  Flask exposes that directory
+        # through /avatars instead of pointing browsers at a missing static dir.
+        ('src="../avatars/',         'src="/avatars/'),
+        ('src="avatars/',            'src="/avatars/'),
         ('src="../logo.png"',        'src="/static/logo.png"'),
         ('src="logo.png"',           'src="/static/logo.png"'),
     ]
@@ -1159,16 +1173,23 @@ def logout():
 def index():
     user = current_user()
     calls, analyses = get_data(user)
-    from report_generator import render_index, compute_stats
-    stats = compute_stats(calls, analyses)
-    html = render_index(calls, stats, analyses, datetime.now().isoformat())
-    return html_response(inject_and_fix(html, user))
+    from jarvis_dashboard import render_dashboard
+    return html_response(render_dashboard(calls, analyses, user))
+
+
+@app.route("/avatars/<path:filename>")
+@login_required
+def avatar(filename):
+    """Serve Bitrix profile photos saved with the application data."""
+    return send_from_directory(Path(__file__).parent / "docs" / "avatars", filename)
 
 @app.route("/calls")
 @login_required
 def all_calls():
     user = current_user()
     calls, analyses = get_data(user)
+    from jarvis_rop import filter_calls
+    calls = filter_calls(calls, analyses, request.args)
     from report_generator import render_all_calls, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_all_calls(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
@@ -1197,10 +1218,9 @@ def call_detail(activity_id):
 def rop_report():
     user = current_user()
     calls, analyses = get_data(user)
-    from report_generator import render_rop_report, compute_stats
-    stats = compute_stats(calls, analyses)
-    html = render_rop_report(calls, stats, analyses, datetime.now().isoformat())
-    return html_response(inject_and_fix(html, user))
+    from jarvis_rop import filter_calls, render_rop_report
+    filtered_calls = filter_calls(calls, analyses, request.args)
+    return html_response(render_rop_report(filtered_calls, analyses, user, request.args))
 
 @app.route("/managers")
 @rop_required
@@ -1233,6 +1253,8 @@ def manager_detail(manager_id):
 def critical():
     user = current_user()
     calls, analyses = get_data(user)
+    from jarvis_rop import filter_calls
+    calls = filter_calls(calls, analyses, request.args)
     from report_generator import render_critical_page, compute_stats
     stats = compute_stats(calls, analyses)
     html = render_critical_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])

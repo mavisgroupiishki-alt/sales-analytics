@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from claude_analyzer import evaluate_triage  # noqa: E402
+from claude_analyzer import evaluate_triage, is_reanalysis_target, reanalysis_scope  # noqa: E402
 from jarvis_store import normalize_bitrix_call, payload_sha256  # noqa: E402
 
 
@@ -70,6 +70,19 @@ class JarvisStoreTests(unittest.TestCase):
         )
 
         self.assertEqual(status, "needs_review")
+
+    def test_today_reanalysis_is_limited_to_source_date(self):
+        ids, date = reanalysis_scope({"REANALYZE_TODAY": "1"}, today="2026-09-08")
+
+        self.assertEqual(ids, set())
+        self.assertTrue(is_reanalysis_target({"activity_id": "1", "created": "2026-09-08T11:00:00+03:00"}, ids, date))
+        self.assertFalse(is_reanalysis_target({"activity_id": "2", "created": "2026-09-07T11:00:00+03:00"}, ids, date))
+
+    def test_one_reanalysis_id_does_not_widen_to_other_calls(self):
+        ids, date = reanalysis_scope({"REANALYZE_ID": "100"})
+
+        self.assertTrue(is_reanalysis_target({"activity_id": "100", "created": "2026-09-07T11:00:00+03:00"}, ids, date))
+        self.assertFalse(is_reanalysis_target({"activity_id": "101", "created": "2026-09-07T11:00:00+03:00"}, ids, date))
 
 
 if __name__ == "__main__":

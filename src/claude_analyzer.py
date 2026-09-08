@@ -905,6 +905,26 @@ def analyze_transcript(
 # CLI
 # ============================================================
 
+def reanalysis_scope(environment: Dict[str, str], today: Optional[str] = None) -> Tuple[set[str], Optional[str]]:
+    """Return the explicit reanalysis target without widening a normal batch.
+
+    ``REANALYZE_ID`` is used by the card action.  ``REANALYZE_TODAY=1`` is for
+    the private worker after it has fetched today's recordings.  A date override
+    makes a historical shadow run deterministic and is intentionally not used
+    by the web UI.
+    """
+    ids = {item.strip() for item in environment.get("REANALYZE_ID", "").split(",") if item.strip()}
+    if environment.get("REANALYZE_TODAY") != "1":
+        return ids, None
+    return ids, environment.get("REANALYZE_DATE") or today or datetime.now().date().isoformat()
+
+
+def is_reanalysis_target(call: Dict[str, Any], ids: set[str], date: Optional[str]) -> bool:
+    """Select only explicitly requested calls; dates are compared in source time."""
+    if str(call.get("activity_id") or "") in ids:
+        return True
+    return bool(date and str(call.get("created") or "")[:10] == date)
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     print("=" * 60)
@@ -936,6 +956,12 @@ def main():
     else:
         analyses = {}
 
+    requested_ids, requested_date = reanalysis_scope(os.environ)
+    targeted_reanalysis = bool(requested_ids or requested_date)
+    if targeted_reanalysis:
+        target_description = requested_date or ", ".join(sorted(requested_ids))
+        print(f"♻️  Повторный разбор только для: {target_description}")
+
     total_cost = 0.0
     success = 0
     failed = 0
@@ -958,6 +984,11 @@ def main():
             continue
 
         activity_id = call_meta["activity_id"]
+        if targeted_reanalysis and not is_reanalysis_target(call_meta, requested_ids, requested_date):
+            print("   ⏭ Вне заданного повторного разбора")
+            continue
+        if is_reanalysis_target(call_meta, requested_ids, requested_date):
+            analyses.pop(activity_id, None)
         if activity_id in analyses:
             print(f"   ⏭ Уже проанализирован, пропускаем")
             continue
@@ -1018,12 +1049,15 @@ def main():
             }
             success += 1
 
-            # Уведомление менеджеру в Bitrix
-            try:
-                from bitrix import send_manager_notifications
-                send_manager_notifications([(call_meta, analysis)])
-            except Exception as _notify_err:
-                logger.debug(f"Уведомление не отправлено: {_notify_err}")
+            # РОП-поток не пишет сотрудникам автоматически. Уведомления —
+            # отдельная, явно включаемая интеграция, чтобы повторный разбор
+            # не создавал лишних сообщений в Bitrix.
+            if os.environ.get("NOTIFY_MANAGERS") == "1":
+                try:
+                    from bitrix import send_manager_notifications
+                    send_manager_notifications([(call_meta, analysis)])
+                except Exception as _notify_err:
+                    logger.debug(f"Уведомление не отправлено: {_notify_err}")
 
             if success % 10 == 0:
                 analyses_path.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
