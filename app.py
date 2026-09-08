@@ -1265,7 +1265,11 @@ def manager_detail(manager_id):
     if not manager_calls:
         abort(404)
     from jarvis_dashboard import render_calls
-    return html_response(render_calls(manager_calls, analyses, user))
+    manager_name = (manager_calls[0].get("manager") or {}).get("name") or "Менеджер"
+    return html_response(render_calls(
+        manager_calls, analyses, user, title=f"Звонки менеджера · {manager_name}",
+        description="Здесь показаны только звонки выбранного менеджера. Старые результаты ожидают нового разбора и не входят в его рейтинг.",
+    ))
 
 @app.route("/scripts")
 @rop_required
@@ -1285,11 +1289,14 @@ def critical():
     user = current_user()
     calls, analyses = get_data(user)
     from jarvis_rop import filter_calls
-    calls = filter_calls(calls, analyses, request.args)
-    from report_generator import render_critical_page, compute_stats
-    stats = compute_stats(calls, analyses)
-    html = render_critical_page(calls, analyses, datetime.now().isoformat(), stats["critical_count"])
-    return html_response(inject_and_fix(html, user))
+    filters = request.args.to_dict(flat=True)
+    filters["status"] = "critical"
+    calls = filter_calls(calls, analyses, filters)
+    from jarvis_dashboard import render_calls
+    return html_response(render_calls(
+        calls, analyses, user, title="Срочно к РОПу",
+        description="Здесь бывают только звонки с правилом, цитатой и проверяемым таймкодом. Низкий балл сам по себе сюда не попадает.",
+    ))
 
 @app.route("/triggers")
 @login_required

@@ -254,7 +254,10 @@ def _status_label(status: str) -> str:
     return {"critical": "Срочно к РОПу", "needs_review": "Нужна проверка", "requires_reanalysis": "Нужен новый разбор", "normal": "Без риска", "excluded": "Исключён", "pending": "Ожидает AI"}.get(status, "Ожидает AI")
 
 
-def render_calls(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any]) -> str:
+def render_calls(
+    calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any],
+    *, title: str = "Журнал звонков", description: str | None = None,
+) -> str:
     rows = ""
     for call in sorted(calls, key=lambda item: str(item.get("created") or ""), reverse=True):
         analysis = _analysis_for(analyses, call)
@@ -264,7 +267,8 @@ def render_calls(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Di
         crm = call.get("crm") or {}
         score = analysis.get("overall_score") if analysis else "—"
         rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}"><span class="jc-status {status}">{_text(_status_label(status))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text((analysis.get('call_type') or {}).get('label') or 'Тип не подтверждён')}</span><span>{_text(crm.get('stage_name') or 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
-    content = f'''<section class="jc-heading"><p>Журнал звонков</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>«Нужен новый разбор» — старый алгоритм, не задача РОПа. «Нужна проверка» — новый разбор с неполными основаниями.</small></section><section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
+    note = description or "«Нужен новый разбор» — старый алгоритм, не задача РОПа. «Нужна проверка» — новый разбор с неполными основаниями."
+    content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section><section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
     return _console_page("Звонки", "calls", content, user)
 
 
