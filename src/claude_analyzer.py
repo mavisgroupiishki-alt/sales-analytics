@@ -695,6 +695,20 @@ def call_claude_api(prompt: str, max_tokens: int = 10000) -> Tuple[str, Dict]:
     return text.strip(), meta
 
 
+def decode_json_response(text: str) -> Dict[str, Any]:
+    """Decode one JSON object, tolerating only Markdown code fences."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("```", 2)[1]
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+        cleaned = cleaned.strip()
+    result, _ = json.JSONDecoder().raw_decode(cleaned)
+    if not isinstance(result, dict):
+        raise ValueError("AI response must be a JSON object")
+    return result
+
+
 # ============================================================
 # ОПРЕДЕЛЕНИЕ ТИПА ЗВОНКА
 # ============================================================
@@ -731,7 +745,7 @@ def detect_call_type(transcript: str, call_meta: Dict) -> str:
 
     try:
         text, _ = call_claude_api(prompt, max_tokens=50)
-        payload = json.loads(text.strip().removeprefix("```json").removesuffix("```").strip())
+        payload = decode_json_response(text)
         key = str(payload.get("call_type_key") or "").strip().lower()
         evidence = str(payload.get("evidence") or "").strip()
         if payload.get("confirmed") is True and key in CALL_TYPES and key != "unknown" and len(evidence) >= 8:
@@ -946,17 +960,31 @@ def analyze_transcript(
 
     # Шаг 2: полный анализ с учётом типа
     prompt = build_analysis_prompt(transcript_tc, call_meta, relevant_scripts, call_type_key)
-    text, meta = call_claude_api(prompt, max_tokens=10000)
-
-    # Парсим JSON
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-        text = text.strip()
-
-    decoder = json.JSONDecoder()
-    result, _ = decoder.raw_decode(text)
+    result = None
+    meta: Dict[str, Any] = {}
+    expected_codes = ", ".join(applicable_criteria(call_type_key))
+    for attempt in (1, 2):
+        request_prompt = prompt
+        if attempt == 2:
+            request_prompt += (
+                "\n\nПОВТОРНЫЙ ОТВЕТ: предыдущий ответ был синтаксически неверным JSON "
+                "или содержал неполный набор критериев. Верни заново только валидный JSON. "
+                f"Массив criteria обязан содержать ровно эти применимые коды: {expected_codes}."
+            )
+        try:
+            text, meta = call_claude_api(request_prompt, max_tokens=10000)
+            candidate = decode_json_response(text)
+        except (json.JSONDecodeError, ValueError):
+            if attempt == 1:
+                continue
+            raise
+        if compute_applicable_score(call_type_key, candidate.get("criteria")) is None and attempt == 1:
+            continue
+        result = candidate
+        meta["attempts"] = attempt
+        break
+    if result is None:
+        raise RuntimeError("AI response omitted the required rubric criteria")
 
     result["source_duration_seconds"] = call_meta.get("duration_sec")
 
