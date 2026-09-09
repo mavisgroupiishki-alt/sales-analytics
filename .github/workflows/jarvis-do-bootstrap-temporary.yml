@@ -22,18 +22,21 @@ jobs:
           printf '%s\n' '147.182.140.114 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINzrGaSuchVowpE36ssltqbYgnHLb4t/PDLJay7kPP4D' > "$HOME/.ssh/known_hosts"
           chmod 0600 "$HOME/.ssh/known_hosts"
 
-      - name: Transfer the existing Vibe secret directly to DigitalOcean
+      - name: Transfer the approved worker environment to DigitalOcean
         env:
+          JARVIS_WORKER_ENV: ${{ secrets.JARVIS_WORKER_ENV_TMP }}
           VIBE_API_KEY: ${{ secrets.VIBE_API_KEY }}
         run: |
           set -euo pipefail
-          printf '%s' "$VIBE_API_KEY" | ssh \
+          printf '%s\n' "$JARVIS_WORKER_ENV" > /tmp/jarvis-worker.env
+          printf 'VIBE_API_KEY=%s\n' "$VIBE_API_KEY" >> /tmp/jarvis-worker.env
+          chmod 0600 /tmp/jarvis-worker.env
+          scp \
             -i "$HOME/.ssh/jarvis_do" \
             -o IdentitiesOnly=yes \
             -o ConnectTimeout=30 \
-            -o ServerAliveInterval=10 \
-            root@147.182.140.114 \
-            'vibe=$(cat); grep -v "^VIBE_API_KEY=" /opt/mavis-pilot/jarvis-worker.env > /opt/mavis-pilot/jarvis-worker.env.tmp; printf "VIBE_API_KEY=%s\n" "$vibe" >> /opt/mavis-pilot/jarvis-worker.env.tmp; chmod 0600 /opt/mavis-pilot/jarvis-worker.env.tmp; mv /opt/mavis-pilot/jarvis-worker.env.tmp /opt/mavis-pilot/jarvis-worker.env'
+            /tmp/jarvis-worker.env \
+            root@147.182.140.114:/opt/mavis-pilot/jarvis-worker.env
 
       - name: Start Jarvis worker and wire n8n
         run: |
@@ -46,6 +49,7 @@ jobs:
             root@147.182.140.114 '
               set -eu
               docker compose \
+                --env-file /opt/mavis-pilot/deploy/.env \
                 --env-file /opt/mavis-pilot/jarvis-worker.env \
                 -p deploy \
                 -f /opt/mavis-pilot/deploy/docker-compose.yml \
