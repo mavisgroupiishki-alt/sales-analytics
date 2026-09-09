@@ -41,13 +41,13 @@ jobs:
         if: inputs.operation == 'deploy_analysis_fix'
         run: |
           set -euo pipefail
-          tar --exclude=.git -czf /tmp/jarvis-worker-d6a09a3.tgz .
+          tar --exclude=.git -czf /tmp/jarvis-worker-3aa5ff1.tgz .
           scp \
             -i "$HOME/.ssh/jarvis_do" \
             -o IdentitiesOnly=yes \
             -o ConnectTimeout=30 \
-            /tmp/jarvis-worker-d6a09a3.tgz \
-            root@147.182.140.114:/tmp/jarvis-worker-d6a09a3.tgz
+            /tmp/jarvis-worker-3aa5ff1.tgz \
+            root@147.182.140.114:/tmp/jarvis-worker-3aa5ff1.tgz
           ssh \
             -i "$HOME/.ssh/jarvis_do" \
             -o IdentitiesOnly=yes \
@@ -62,23 +62,23 @@ jobs:
                 docker exec deploy-n8n-1 n8n update:workflow --id="$workflow_id" --active=true >/dev/null 2>&1 || true
               }
               trap reactivate_jarvis_workflow EXIT
-              install -d -m 0755 /opt/mavis-pilot/jarvis-worker-d6a09a3
-              tar -xzf /tmp/jarvis-worker-d6a09a3.tgz -C /opt/mavis-pilot/jarvis-worker-d6a09a3
+              install -d -m 0755 /opt/mavis-pilot/jarvis-worker-3aa5ff1
+              tar -xzf /tmp/jarvis-worker-3aa5ff1.tgz -C /opt/mavis-pilot/jarvis-worker-3aa5ff1
               docker build \
-                -t jarvis-worker:d6a09a3 \
-                -f /opt/mavis-pilot/jarvis-worker-d6a09a3/deploy/Dockerfile.live-worker \
-                /opt/mavis-pilot/jarvis-worker-d6a09a3
+                -t jarvis-worker:3aa5ff1 \
+                -f /opt/mavis-pilot/jarvis-worker-3aa5ff1/deploy/Dockerfile.live-worker \
+                /opt/mavis-pilot/jarvis-worker-3aa5ff1
               printf "%s\n" \
                 "services:" \
                 "  jarvis-worker:" \
-                "    image: jarvis-worker:d6a09a3" \
+                "    image: jarvis-worker:3aa5ff1" \
                 > /opt/mavis-pilot/jarvis-worker-image.override.yml
               docker compose \
                 --env-file /opt/mavis-pilot/deploy/.env \
                 --env-file /opt/mavis-pilot/jarvis-worker.env \
                 -p deploy \
                 -f /opt/mavis-pilot/deploy/docker-compose.yml \
-                -f /opt/mavis-pilot/jarvis-worker-d6a09a3/deploy/docker-compose.live-worker.yml \
+                -f /opt/mavis-pilot/jarvis-worker-3aa5ff1/deploy/docker-compose.live-worker.yml \
                 -f /opt/mavis-pilot/jarvis-n8n-secret.override.yml \
                 -f /opt/mavis-pilot/jarvis-worker-image.override.yml \
                 up -d --no-build --force-recreate jarvis-worker
@@ -107,6 +107,11 @@ jobs:
               else
                 echo "No incomplete analyses remain"
               fi
+              docker exec \
+                -e JARVIS_FORCE_ANALYSIS_VERSION=1 \
+                -w /var/lib/jarvis \
+                deploy-jarvis-worker-1 \
+                python /app/src/persist_runtime_snapshot.py
               docker inspect deploy-jarvis-worker-1 --format "{{.Config.Image}}"
             '
 
