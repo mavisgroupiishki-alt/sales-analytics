@@ -122,11 +122,13 @@ jobs:
               set -eu
               echo "Worker error summary:"
               docker logs --since 2026-09-09T07:57:00Z deploy-jarvis-worker-1 2>&1 \
-                | grep -E "HTTPError:|JSONDecodeError:|ReadTimeout:|ConnectTimeout:|RuntimeError:|В закрытую базу сохранено|Успешно:|Ошибок:" \
+                | grep -E "HTTPError:|JSONDecodeError:|ReadTimeout:|ConnectTimeout:|RuntimeError:|❌|⚠|Транскрипт:|Короткий звонок|В закрытую базу сохранено|Успешно:|Ошибок:" \
                 | sed -E "s/[A-Fa-f0-9]{24,}/[redacted]/g" \
                 | sort \
                 | uniq -c \
-                | tail -80 || true
+                | tail -160 || true
+              echo "Runtime reconciliation:"
+              docker exec deploy-jarvis-worker-1 python -c "import json, pathlib; p=pathlib.Path(\"/var/lib/jarvis\"); calls=json.loads((p/\"calls_data.json\").read_text()); analyses=json.loads((p/\"analyses.json\").read_text()); audio=list((p/\"audio_temp\").glob(\"*.mp3\")); mapped=sum(1 for f in audio if any(c.get(\"audio\") and str(c[\"audio\"].get(\"file_id\")) == f.name.split(\"_\")[0] for c in calls)); print({\"calls\":len(calls),\"audio_files\":len(audio),\"mapped_audio\":mapped,\"analyses_file\":len(analyses)})"
               echo "AI model endpoint probe:"
               docker exec deploy-jarvis-worker-1 python -c "import os, requests; u=\"https://vibecode.bitrix24.tech/v1/ai/models\"; r=requests.get(u, headers={\"X-Api-Key\":os.environ[\"VIBE_API_KEY\"]}, timeout=30); print(r.status_code); print([x.get(\"id\") for x in r.json().get(\"data\", [])] if r.ok else r.text[:300])"
             '
