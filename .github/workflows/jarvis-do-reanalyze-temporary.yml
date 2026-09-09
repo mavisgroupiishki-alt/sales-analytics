@@ -1,0 +1,93 @@
+name: Temporary Jarvis DigitalOcean reanalysis
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reanalyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out current worker
+        uses: actions/checkout@v4
+
+      - name: Deploy worker and reanalyze 08.09.2026
+        env:
+          JARVIS_DO_SSH_KEY: ${{ secrets.JARVIS_DO_SSH_KEY_TMP }}
+        run: |
+          set -euo pipefail
+          key_file="$RUNNER_TEMP/jarvis_do"
+          known_hosts_file="$RUNNER_TEMP/known_hosts"
+          printf '%s\n' "$JARVIS_DO_SSH_KEY" > "$key_file"
+          chmod 0600 "$key_file"
+          printf '%s\n' '147.182.140.114 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINzrGaSuchVowpE36ssltqbYgnHLb4t/PDLJay7kPP4D' > "$known_hosts_file"
+          tar --exclude=.git -czf "$RUNNER_TEMP/jarvis-worker-f4479c1.tgz" .
+          scp -i "$key_file" -o IdentitiesOnly=yes -o UserKnownHostsFile="$known_hosts_file" -o ConnectTimeout=30 \
+            "$RUNNER_TEMP/jarvis-worker-f4479c1.tgz" root@147.182.140.114:/tmp/jarvis-worker-f4479c1.tgz
+          ssh -i "$key_file" -o IdentitiesOnly=yes -o UserKnownHostsFile="$known_hosts_file" -o ConnectTimeout=30 -o ServerAliveInterval=10 \
+            root@147.182.140.114 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          workflow_id=$(docker exec deploy-n8n-1 n8n list:workflow | awk -F'|' '/Jarvis — live Bitrix calls every 5 minutes/{print $1; exit}')
+          test -n "$workflow_id"
+          docker exec deploy-n8n-1 n8n update:workflow --id="$workflow_id" --active=false
+          reactivate_workflow() {
+            docker exec deploy-n8n-1 n8n update:workflow --id="$workflow_id" --active=true >/dev/null 2>&1 || true
+          }
+          trap reactivate_workflow EXIT
+
+          install -d -m 0755 /opt/mavis-pilot/jarvis-worker-f4479c1
+          tar -xzf /tmp/jarvis-worker-f4479c1.tgz -C /opt/mavis-pilot/jarvis-worker-f4479c1
+          docker build -t jarvis-worker:f4479c1 \
+            -f /opt/mavis-pilot/jarvis-worker-f4479c1/deploy/Dockerfile.live-worker \
+            /opt/mavis-pilot/jarvis-worker-f4479c1
+          printf '%s\n' \
+            'services:' \
+            '  jarvis-worker:' \
+            '    image: jarvis-worker:f4479c1' \
+            > /opt/mavis-pilot/jarvis-worker-image.override.yml
+          docker compose \
+            --env-file /opt/mavis-pilot/deploy/.env \
+            --env-file /opt/mavis-pilot/jarvis-worker.env \
+            -p deploy \
+            -f /opt/mavis-pilot/deploy/docker-compose.yml \
+            -f /opt/mavis-pilot/jarvis-worker-f4479c1/deploy/docker-compose.live-worker.yml \
+            -f /opt/mavis-pilot/jarvis-n8n-secret.override.yml \
+            -f /opt/mavis-pilot/jarvis-worker-image.override.yml \
+            up -d --no-build --force-recreate jarvis-worker
+
+          for attempt in $(seq 1 30); do
+            if docker exec deploy-jarvis-worker-1 python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=3)'; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              docker logs --tail 80 deploy-jarvis-worker-1 2>&1 | sed -E 's/[A-Fa-f0-9]{24,}/[redacted]/g'
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker exec deploy-jarvis-worker-1 python -c 'import json, os, urllib.request; request=urllib.request.Request("http://127.0.0.1:8080/internal/sync", data=json.dumps({"mode":"reanalyze_day","date":"2026-09-08"}).encode(), headers={"Content-Type":"application/json","x-jarvis-sync-secret":os.environ["JARVIS_SYNC_SECRET"]}, method="POST"); print(urllib.request.urlopen(request, timeout=10).read().decode())'
+
+          completed=0
+          for attempt in $(seq 1 120); do
+            status=$(docker exec deploy-jarvis-worker-1 python -c 'import json, urllib.request; data=json.load(urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=5)); print(data.get("status", "unknown"))')
+            echo "worker_status=$status"
+            if [ "$status" = succeeded ]; then
+              completed=1
+              break
+            fi
+            if [ "$status" = failed ]; then
+              docker logs --tail 160 deploy-jarvis-worker-1 2>&1 \
+                | grep -E 'RuntimeError:|HTTPError:|ReadTimeout:|ConnectTimeout:|❌|⚠|Транскрипт:|Успешно:|Ошибок:|В закрытую базу сохранено' \
+                | sed -E 's/[A-Fa-f0-9]{24,}/[redacted]/g' | tail -160 || true
+              exit 1
+            fi
+            sleep 15
+          done
+          test "$completed" -eq 1
+          docker exec deploy-jarvis-worker-1 python -c 'import json, pathlib; p=pathlib.Path("/var/lib/jarvis"); calls=json.loads((p/"calls_data.json").read_text()); analyses=json.loads((p/"analyses.json").read_text()); day=[c for c in calls if str(c.get("created", ""))[:10]=="2026-09-08"]; analyzed=sum(str(c.get("activity_id")) in analyses for c in day); service=sum(bool((analyses.get(str(c.get("activity_id")),{}).get("analysis") or {}).get("service_call")) for c in day); print(json.dumps({"calls_2026_09_08":len(day),"analyzed_2026_09_08":analyzed,"service_calls":service}))'
+          docker inspect deploy-jarvis-worker-1 --format '{{.Config.Image}}'
+          REMOTE
