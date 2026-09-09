@@ -248,7 +248,7 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or ""
         score = analysis.get("overall_score") if analysis else None
-        status_label = {"critical": "Критично", "needs_review": "Проверить", "requires_reanalysis": "В обработке", "normal": "Без риска", "excluded": "Исключён", "pending": "В обработке"}[status]
+        status_label = {"critical": "Критично", "needs_review": "Проверить", "requires_reanalysis": "Требует обновления", "normal": "Без риска", "excluded": "Исключён", "pending": "Нет разбора"}[status]
         feed += f'''<a class="jd-feed" href="/calls/{_text(call.get("activity_id"))}">
           <span class="jd-dot {status}"></span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get("created") or ""))}</small></span>
           <span class="jd-call-type">{_text((analysis.get("call_type") or {}).get("label") or "Тип не подтверждён")}</span>
@@ -264,7 +264,7 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
 <nav><a class="active" href="/">Обзор</a><a href="/calls">Звонки</a>{'<a href="/funnel">Воронка</a><a href="/managers">Команда</a><a href="/rop">Отчёт РОПа</a><a href="/scripts">Скрипты</a>' if user.get('role') in {'rop', 'director'} else ''}</nav>
 <div class="jd-user"><span>{_text(role)} · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header>
 <main class="jd-shell"><section class="jd-heading"><div><p>{today}</p><h1>Картина продаж <span>на сейчас</span></h1></div><div class="jd-source {source_class}"><i></i><span>Bitrix24</span><b>{source_text}</b><small>последняя запись: {fresh_at}</small></div></section>
-<section class="jd-metrics"><div><small>Звонки в выборке</small><b>{model['calls']}</b><span>{model['incoming']} входящих · {model['outgoing']} исходящих</span></div><div><small>Разобрано AI</small><b>{model['analyzed']}</b><span>{round(model['analyzed'] / model['calls'] * 100) if model['calls'] else 0}% от выборки</span></div><div class="jd-metric-critical"><small>Срочно к РОПу</small><b>{len(model['critical'])}</b><span>только с правилом и доказательством</span></div><div class="jd-metric-review"><small>В обработке</small><b>{max(0, model['calls'] - model['analyzed'])}</b><span>получают транскрипт и оценку</span></div></section>
+<section class="jd-metrics"><div><small>Звонки в выборке</small><b>{model['calls']}</b><span>{model['incoming']} входящих · {model['outgoing']} исходящих</span></div><div><small>Разобрано AI</small><b>{model['analyzed']}</b><span>{round(model['analyzed'] / model['calls'] * 100) if model['calls'] else 0}% от выборки</span></div><div class="jd-metric-critical"><small>Срочно к РОПу</small><b>{len(model['critical'])}</b><span>только с правилом и доказательством</span></div><div class="jd-metric-review"><small>Без разбора</small><b>{max(0, model['calls'] - model['analyzed'])}</b><span>нет пригодной записи или анализ ещё идёт</span></div></section>
 <section class="jd-grid"><section class="jd-panel jd-actions"><div class="jd-panel-head"><div><h2>Действия РОПа</h2><p>Подтверждённые риски, требующие вмешательства</p></div><a href="/critical">Вся очередь →</a></div>{alerts}</section>
 <section class="jd-panel jd-team"><div class="jd-panel-head"><div><h2>Команда</h2><p>Кого открыть первым</p></div><a href="/managers">Все менеджеры →</a></div><div class="jd-manager-list">{managers}</div></section>
 <section class="jd-panel jd-feed-panel"><div class="jd-panel-head"><div><h2>Последние звонки</h2><p>Первичные записи в хронологическом порядке</p></div><a href="/calls">Открыть журнал →</a></div>{feed}</section></section>
@@ -280,7 +280,7 @@ def _console_page(title: str, active: str, body: str, user: Dict[str, Any]) -> s
 
 
 def _status_label(status: str) -> str:
-    return {"critical": "Срочно к РОПу", "needs_review": "Нужна проверка", "requires_reanalysis": "В обработке", "normal": "Без риска", "excluded": "Исключён", "pending": "В обработке"}.get(status, "В обработке")
+    return {"critical": "Срочно к РОПу", "needs_review": "Нужна проверка", "requires_reanalysis": "Требует обновления", "normal": "Без риска", "excluded": "Исключён", "pending": "Нет разбора"}.get(status, "Нет разбора")
 
 
 def render_calls(
@@ -296,7 +296,7 @@ def render_calls(
         crm = call.get("crm") or {}
         score = analysis.get("overall_score") if analysis else "—"
         rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}"><span class="jc-status {status}">{_text(_status_label(status))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text((analysis.get('call_type') or {}).get('label') or 'Тип не подтверждён')}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
-    note = description or "«В обработке» — запись получает транскрипт и оценку. «Нужна проверка» — разбор завершён, но оснований для автоматического решения недостаточно."
+    note = description or "«Нет разбора» — Bitrix не отдал пригодную запись либо текущая обработка ещё не завершилась. «Нужна проверка» — разбор завершён, но оснований для автоматического решения недостаточно."
     content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section><section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
     return _console_page("Звонки", "calls", content, user)
 
@@ -307,7 +307,7 @@ def render_managers(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user:
     for item in model["managers"]:
         manager = item["manager"]
         score = f"{item['average']:.1f}" if item["average"] is not None else "—"
-        signal = "Срочно" if item["critical"] else ("Проверить" if item["review"] else ("В обработке" if item["reanalysis"] else "В норме"))
+        signal = "Срочно" if item["critical"] else ("Проверить" if item["review"] else ("Требует обновления" if item["reanalysis"] else "В норме"))
         rows += f'''<a class="jc-manager-row" href="/managers/{_text(manager.get('id'))}">{_avatar(manager)}<span><b>{_text(manager.get('name') or 'Менеджер')}</b><small>{item['calls']} звонков · AI-покрытие {round(item['analyzed'] / item['calls'] * 100) if item['calls'] else 0}%</small></span><strong>{score}</strong><span>{item['critical']} срочно · {item['review']} проверить</span><em>{_text(signal)}</em><i>→</i></a>'''
     content = f'''<section class="jc-heading"><p>Команда</p><h1>Качество — <span>без ложных рейтингов.</span></h1><small>Средний балл строится только по завершённым разборам и применимым критериям текущей методики.</small></section><section class="jc-table jc-managers"><div class="jc-table-head"><span></span><span>Менеджер</span><span>Балл</span><span>Сигналы</span><span>Статус</span><span></span></div>{rows or '<div class="jd-empty"><b>Нет менеджеров в выборке.</b></div>'}</section>'''
     return _console_page("Команда", "managers", content, user)
@@ -316,7 +316,7 @@ def render_managers(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user:
 def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[str, Any]) -> str:
     analysis = (stored or {}).get("analysis") or {}
     transcription = (stored or {}).get("transcription") or {}
-    status, reason, _ = triage_for(analysis) if analysis else ("pending", "Звонок ещё не разобран", "")
+    status, reason, _ = triage_for(analysis) if analysis else ("pending", "Разбор отсутствует: запись недоступна или обработка ещё не завершилась", "")
     client_data = call.get("client") or {}
     client = client_data.get("name") or "Клиент не определён"
     company = client_data.get("company") or "Компания не указана"

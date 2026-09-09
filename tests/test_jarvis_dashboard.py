@@ -4,10 +4,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from jarvis_dashboard import dashboard_model, render_call_detail, render_funnel  # noqa: E402
+from jarvis_dashboard import dashboard_model, render_call_detail, render_calls, render_dashboard, render_funnel  # noqa: E402
 
 
 class DashboardModelTests(unittest.TestCase):
+    def test_missing_analysis_is_not_claimed_to_be_waiting_for_ai(self):
+        calls = [{"activity_id": "1", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}}]
+
+        overview = render_dashboard(calls, {}, {"role": "rop", "name": "РОП"})
+        journal = render_calls(calls, {}, {"role": "rop", "name": "РОП"})
+
+        self.assertIn("Без разбора", overview)
+        self.assertIn("нет пригодной записи или анализ ещё идёт", overview)
+        self.assertIn("Нет разбора", journal)
+
     def test_legacy_unproven_critical_requires_reanalysis_not_rop_review(self):
         calls = [{"activity_id": "1", "manager": {"id": 1, "name": "Анна"}}]
         analyses = {"1": {"analysis": {"overall_score": 3, "flags": {"critical": True}}}}
