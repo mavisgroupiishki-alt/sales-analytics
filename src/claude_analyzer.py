@@ -26,7 +26,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-MODEL_CLAUDE = "bitrix/bitrixgpt-5.5"   # бесплатная модель Vibe Code; замени на "auto" для автовыбора
+MODEL_CLAUDE = os.environ.get("VIBE_CHAT_MODEL", "bitrix/bitrixgpt-5.5")
 MIN_DURATION_FOR_ANALYSIS = 30  # звонки короче этого порога только транскрибируются, без ИИ-анализа
 MODEL_WHISPER = "base"
 VIBE_AI_URL = "https://vibecode.bitrix24.tech/v1/ai/chat/completions"
@@ -726,7 +726,7 @@ def detect_call_type(transcript: str, call_meta: Dict) -> str:
 ВОЗМОЖНЫЕ ТИПЫ ЗВОНКОВ:
 {types_list}
 
-    Ответь строго JSON: {"call_type_key":"ключ из списка или unknown","confirmed":true|false,"evidence":"короткая цитата или факт из транскрипта"}.
+    Ответь строго JSON: {{"call_type_key":"ключ из списка или unknown","confirmed":true|false,"evidence":"короткая цитата или факт из транскрипта"}}.
     `confirmed=true` допустим только если тип прямо подтверждается транскриптом или CRM-контекстом. Не угадывай, является ли клиент новым, холодным или действующим: если основания нет, верни `unknown`."""
 
     try:
@@ -1240,6 +1240,9 @@ def main():
         print(f"\nРаспределение по типам звонков:")
         for t, cnt in sorted(type_stats.items(), key=lambda x: -x[1]):
             print(f"   - {t}: {cnt}")
+
+    if failed:
+        raise RuntimeError(f"Analysis batch incomplete: {failed} calls failed")
 
 
 if __name__ == "__main__":

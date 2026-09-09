@@ -104,6 +104,9 @@ class LivePipeline:
 
     def _prepare_runtime(self) -> None:
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
+        audio_dir = self.runtime_dir / "audio_temp"
+        shutil.rmtree(audio_dir, ignore_errors=True)
+        audio_dir.mkdir()
         scripts = self.runtime_dir / "scripts.json"
         if not scripts.exists():
             shutil.copy2(PROJECT_DIR / "scripts.json", scripts)

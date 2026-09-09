@@ -15,6 +15,20 @@ except ModuleNotFoundError as exc:
 
 
 class LiveWorkerDateWindowTests(unittest.TestCase):
+    def test_prepare_runtime_removes_stale_audio_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime_dir = Path(directory)
+            audio_dir = runtime_dir / "audio_temp"
+            audio_dir.mkdir()
+            (audio_dir / "stale.mp3").write_bytes(b"stale")
+            (runtime_dir / "analyses.json").write_text("{}", encoding="utf-8")
+
+            pipeline = LivePipeline(runtime_dir)
+            pipeline._prepare_runtime()
+
+            self.assertEqual(list(audio_dir.iterdir()), [])
+            self.assertTrue((runtime_dir / "analyses.json").exists())
+
     def test_historical_reanalysis_is_bounded_to_one_calendar_day(self):
         keys = ("DATE_FROM", "DATE_TO", "REANALYZE_DATE")
         previous = {key: os.environ.get(key) for key in keys}
