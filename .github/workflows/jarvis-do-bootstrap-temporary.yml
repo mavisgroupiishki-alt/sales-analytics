@@ -41,13 +41,13 @@ jobs:
         if: inputs.operation == 'deploy_analysis_fix'
         run: |
           set -euo pipefail
-          tar --exclude=.git -czf /tmp/jarvis-worker-87e816f.tgz .
+          tar --exclude=.git -czf /tmp/jarvis-worker-fa45d24.tgz .
           scp \
             -i "$HOME/.ssh/jarvis_do" \
             -o IdentitiesOnly=yes \
             -o ConnectTimeout=30 \
-            /tmp/jarvis-worker-87e816f.tgz \
-            root@147.182.140.114:/tmp/jarvis-worker-87e816f.tgz
+            /tmp/jarvis-worker-fa45d24.tgz \
+            root@147.182.140.114:/tmp/jarvis-worker-fa45d24.tgz
           ssh \
             -i "$HOME/.ssh/jarvis_do" \
             -o IdentitiesOnly=yes \
@@ -62,23 +62,23 @@ jobs:
                 docker exec deploy-n8n-1 n8n update:workflow --id="$workflow_id" --active=true >/dev/null 2>&1 || true
               }
               trap reactivate_jarvis_workflow EXIT
-              install -d -m 0755 /opt/mavis-pilot/jarvis-worker-87e816f
-              tar -xzf /tmp/jarvis-worker-87e816f.tgz -C /opt/mavis-pilot/jarvis-worker-87e816f
+              install -d -m 0755 /opt/mavis-pilot/jarvis-worker-fa45d24
+              tar -xzf /tmp/jarvis-worker-fa45d24.tgz -C /opt/mavis-pilot/jarvis-worker-fa45d24
               docker build \
-                -t jarvis-worker:87e816f \
-                -f /opt/mavis-pilot/jarvis-worker-87e816f/deploy/Dockerfile.live-worker \
-                /opt/mavis-pilot/jarvis-worker-87e816f
+                -t jarvis-worker:fa45d24 \
+                -f /opt/mavis-pilot/jarvis-worker-fa45d24/deploy/Dockerfile.live-worker \
+                /opt/mavis-pilot/jarvis-worker-fa45d24
               printf "%s\n" \
                 "services:" \
                 "  jarvis-worker:" \
-                "    image: jarvis-worker:87e816f" \
+                "    image: jarvis-worker:fa45d24" \
                 > /opt/mavis-pilot/jarvis-worker-image.override.yml
               docker compose \
                 --env-file /opt/mavis-pilot/deploy/.env \
                 --env-file /opt/mavis-pilot/jarvis-worker.env \
                 -p deploy \
                 -f /opt/mavis-pilot/deploy/docker-compose.yml \
-                -f /opt/mavis-pilot/jarvis-worker-87e816f/deploy/docker-compose.live-worker.yml \
+                -f /opt/mavis-pilot/jarvis-worker-fa45d24/deploy/docker-compose.live-worker.yml \
                 -f /opt/mavis-pilot/jarvis-n8n-secret.override.yml \
                 -f /opt/mavis-pilot/jarvis-worker-image.override.yml \
                 up -d --no-build --force-recreate jarvis-worker
@@ -92,7 +92,7 @@ jobs:
                 fi
                 sleep 2
               done
-              target_ids=$(docker exec deploy-jarvis-worker-1 python -c "import json,pathlib; p=pathlib.Path(\"/var/lib/jarvis\"); calls=json.loads((p/\"calls_data.json\").read_text()); analyses=json.loads((p/\"analyses.json\").read_text()); files={f.name.split(\"_\")[0] for f in (p/\"audio_temp\").glob(\"*.mp3\")}; print(\",\".join(str(c[\"activity_id\"]) for c in calls if c.get(\"audio\") and str(c[\"audio\"].get(\"file_id\")) in files and int(c.get(\"duration_sec\") or 0) >= 30 and (str(c[\"activity_id\"]) not in analyses or (((analyses.get(str(c[\"activity_id\"])) or {}).get(\"analysis\") or {}).get(\"overall_score\") is None and not (((analyses.get(str(c[\"activity_id\"])) or {}).get(\"analysis\") or {}).get(\"exclude_from_stats\"))))))")
+              target_ids=$(docker exec deploy-jarvis-worker-1 python -c "import json,pathlib; p=pathlib.Path(\"/var/lib/jarvis\"); calls=json.loads((p/\"calls_data.json\").read_text()); analyses=json.loads((p/\"analyses.json\").read_text()); files={f.name.split(\"_\")[0] for f in (p/\"audio_temp\").glob(\"*.mp3\")}; print(\",\".join(str(c[\"activity_id\"]) for c in calls if c.get(\"audio\") and str(c[\"audio\"].get(\"file_id\")) in files and int(c.get(\"duration_sec\") or 0) >= 30 and (str(c[\"activity_id\"]) not in analyses or (((analyses.get(str(c[\"activity_id\"])) or {}).get(\"analysis\") or {}).get(\"overall_score\") is None or float((((analyses.get(str(c[\"activity_id\"])) or {}).get(\"analysis\") or {}).get(\"overall_score\") or 0)) < 1 or float((((analyses.get(str(c[\"activity_id\"])) or {}).get(\"analysis\") or {}).get(\"overall_score\") or 0)) > 10) and not (((analyses.get(str(c[\"activity_id\"])) or {}).get(\"analysis\") or {}).get(\"exclude_from_stats\"))))))")
               if [ -n "$target_ids" ]; then
                 target_count=$(printf "%s" "$target_ids" | awk -F, "{print NF}")
                 echo "Retrying incomplete analyses: $target_count"
