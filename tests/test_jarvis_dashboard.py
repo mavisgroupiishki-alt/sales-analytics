@@ -55,6 +55,10 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("Пустая запись", journal)
         self.assertNotIn("Нет разбора", journal)
         self.assertIn("Запись пустая", detail)
+        self.assertIn("Пустая запись не анализируется", detail)
+        self.assertIn("Оценка, проверка скрипта и транскрипт для этого звонка не создаются", detail)
+        self.assertNotIn("Транскрипт разговора", detail)
+        self.assertNotIn("Транскрипт формируется", detail)
         self.assertNotIn('src="/audio/1"', detail)
 
     def test_excluded_short_call_has_a_specific_status(self):

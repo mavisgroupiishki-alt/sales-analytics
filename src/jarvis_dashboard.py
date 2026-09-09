@@ -386,10 +386,11 @@ def render_managers(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user:
 def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[str, Any]) -> str:
     analysis = (stored or {}).get("analysis") or {}
     transcription = (stored or {}).get("transcription") or {}
+    unavailable_recording = recording_is_unavailable(call)
     non_sales_call = bool(analysis.get("service_call") or analysis.get("not_sales"))
     if analysis:
         status, reason, _ = triage_for(analysis)
-    elif recording_is_unavailable(call):
+    elif unavailable_recording:
         status, reason = "audio_unavailable", "Bitrix передал пустую запись нулевой длительности: транскрипция и оценка невозможны"
     else:
         status, reason = "pending", "Разбор отсутствует: пригодная запись ещё обрабатывается"
@@ -399,7 +400,7 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
     manager = (call.get("manager") or {}).get("name") or "Менеджер не определён"
     crm = call.get("crm") or {}
     score = analysis.get("overall_score") if analysis.get("overall_score") is not None else "—"
-    score_heading = "Не оценивается" if non_sales_call or recording_is_unavailable(call) else f"{score}/10"
+    score_heading = "Не оценивается" if non_sales_call or unavailable_recording else f"{score}/10"
     duration = call.get("duration_sec") or transcription.get("duration_sec")
     try:
         duration_seconds = int(float(duration)) if duration else 0
@@ -422,11 +423,11 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
 
     activity_id = str(call.get("activity_id") or "")
     audio = call.get("audio") or {}
-    if (audio.get("file_id") or audio.get("url") or audio.get("public_path")) and not recording_is_unavailable(call):
+    if (audio.get("file_id") or audio.get("url") or audio.get("public_path")) and not unavailable_recording:
         direction_label = {"incoming": "Входящий", "outgoing": "Исходящий"}.get(str(call.get("direction")), "Направление не определено")
         audio_html = f'''<section class="jc-audio"><div><b>Запись разговора</b><span>{_text(direction_label)} · {duration_label}</span></div><audio id="callAudio" controls preload="metadata" src="/audio/{_text(activity_id)}">Ваш браузер не поддерживает аудио.</audio></section>'''
     else:
-        empty_reason = "Bitrix передал пустой файл нулевой длительности." if recording_is_unavailable(call) else "Bitrix не передал файл этого разговора."
+        empty_reason = "Bitrix передал пустой файл нулевой длительности." if unavailable_recording else "Bitrix не передал файл этого разговора."
         audio_html = f'<section class="jc-audio jc-audio-empty"><div><b>Запись пустая</b><span>{_text(empty_reason)}</span></div></section>'
 
     moments = analysis.get("key_moments") or []
@@ -437,7 +438,9 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
         timecode = str(item.get("time") or "")
         time_button = f'<button type="button" class="jc-timecode" data-timecode="{_text(timecode)}" onclick="seekCallAudio(this.dataset.timecode)" aria-label="Перейти к { _text(timecode) }">{_text(timecode)}</button>' if timecode else '<span class="jc-no-time">—</span>'
         moment_rows += f'<li class="{_text(item.get("type") or "neutral")}">{time_button}<span><b>{_text(item.get("text") or "Важный момент")}</b><small>{_text(item.get("detail") or "")}</small></span></li>'
-    if not moment_rows and non_sales_call:
+    if not moment_rows and unavailable_recording:
+        moment_rows = '<li><span class="jc-no-time">—</span><span><b>Запись отсутствует</b><small>Без аудио нельзя выделить факты и таймкоды разговора.</small></span></li>'
+    elif not moment_rows and non_sales_call:
         moment_rows = '<li><span class="jc-no-time">—</span><span><b>Звонок исключён до оценки</b><small>Консультации или продажного разговора не было.</small></span></li>'
     elif not moment_rows:
         moment_rows = '<li><span class="jc-no-time">—</span><span><b>Ключевые моменты появятся после анализа</b><small>Джарвис добавит точные таймкоды и факты разговора.</small></span></li>'
@@ -505,8 +508,11 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
         transcript_rows = '<div class="jc-section-empty">Транскрипт формируется. Запись уже можно прослушать выше.</div>'
 
     summary = analysis.get("summary") or reason or "Джарвис ещё обрабатывает этот разговор."
-    recommendation = analysis.get("recommended_action") or analysis.get("recommendation") or ("Продажные критерии, скрипт и балл к этому звонку не применяются." if non_sales_call else "Рекомендация появится после завершения анализа.")
-    if non_sales_call:
+    recommendation = analysis.get("recommended_action") or analysis.get("recommendation") or ("Продажные критерии, скрипт и балл к этому звонку не применяются." if non_sales_call else ("Запросить корректную запись в Bitrix, если разговор нужно проверить." if unavailable_recording else "Рекомендация появится после завершения анализа."))
+    if unavailable_recording:
+        evaluation_html = '''<section class="jc-panel-section"><div class="jc-section-head"><div><h2>Пустая запись не анализируется</h2><p>Bitrix передал файл нулевой длительности.</p></div></div><div class="jc-section-empty">Оценка, проверка скрипта и транскрипт для этого звонка не создаются.</div></section>'''
+        transcript_html = ""
+    elif non_sales_call:
         exclusion_reason = analysis.get("not_sales_reason") or analysis.get("exclusion_reason") or "В разговоре не было консультации или продажи"
         evaluation_html = f'''<section class="jc-panel-section"><div class="jc-section-head"><div><h2>Служебный звонок не оценивается</h2><p>{_text(exclusion_reason)}</p></div></div><div class="jc-section-empty">Транскрипт используется только внутри системы для определения типа звонка и в карточке не публикуется.</div></section>'''
         transcript_html = ""
