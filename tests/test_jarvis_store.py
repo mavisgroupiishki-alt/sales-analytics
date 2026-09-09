@@ -69,7 +69,7 @@ class JarvisStoreTests(unittest.TestCase):
         )
 
         self.assertFalse(normalized.recording_available)
-        self.assertEqual(normalized.audio_status, "empty")
+        self.assertEqual(normalized.audio_status, "unavailable")
 
     def test_payload_hash_is_stable_for_equivalent_dicts(self):
         self.assertEqual(payload_sha256({"a": 1, "b": 2}), payload_sha256({"b": 2, "a": 1}))
