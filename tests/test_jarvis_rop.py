@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from jarvis_rop import filter_calls, rop_model  # noqa: E402
+from jarvis_rop import filter_calls, render_rop_report, rop_model  # noqa: E402
 
 
 class RopModelTests(unittest.TestCase):
@@ -46,6 +46,23 @@ class RopModelTests(unittest.TestCase):
     def test_stage_filter_uses_human_readable_name(self):
         selected = filter_calls(self.calls, self.analyses, {"stage": "5. КП отправлено"})
         self.assertEqual([call["activity_id"] for call in selected], ["one"])
+
+    def test_low_score_is_a_separate_rop_attention_signal(self):
+        analyses = {"one": {"analysis": {
+            "overall_score": 2.5,
+            "overall_score_method": "applicable_rubric_v1",
+            "flags": {},
+        }}}
+
+        model = rop_model([self.calls[0]], analyses)
+        selected = filter_calls([self.calls[0]], analyses, {"status": "low_score"})
+        html = render_rop_report([self.calls[0]], analyses, {"name": "РОП"}, {})
+
+        self.assertEqual(len(model["critical"]), 0)
+        self.assertEqual(len(model["attention"]), 1)
+        self.assertEqual([call["activity_id"] for call in selected], ["one"])
+        self.assertIn("Внимание РОПа", html)
+        self.assertIn("0 критичных · 1 низких", html)
 
 
 if __name__ == "__main__":

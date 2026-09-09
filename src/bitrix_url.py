@@ -13,6 +13,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 _BITRIX_FILE_PATH = "/bitrix/tools/crm_show_file.php"
 _BITRIX_FILE_QUERY_KEYS = {"fileId", "ownerTypeId", "ownerId", "auth"}
+_BITRIX_REST_DOWNLOAD_PATH = "/rest/download.json"
+_BITRIX_REST_DOWNLOAD_QUERY_KEYS = {"auth", "token"}
 
 
 def normalize_bitrix_webhook_url(raw_url: str) -> str:
@@ -107,14 +109,25 @@ def validate_bitrix_file_url(file_url: str, raw_webhook_url: str) -> str:
         raise ValueError("Домен файла не совпадает с доменом Bitrix24")
     if parsed.port != webhook.port:
         raise ValueError("Порт файла не совпадает с портом Bitrix24")
-    if parsed.path != _BITRIX_FILE_PATH:
-        raise ValueError("Разрешён только CRM-файл Bitrix24")
-
     pairs = parse_qsl(parsed.query, keep_blank_values=True)
     keys = [key for key, _ in pairs]
-    if not pairs or len(keys) != len(set(keys)) or set(keys) - _BITRIX_FILE_QUERY_KEYS:
+    if not pairs or len(keys) != len(set(keys)):
         raise ValueError("Недопустимые параметры ссылки Bitrix24")
     params = dict(pairs)
+
+    if parsed.path == _BITRIX_REST_DOWNLOAD_PATH:
+        if set(keys) - _BITRIX_REST_DOWNLOAD_QUERY_KEYS:
+            raise ValueError("Недопустимые параметры ссылки Bitrix24")
+        if params.get("auth") != extract_webhook_token(raw_webhook_url):
+            raise ValueError("Ссылка содержит неизвестный токен Bitrix24")
+        if not params.get("token"):
+            raise ValueError("В ссылке отсутствует подпись файла Bitrix24")
+        return file_url.strip()
+
+    if parsed.path != _BITRIX_FILE_PATH:
+        raise ValueError("Разрешён только CRM-файл или подписанная REST-ссылка Bitrix24")
+    if set(keys) - _BITRIX_FILE_QUERY_KEYS:
+        raise ValueError("Недопустимые параметры ссылки Bitrix24")
     if not params.get("fileId", "").isdigit():
         raise ValueError("Некорректный fileId Bitrix24")
     for numeric_key in ("ownerTypeId", "ownerId"):

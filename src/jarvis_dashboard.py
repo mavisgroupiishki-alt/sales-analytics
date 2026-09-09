@@ -11,7 +11,7 @@ from claude_analyzer import RUBRIC_CRITERIA, evaluate_triage, format_timecode
 
 
 _AQUA_CSS = r'''
-.jd-heading p,.jd-metrics span,.jd-panel-head p,.jd-panel-head>span,.jd-action small,.jd-review small,.jd-feed small,.jd-manager small,.jd-review-reason,.jd-call-type,.jd-empty{color:var(--muted)}.jd-source i{background:var(--amber)}.jd-source.ok i{background:var(--green)}.jd-source b{color:var(--green)}.jd-source.warning b{color:var(--amber)}.jd-metric-critical b{color:var(--red)}.jd-metric-review b{color:var(--amber)}.jd-action em{color:#9c525b}.jd-arrow,.jd-panel-head a{color:#109d9a}.jd-empty b{color:var(--ink)}.jd-avatar{background:#dff7f5;color:#187e82}.jd-status.critical,.jd-feed-status.critical{background:var(--red-soft);color:var(--red)}.jd-status.review,.jd-feed-status.needs_review,.jd-review-score{background:var(--amber-soft);color:var(--amber)}.jd-status.normal,.jd-feed-status.normal{background:var(--green-soft);color:var(--green)}.jd-dot{background:#a7b6bd}.jd-dot.critical{background:var(--red)}.jd-dot.needs_review{background:#e5a735}.jd-feed-status.pending{background:#eef4f4;color:#617982}.jd-funnel{grid-column:span 2}.jd-funnel-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line)}.jd-funnel-list>div,.jd-funnel-list>a{padding:16px 18px;background:#fff;color:inherit;text-decoration:none}.jd-funnel-list>a:hover{background:#f0fbfa}.jd-funnel-list b{display:block;font-size:13px}.jd-funnel-list span{display:block;margin-top:5px;color:var(--muted);font-size:11px}@media(max-width:900px){.jd-funnel{grid-column:auto}}
+.jd-heading p,.jd-metrics span,.jd-panel-head p,.jd-panel-head>span,.jd-action small,.jd-review small,.jd-feed small,.jd-manager small,.jd-review-reason,.jd-call-type,.jd-empty{color:var(--muted)}.jd-source i{background:var(--amber)}.jd-source.ok i{background:var(--green)}.jd-source b{color:var(--green)}.jd-source.warning b{color:var(--amber)}.jd-metric-critical b{color:var(--red)}.jd-metric-review b{color:var(--amber)}.jd-action em{color:#9c525b}.jd-action-attention .jd-action-marker{background:var(--amber)}.jd-action-attention em{color:var(--amber)}.jd-arrow,.jd-panel-head a{color:#109d9a}.jd-empty b{color:var(--ink)}.jd-avatar{background:#dff7f5;color:#187e82}.jd-status.critical,.jd-feed-status.critical{background:var(--red-soft);color:var(--red)}.jd-status.review,.jd-status.attention,.jd-feed-status.needs_review,.jd-feed-status.low_score,.jd-review-score{background:var(--amber-soft);color:var(--amber)}.jd-status.normal,.jd-feed-status.normal{background:var(--green-soft);color:var(--green)}.jd-dot{background:#a7b6bd}.jd-dot.critical{background:var(--red)}.jd-dot.needs_review,.jd-dot.low_score{background:#e5a735}.jd-feed-status.pending{background:#eef4f4;color:#617982}.jd-funnel{grid-column:span 2}.jd-funnel-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line)}.jd-funnel-list>div,.jd-funnel-list>a{padding:16px 18px;background:#fff;color:inherit;text-decoration:none}.jd-funnel-list>a:hover{background:#f0fbfa}.jd-funnel-list b{display:block;font-size:13px}.jd-funnel-list span{display:block;margin-top:5px;color:var(--muted);font-size:11px}@media(max-width:900px){.jd-funnel{grid-column:auto}}
 '''
 
 
@@ -56,8 +56,16 @@ def _analysis_for(analyses: Dict[str, Any], call: Dict[str, Any]) -> Dict[str, A
 
 
 def triage_for(analysis: Dict[str, Any]) -> tuple[str, str, str]:
-    """Classify both new and legacy analyses with the current strict rules."""
-    return evaluate_triage(analysis or {})
+    """Keep hard incidents strict while making low scores visible to the ROP."""
+    status, reason, rule_id = evaluate_triage(analysis or {})
+    if status == "normal":
+        try:
+            score = float(analysis.get("overall_score"))
+        except (TypeError, ValueError):
+            score = None
+        if score is not None and score <= 3.0:
+            return "low_score", f"Низкая оценка {score:g}/10 — разобрать с менеджером", "low_score_threshold"
+    return status, reason, rule_id
 
 
 def _format_timestamp(value: str) -> str:
@@ -124,6 +132,7 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
     """Return only deterministic, source-backed management indicators."""
     analyzed = []
     critical = []
+    attention = []
     review = []
     reanalysis = []
     by_manager: Dict[int, Dict[str, Any]] = {}
@@ -134,7 +143,7 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         manager_id = int(manager.get("id") or 0)
         entry = by_manager.setdefault(
             manager_id,
-            {"manager": manager, "calls": 0, "analyzed": 0, "critical": 0, "review": 0, "reanalysis": 0, "scores": []},
+            {"manager": manager, "calls": 0, "analyzed": 0, "critical": 0, "attention": 0, "review": 0, "reanalysis": 0, "scores": []},
         )
         entry["calls"] += 1
         if not analysis:
@@ -149,6 +158,9 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         if status == "critical":
             critical.append(record)
             entry["critical"] += 1
+        elif status == "low_score":
+            attention.append(record)
+            entry["attention"] += 1
         elif status == "needs_review":
             review.append(record)
             entry["review"] += 1
@@ -161,10 +173,11 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         scores = entry.pop("scores")
         entry["average"] = round(sum(scores) / len(scores), 1) if scores else None
         managers.append(entry)
-    managers.sort(key=lambda item: (item["critical"], item["review"], item["reanalysis"], -(item["average"] or 0)), reverse=True)
+    managers.sort(key=lambda item: (item["critical"], item["attention"], item["review"], item["reanalysis"], -(item["average"] or 0)), reverse=True)
 
     newest = sorted(calls, key=lambda call: str(call.get("created") or ""), reverse=True)
     critical.sort(key=lambda item: str(item["call"].get("created") or ""), reverse=True)
+    attention.sort(key=lambda item: (float(item["analysis"].get("overall_score") or 10), str(item["call"].get("created") or "")))
     review.sort(key=lambda item: str(item["call"].get("created") or ""), reverse=True)
     reanalysis.sort(key=lambda item: str(item["call"].get("created") or ""), reverse=True)
     funnel: Dict[str, Dict[str, Any]] = {}
@@ -187,6 +200,7 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         "incoming": sum(call.get("direction") == "incoming" for call in calls),
         "outgoing": sum(call.get("direction") == "outgoing" for call in calls),
         "critical": critical,
+        "attention": attention,
         "review": review,
         "reanalysis": reanalysis,
         "managers": managers,
@@ -213,8 +227,16 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
         alerts += f'''<a class="jd-action jd-action-critical" href="/calls/{_text(call.get("activity_id"))}">
           <span class="jd-action-marker">!</span><span><b>{_text(client)}</b><small>{_text(item["reason"])} · {_text(evidence.get("time") or "без таймкода")}</small>
           <em>«{_text(str(quote)[:120])}»</em></span><span class="jd-arrow">→</span></a>'''
+    for item in model["attention"][: max(0, 4 - len(model["critical"]))]:
+        call, analysis = item["call"], item["analysis"]
+        client = (call.get("client") or {}).get("name") or "Клиент не определён"
+        score = analysis.get("overall_score")
+        explanation = analysis.get("score_explanation") or analysis.get("recommendation") or item["reason"]
+        alerts += f'''<a class="jd-action jd-action-attention" href="/calls/{_text(call.get("activity_id"))}">
+          <span class="jd-action-marker">↓</span><span><b>{_text(client)}</b><small>Низкая оценка: {_text(score)}/10</small>
+          <em>{_text(str(explanation)[:120])}</em></span><span class="jd-arrow">→</span></a>'''
     if not alerts:
-        alerts = '<div class="jd-empty"><b>Критичных звонков нет.</b><span>Ни один текущий флаг не прошёл проверку правила, цитаты и таймкода.</span></div>'
+        alerts = '<div class="jd-empty"><b>Звонков для вмешательства РОПа нет.</b><span>Нет ни подтверждённых критичных случаев, ни оценок 3 и ниже.</span></div>'
 
     reviews = ""
     for item in model["review"][:5]:
@@ -233,8 +255,8 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
     for item in model["managers"][:8]:
         manager = item["manager"]
         average = f'{item["average"]:.1f}' if item["average"] is not None else "—"
-        signal = "Критично" if item["critical"] else ("Проверить" if item["review"] else "В норме")
-        signal_class = "critical" if item["critical"] else ("review" if item["review"] else "normal")
+        signal = "Критично" if item["critical"] else ("Разобрать" if item["attention"] else ("Проверить" if item["review"] else "В норме"))
+        signal_class = "critical" if item["critical"] else ("attention" if item["attention"] else ("review" if item["review"] else "normal"))
         managers += f'''<a class="jd-manager" href="/managers/{_text(manager.get("id"))}">
           {_avatar(manager)}<span class="jd-manager-name"><b>{_text(manager.get("name") or "Менеджер")}</b><small>{item["analyzed"]} разборов · {item["calls"]} звонков</small></span>
           <span class="jd-score">{average}</span><span class="jd-status {signal_class}">{signal}</span></a>'''
@@ -248,7 +270,7 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or ""
         score = analysis.get("overall_score") if analysis else None
-        status_label = {"critical": "Критично", "needs_review": "Проверить", "requires_reanalysis": "Требует обновления", "normal": "Без риска", "excluded": "Исключён", "pending": "Нет разбора"}[status]
+        status_label = _status_label(status, analysis)
         feed += f'''<a class="jd-feed" href="/calls/{_text(call.get("activity_id"))}">
           <span class="jd-dot {status}"></span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get("created") or ""))}</small></span>
           <span class="jd-call-type">{_text((analysis.get("call_type") or {}).get("label") or "Тип не подтверждён")}</span>
@@ -264,8 +286,8 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
 <nav><a class="active" href="/">Обзор</a><a href="/calls">Звонки</a>{'<a href="/funnel">Воронка</a><a href="/managers">Команда</a><a href="/rop">Отчёт РОПа</a><a href="/scripts">Скрипты</a>' if user.get('role') in {'rop', 'director'} else ''}</nav>
 <div class="jd-user"><span>{_text(role)} · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header>
 <main class="jd-shell"><section class="jd-heading"><div><p>{today}</p><h1>Картина продаж <span>на сейчас</span></h1></div><div class="jd-source {source_class}"><i></i><span>Bitrix24</span><b>{source_text}</b><small>последняя запись: {fresh_at}</small></div></section>
-<section class="jd-metrics"><div><small>Звонки в выборке</small><b>{model['calls']}</b><span>{model['incoming']} входящих · {model['outgoing']} исходящих</span></div><div><small>Разобрано AI</small><b>{model['analyzed']}</b><span>{round(model['analyzed'] / model['calls'] * 100) if model['calls'] else 0}% от выборки</span></div><div class="jd-metric-critical"><small>Срочно к РОПу</small><b>{len(model['critical'])}</b><span>только с правилом и доказательством</span></div><div class="jd-metric-review"><small>Без разбора</small><b>{max(0, model['calls'] - model['analyzed'])}</b><span>нет пригодной записи или анализ ещё идёт</span></div></section>
-<section class="jd-grid"><section class="jd-panel jd-actions"><div class="jd-panel-head"><div><h2>Действия РОПа</h2><p>Подтверждённые риски, требующие вмешательства</p></div><a href="/critical">Вся очередь →</a></div>{alerts}</section>
+<section class="jd-metrics"><div><small>Звонки в выборке</small><b>{model['calls']}</b><span>{model['incoming']} входящих · {model['outgoing']} исходящих</span></div><div><small>Разобрано AI</small><b>{model['analyzed']}</b><span>{round(model['analyzed'] / model['calls'] * 100) if model['calls'] else 0}% от выборки</span></div><div class="jd-metric-critical"><small>Внимание РОПа</small><b>{len(model['critical']) + len(model['attention'])}</b><span>{len(model['critical'])} критичных · {len(model['attention'])} с баллом ≤3</span></div><div class="jd-metric-review"><small>Без разбора</small><b>{max(0, model['calls'] - model['analyzed'])}</b><span>нет пригодной записи или анализ ещё идёт</span></div></section>
+<section class="jd-grid"><section class="jd-panel jd-actions"><div class="jd-panel-head"><div><h2>Действия РОПа</h2><p>Подтверждённые критичные сигналы и оценки 3 или ниже</p></div><a href="/calls">Все звонки →</a></div>{alerts}</section>
 <section class="jd-panel jd-team"><div class="jd-panel-head"><div><h2>Команда</h2><p>Кого открыть первым</p></div><a href="/managers">Все менеджеры →</a></div><div class="jd-manager-list">{managers}</div></section>
 <section class="jd-panel jd-feed-panel"><div class="jd-panel-head"><div><h2>Последние звонки</h2><p>Первичные записи в хронологическом порядке</p></div><a href="/calls">Открыть журнал →</a></div>{feed}</section></section>
 <section class="jd-panel jd-funnel"><div class="jd-panel-head"><div><h2>Воронка по связанным сделкам</h2><p>Текущие стадии сделок, которые Bitrix связал со звонками выборки</p></div><a href="/funnel">Вся воронка →</a></div><div class="jd-funnel-list">{''.join(f'<a href="/calls?{urlencode({"stage": item["name"] or "Стадия не определена"})}"><b>{_text(item["name"] or "Стадия не определена")}</b><span>{item["deals"]} сделок · {item["calls"]} звонков</span></a>' for item in model['funnel']) or '<div><b>Нет подтверждённых сделок</b><span>В выборке нет звонков со связью со сделкой Bitrix24.</span></div>'}</div></section>
@@ -279,8 +301,17 @@ def _console_page(title: str, active: str, body: str, user: Dict[str, Any]) -> s
     return f'''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Джарвис — {_text(title)}</title><style>{_CSS}{_AQUA_CSS}{_CONSOLE_CSS}{_CALL_DETAIL_CSS}{_INTERACTION_CSS}</style></head><body><header class="jd-top"><a class="jd-brand" href="/"><span class="jd-mark">J</span><span><strong>ДЖАРВИС</strong><small>ЦЕНТР УПРАВЛЕНИЯ ПРОДАЖАМИ</small></span></a><nav>{links}</nav><div class="jd-user"><span>РОП · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header><main class="jd-shell jc-shell">{body}</main></body></html>'''
 
 
-def _status_label(status: str) -> str:
-    return {"critical": "Срочно к РОПу", "needs_review": "Нужна проверка", "requires_reanalysis": "Требует обновления", "normal": "Без риска", "excluded": "Исключён", "pending": "Нет разбора"}.get(status, "Нет разбора")
+def _status_label(status: str, analysis: Dict[str, Any] | None = None) -> str:
+    if status == "excluded":
+        analysis = analysis or {}
+        reason = str(analysis.get("exclusion_reason") or "").lower()
+        if "короче 30" in reason or "short" in reason:
+            return "Короткий звонок"
+        if analysis.get("not_sales"):
+            return "Не продажный"
+        if analysis.get("poor_audio"):
+            return "Плохая запись"
+    return {"critical": "Срочно к РОПу", "low_score": "Низкая оценка", "needs_review": "Нужна проверка", "requires_reanalysis": "Требует обновления", "normal": "Без риска", "excluded": "Исключён", "pending": "Нет разбора"}.get(status, "Нет разбора")
 
 
 def render_calls(
@@ -295,8 +326,8 @@ def render_calls(
         manager = (call.get("manager") or {}).get("name") or "—"
         crm = call.get("crm") or {}
         score = analysis.get("overall_score") if analysis else "—"
-        rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}"><span class="jc-status {status}">{_text(_status_label(status))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text((analysis.get('call_type') or {}).get('label') or 'Тип не подтверждён')}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
-    note = description or "«Нет разбора» — Bitrix не отдал пригодную запись либо текущая обработка ещё не завершилась. «Нужна проверка» — разбор завершён, но оснований для автоматического решения недостаточно."
+        rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text((analysis.get('call_type') or {}).get('label') or 'Тип не подтверждён')}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
+    note = description or "«Нет разбора» — Bitrix не отдал пригодную запись либо обработка ещё не завершилась. «Короткий звонок» не оценивается. «Низкая оценка» — отдельный сигнал для разбора с менеджером."
     content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section><section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
     return _console_page("Звонки", "calls", content, user)
 
@@ -307,8 +338,8 @@ def render_managers(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user:
     for item in model["managers"]:
         manager = item["manager"]
         score = f"{item['average']:.1f}" if item["average"] is not None else "—"
-        signal = "Срочно" if item["critical"] else ("Проверить" if item["review"] else ("Требует обновления" if item["reanalysis"] else "В норме"))
-        rows += f'''<a class="jc-manager-row" href="/managers/{_text(manager.get('id'))}">{_avatar(manager)}<span><b>{_text(manager.get('name') or 'Менеджер')}</b><small>{item['calls']} звонков · AI-покрытие {round(item['analyzed'] / item['calls'] * 100) if item['calls'] else 0}%</small></span><strong>{score}</strong><span>{item['critical']} срочно · {item['review']} проверить</span><em>{_text(signal)}</em><i>→</i></a>'''
+        signal = "Срочно" if item["critical"] else ("Разобрать" if item["attention"] else ("Проверить" if item["review"] else ("Требует обновления" if item["reanalysis"] else "В норме")))
+        rows += f'''<a class="jc-manager-row" href="/managers/{_text(manager.get('id'))}">{_avatar(manager)}<span><b>{_text(manager.get('name') or 'Менеджер')}</b><small>{item['calls']} звонков · AI-покрытие {round(item['analyzed'] / item['calls'] * 100) if item['calls'] else 0}%</small></span><strong>{score}</strong><span>{item['critical']} срочно · {item['attention']} низких · {item['review']} проверить</span><em>{_text(signal)}</em><i>→</i></a>'''
     content = f'''<section class="jc-heading"><p>Команда</p><h1>Качество — <span>без ложных рейтингов.</span></h1><small>Средний балл строится только по завершённым разборам и применимым критериям текущей методики.</small></section><section class="jc-table jc-managers"><div class="jc-table-head"><span></span><span>Менеджер</span><span>Балл</span><span>Сигналы</span><span>Статус</span><span></span></div>{rows or '<div class="jd-empty"><b>Нет менеджеров в выборке.</b></div>'}</section>'''
     return _console_page("Команда", "managers", content, user)
 
@@ -426,7 +457,7 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
 
     summary = analysis.get("summary") or reason or "Джарвис ещё обрабатывает этот разговор."
     recommendation = analysis.get("recommended_action") or analysis.get("recommendation") or "Рекомендация появится после завершения анализа."
-    content = f'''<a class="jc-back" href="/calls">← Все звонки</a><section class="jc-heading jc-call-heading"><div><p>{_text(_format_timestamp(str(call.get('created') or '')))}</p><h1>{_text(client)} <span>· {score}/10</span></h1></div><span class="jc-status {status}">{_text(_status_label(status))}</span></section>
+    content = f'''<a class="jc-back" href="/calls">← Все звонки</a><section class="jc-heading jc-call-heading"><div><p>{_text(_format_timestamp(str(call.get('created') or '')))}</p><h1>{_text(client)} <span>· {score}/10</span></h1></div><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span></section>
 <section class="jc-call-facts"><div><span>Ответственный</span><b>{_text(manager)}</b></div><div><span>Компания</span><b>{_text(company)}</b></div><div><span>{owner_label}</span><b>{crm_value}</b></div><div><span>Следующий контакт</span><b>{_text(str(crm.get('next_activity_date') or '')[:16].replace('T', ' ') or 'Не назначен')}</b></div></section>
 {audio_html}
 <section class="jc-detail-grid"><article><h2>Вывод Джарвиса</h2><p>{_text(summary)}</p>{quote}<h3>Рекомендованное действие</h3><p>{_text(recommendation)}</p></article><article><h2>Ключевые моменты</h2><ul class="jc-moments">{moment_rows}</ul></article></section>
@@ -510,6 +541,7 @@ def render_scripts(scripts: Dict[str, Any], user: Dict[str, Any]) -> str:
 
 
 _CONSOLE_CSS = r'''
+.jc-status.low_score{background:var(--amber-soft);color:var(--amber)}
 .jc-shell{max-width:1470px}.jc-heading{margin-bottom:24px}.jc-heading p{margin:0 0 8px;color:#149c99;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}.jc-heading h1{margin:0;color:var(--ink);font-size:32px;letter-spacing:-.04em}.jc-heading h1 span{color:#7a9ca7;font-weight:600}.jc-heading small{display:block;max-width:720px;margin-top:10px;color:var(--muted);font-size:12px}.jc-table,.jc-detail-grid,.jc-scripts{background:#fff;border-radius:11px;box-shadow:0 7px 21px rgba(30,88,98,.1);overflow:hidden}.jc-table-head,.jc-row{display:grid;grid-template-columns:130px minmax(170px,1.25fr) minmax(130px,1fr) minmax(115px,.7fr) 44px 18px;gap:15px;align-items:center}.jc-table-head{padding:11px 18px;background:#effafa;color:#6c8991;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.jc-row{padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-row:hover,.jc-manager-row:hover{background:#f1fffe}.jc-row b,.jc-manager-row b{display:block;font-size:13px}.jc-row small,.jc-manager-row small{display:block;margin-top:4px;color:var(--muted);font-size:11px}.jc-row>span:nth-child(3),.jc-row>span:nth-child(4){color:#5f7d88;font-size:12px}.jc-row strong{font-size:16px;text-align:right}.jc-row i,.jc-manager-row i{font-style:normal;color:#11a4a0}.jc-status{display:inline-block;width:max-content;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:900}.jc-status.critical{background:var(--red-soft);color:var(--red)}.jc-status.needs_review{background:var(--amber-soft);color:var(--amber)}.jc-status.requires_reanalysis{background:#edf3ff;color:#326bcc}.jc-status.normal{background:var(--green-soft);color:var(--green)}.jc-status.pending{background:#edf3f4;color:#617982}.jc-managers .jc-table-head,.jc-manager-row{grid-template-columns:40px minmax(180px,1fr) 70px minmax(150px,.7fr) 130px 18px}.jc-manager-row{display:grid;gap:15px;align-items:center;padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-manager-row>.jd-avatar{width:36px;height:36px}.jc-manager-row strong{font-size:17px;color:#159b98}.jc-manager-row>span:nth-of-type(2){font-size:11px;color:var(--muted)}.jc-manager-row em{font-style:normal;color:#59808a;font-size:11px;font-weight:800}.jc-back{display:inline-block;margin-bottom:20px;color:#159d9a;font-weight:800;text-decoration:none}.jc-call-meta{display:flex;gap:12px;align-items:center;margin-top:14px;color:#65818d;font-size:12px;flex-wrap:wrap}.jc-detail-grid{display:grid;grid-template-columns:1.05fr .95fr}.jc-detail-grid article{padding:24px;border-right:1px solid var(--line)}.jc-detail-grid article:last-child{border:0}.jc-detail-grid h2,.jc-script h2{margin:0 0 11px;color:var(--ink);font-size:18px;letter-spacing:-.02em}.jc-detail-grid h3{margin:21px 0 7px;color:#169b98;font-size:11px;text-transform:uppercase}.jc-detail-grid p{margin:0;color:#567580;font-size:13px;line-height:1.55}.jc-detail-grid blockquote{margin:19px 0;padding:13px 15px;border-left:3px solid #15c8c3;background:#effbfa;color:#315f6e;font-size:13px}.jc-detail-grid blockquote small{display:block;margin-top:7px;color:#169b98;font-weight:800}.jc-moments{display:grid;gap:0;padding:0;margin:0;list-style:none}.jc-moments li{display:grid;grid-template-columns:48px 1fr;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);color:#557783;font-size:12px}.jc-moments b{color:#159b98}.jc-scripts{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1px;background:var(--line)}.jc-script{min-height:250px;padding:21px;background:#fff}.jc-script span{color:#14a09d;font-size:10px;font-weight:900;letter-spacing:.1em}.jc-script p{color:#587681;font-size:12px;line-height:1.55}.jc-script small{display:block;margin-top:15px;color:#758c95;font-size:10px}@media(max-width:900px){.jc-table-head{display:none}.jc-row{grid-template-columns:1fr 25px;gap:8px}.jc-row>span:not(:nth-child(2)),.jc-row strong{display:none}.jc-managers .jc-manager-row{grid-template-columns:36px minmax(0,1fr) 42px 18px}.jc-manager-row>span:nth-of-type(2),.jc-manager-row em{display:none}.jc-detail-grid{grid-template-columns:1fr}.jc-detail-grid article{border-right:0;border-bottom:1px solid var(--line)}.jc-heading h1{font-size:27px}}
 '''
 

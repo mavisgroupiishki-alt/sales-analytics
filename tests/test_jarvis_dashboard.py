@@ -8,6 +8,24 @@ from jarvis_dashboard import dashboard_model, render_call_detail, render_calls, 
 
 
 class DashboardModelTests(unittest.TestCase):
+    def test_low_score_is_visible_to_rop_without_faking_a_critical_incident(self):
+        calls = [{"activity_id": "1", "created": "2026-09-08T12:00:00+03:00", "manager": {"id": 1, "name": "Анна"}}]
+        analyses = {"1": {"analysis": {
+            "overall_score": 2.5,
+            "overall_score_method": "applicable_rubric_v1",
+            "flags": {},
+        }}}
+
+        model = dashboard_model(calls, analyses)
+        overview = render_dashboard(calls, analyses, {"role": "rop", "name": "РОП"})
+        journal = render_calls(calls, analyses, {"role": "rop", "name": "РОП"})
+
+        self.assertEqual(len(model["critical"]), 0)
+        self.assertEqual(len(model["attention"]), 1)
+        self.assertIn("Внимание РОПа", overview)
+        self.assertIn("0 критичных · 1 с баллом ≤3", overview)
+        self.assertIn("Низкая оценка", journal)
+
     def test_missing_analysis_is_not_claimed_to_be_waiting_for_ai(self):
         calls = [{"activity_id": "1", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}}]
 
@@ -17,6 +35,19 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("Без разбора", overview)
         self.assertIn("нет пригодной записи или анализ ещё идёт", overview)
         self.assertIn("Нет разбора", journal)
+
+    def test_excluded_short_call_has_a_specific_status(self):
+        calls = [{"activity_id": "1", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}}]
+        analyses = {"1": {"analysis": {
+            "review_status": "excluded",
+            "exclude_from_stats": True,
+            "exclusion_reason": "Звонок короче 30 секунд",
+        }}}
+
+        journal = render_calls(calls, analyses, {"role": "rop", "name": "РОП"})
+
+        self.assertIn("Короткий звонок", journal)
+        self.assertNotIn(">Исключён<", journal)
 
     def test_legacy_unproven_critical_requires_reanalysis_not_rop_review(self):
         calls = [{"activity_id": "1", "manager": {"id": 1, "name": "Анна"}}]

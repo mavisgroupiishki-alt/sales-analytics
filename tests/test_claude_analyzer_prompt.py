@@ -88,6 +88,35 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertEqual(result["_meta"]["attempts"], 3)
         self.assertEqual(result["overall_score"], 6.1)
 
+    def test_ai_audio_warning_does_not_exclude_a_complete_transcript(self):
+        call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
+        valid_analysis = json.dumps(
+            {
+                "overall_score": 3,
+                "criteria": [
+                    {"code": "expertise", "applicable": True, "score": 3},
+                    {"code": "next_step", "applicable": True, "score": 2},
+                    {"code": "communication", "applicable": True, "score": 4},
+                ],
+                "flags": {"poor_audio": True, "poor_audio_reason": "есть ошибки Whisper"},
+            }
+        )
+
+        with patch("claude_analyzer.call_claude_api", side_effect=[(call_type, {}), (valid_analysis, {})]):
+            result = analyze_transcript(
+                {
+                    "text": "Полный транскрипт разговора, в котором достаточно текста для оценки диалога и его результата.",
+                    "text_with_timecodes": "[00:00] Полный транскрипт разговора",
+                    "duration_sec": 55,
+                },
+                {"direction": "incoming", "duration_sec": 55, "crm": {}},
+                {},
+            )
+
+        self.assertFalse(result["poor_audio"])
+        self.assertTrue(result["poor_audio_reported_by_ai"])
+        self.assertNotEqual(result["review_status"], "excluded")
+
 
 if __name__ == "__main__":
     unittest.main()

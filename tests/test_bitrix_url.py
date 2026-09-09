@@ -61,6 +61,20 @@ class BitrixUrlTests(unittest.TestCase):
             file_url,
         )
 
+    def test_validates_signed_rest_download_url(self):
+        file_url = "https://example.bitrix24.by/rest/download.json?auth=secret&token=signed-file-token"
+        self.assertEqual(
+            validate_bitrix_file_url(file_url, "https://example.bitrix24.by/rest/1/secret/profile.json"),
+            file_url,
+        )
+
+    def test_rejects_signed_rest_download_url_with_unknown_auth(self):
+        with self.assertRaises(ValueError):
+            validate_bitrix_file_url(
+                "https://example.bitrix24.by/rest/download.json?auth=other&token=signed-file-token",
+                "https://example.bitrix24.by/rest/1/secret",
+            )
+
     def test_rejects_external_or_unexpected_file_url(self):
         webhook = "https://example.bitrix24.by/rest/1/secret"
         with self.assertRaises(ValueError):

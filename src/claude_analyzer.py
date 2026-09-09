@@ -1077,21 +1077,24 @@ def analyze_transcript(
 
     flags = result.get("flags", {}) or {}
 
-    # Плохое качество записи — проверяем программно ДО вызова ИИ
-    result["poor_audio"] = bool(flags.get("poor_audio", False))
-    result["poor_audio_reason"] = flags.get("poor_audio_reason") or ""
+    # Модель может заметить ошибки Whisper, но одного такого мнения
+    # недостаточно, чтобы скрыть уже разобранный звонок из статистики.
+    # Исключение по аудио принимается только по измеримым признакам транскрипта.
+    result["poor_audio_reported_by_ai"] = bool(flags.get("poor_audio", False))
+    result["audio_quality_note"] = flags.get("poor_audio_reason") or ""
+    result["poor_audio"] = False
+    result["poor_audio_reason"] = ""
 
-    # Дополнительная программная проверка: мало текста относительно длительности
+    # Детерминированная проверка: мало текста или расшифрована малая доля звонка.
     call_dur = call_meta.get("duration_sec") or 0
     transcript_len = len(transcription.get("text", ""))
     transcript_dur = transcription.get("duration_sec") or 0
-    if not result["poor_audio"]:
-        if transcript_len < 30:
-            result["poor_audio"] = True
-            result["poor_audio_reason"] = "Транскрипт пустой или почти пустой"
-        elif call_dur >= 30 and transcript_dur > 0 and (transcript_dur / call_dur) < 0.3:
-            result["poor_audio"] = True
-            result["poor_audio_reason"] = f"Whisper расшифровал только {int(transcript_dur)}с из {int(call_dur)}с — вероятно помехи в начале"
+    if transcript_len < 30:
+        result["poor_audio"] = True
+        result["poor_audio_reason"] = "Транскрипт пустой или почти пустой"
+    elif call_dur >= 30 and transcript_dur > 0 and (transcript_dur / call_dur) < 0.3:
+        result["poor_audio"] = True
+        result["poor_audio_reason"] = f"Whisper расшифровал только {int(transcript_dur)}с из {int(call_dur)}с — вероятно помехи в начале"
 
     # Нерелевантный звонок (не продажи)
     result["not_sales"] = bool(flags.get("not_sales", False))
