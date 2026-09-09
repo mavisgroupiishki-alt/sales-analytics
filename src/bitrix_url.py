@@ -163,6 +163,15 @@ def validate_bitrix_download_url(file_url: str, raw_webhook_url: str) -> str:
     return file_url.strip()
 
 
+def bitrix_url_shape(file_url: str) -> dict[str, object]:
+    """Return diagnostic URL structure without host, tokens, or query values."""
+    parsed = urlsplit(str(file_url or ""))
+    return {
+        "path": parsed.path,
+        "query_keys": sorted({key for key, _ in parse_qsl(parsed.query, keep_blank_values=True)}),
+    }
+
+
 def safe_webhook_label(raw_webhook_url: str) -> str:
     """Возвращает безопасное представление URL без секрета для логов."""
     try:

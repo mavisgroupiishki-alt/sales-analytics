@@ -12,6 +12,7 @@ from bitrix_url import (  # noqa: E402
     safe_webhook_label,
     validate_bitrix_download_url,
     validate_bitrix_file_url,
+    bitrix_url_shape,
 )
 
 
@@ -88,6 +89,15 @@ class BitrixUrlTests(unittest.TestCase):
         for file_url in invalid_urls:
             with self.subTest(file_url=file_url), self.assertRaises(ValueError):
                 validate_bitrix_download_url(file_url, webhook)
+
+    def test_safe_url_shape_never_includes_query_values(self):
+        shape = bitrix_url_shape(
+            "https://example.bitrix24.by/custom/download?auth=super-secret&token=signed-secret"
+        )
+
+        self.assertEqual(shape, {"path": "/custom/download", "query_keys": ["auth", "token"]})
+        self.assertNotIn("super-secret", str(shape))
+        self.assertNotIn("signed-secret", str(shape))
 
     def test_rejects_external_or_unexpected_file_url(self):
         webhook = "https://example.bitrix24.by/rest/1/secret"

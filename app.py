@@ -1690,7 +1690,7 @@ def audio_health():
     Результат кэшируется на пять минут.
     """
     import requests as _req
-    from bitrix_url import build_bitrix_method_url, normalize_bitrix_webhook_url, validate_bitrix_download_url
+    from bitrix_url import bitrix_url_shape, build_bitrix_method_url, normalize_bitrix_webhook_url, validate_bitrix_download_url
 
     cached_at = _AUDIO_HEALTH_CACHE.get("ts")
     if cached_at and (datetime.now() - cached_at).total_seconds() < 300:
@@ -1710,6 +1710,7 @@ def audio_health():
             payload, status = {"status": "error", "stage": "data", "message": "Нет звонков с file_id"}, 503
         else:
             file_id = latest["audio"]["file_id"]
+            download_url = ""
             try:
                 meta = _req.post(
                     build_bitrix_method_url(webhook, "disk.file.get"),
@@ -1748,7 +1749,15 @@ def audio_health():
                             "http_status": media.status_code,
                             "content_type": ctype,
                         }, 503
-            except (_req.RequestException, ValueError, TypeError) as exc:
+            except ValueError:
+                shape = bitrix_url_shape(download_url)
+                payload, status = {
+                    "status": "error",
+                    "stage": "url_validation",
+                    "url_path": shape["path"],
+                    "query_keys": shape["query_keys"],
+                }, 503
+            except (_req.RequestException, TypeError) as exc:
                 payload, status = {
                     "status": "error",
                     "stage": "request",

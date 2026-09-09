@@ -204,3 +204,29 @@ class BitrixProxyTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(get.call_args.kwargs["allow_redirects"])
         self.assertIn("auth=temporary-access-token", get.call_args.args[0])
+
+    @patch("requests.get")
+    @patch("requests.post")
+    @patch.object(dashboard_app, "load_calls")
+    def test_audio_health_reports_only_safe_download_url_shape(self, load_calls, post, get):
+        dashboard_app._AUDIO_HEALTH_CACHE.update({"ts": None, "payload": None, "status": 503})
+        load_calls.return_value = [{"activity_id": "101", "audio": {"file_id": "42"}}]
+        metadata = Mock()
+        metadata.json.return_value = {
+            "result": {
+                "DOWNLOAD_URL": "https://example.bitrix24.by/custom/download?auth=super-secret&token=signed-secret"
+            }
+        }
+        metadata.raise_for_status.return_value = None
+        post.return_value = metadata
+
+        response = self.client.get("/health/audio")
+
+        self.assertEqual(response.status_code, 503)
+        payload = response.get_json()
+        self.assertEqual(payload["stage"], "url_validation")
+        self.assertEqual(payload["url_path"], "/custom/download")
+        self.assertEqual(payload["query_keys"], ["auth", "token"])
+        self.assertNotIn("super-secret", response.get_data(as_text=True))
+        self.assertNotIn("signed-secret", response.get_data(as_text=True))
+        get.assert_not_called()
