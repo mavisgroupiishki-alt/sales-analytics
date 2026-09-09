@@ -543,7 +543,12 @@ def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
 
     if analysis.get("overall_score") is None:
         return "needs_review", "Нужна проверка РОПом: нет итогового балла", ""
-    if analysis.get("rubric_missing_codes") or analysis.get("analysis_confidence") == "low":
+    confidence = analysis.get("analysis_confidence")
+    try:
+        low_confidence = float(confidence) < 0.5
+    except (TypeError, ValueError):
+        low_confidence = confidence == "low"
+    if analysis.get("rubric_missing_codes") or low_confidence:
         return "needs_review", "Нужна проверка РОПом: часть критериев оценена с низкой уверенностью", ""
     return "normal", "", ""
 
@@ -1059,7 +1064,7 @@ def analyze_transcript(
         )
         result["criteria"] = completed_criteria
         result["rubric_missing_codes"] = missing_codes
-        result["analysis_confidence"] = "low"
+        result["analysis_confidence"] = 0.35
         explanation = str(result.get("score_explanation") or "").strip()
         result["score_explanation"] = (
             explanation + " Недостающие AI-наблюдения учтены нейтрально как 5/10."

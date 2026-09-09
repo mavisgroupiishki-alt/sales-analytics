@@ -80,7 +80,7 @@ class JarvisStoreTests(unittest.TestCase):
                 "overall_score": 5.0,
                 "overall_score_method": "applicable_rubric_v1",
                 "rubric_missing_codes": ["next_step"],
-                "analysis_confidence": "low",
+                "analysis_confidence": 0.35,
                 "flags": {},
             }
         )
