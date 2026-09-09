@@ -48,6 +48,11 @@ jobs:
             -o ServerAliveInterval=10 \
             root@147.182.140.114 '
               set -eu
+              printf "%s\n" \
+                "services:" \
+                "  jarvis-worker:" \
+                "    image: jarvis-worker:4f6e5e1" \
+                > /opt/mavis-pilot/jarvis-worker-image.override.yml
               docker compose \
                 --env-file /opt/mavis-pilot/deploy/.env \
                 --env-file /opt/mavis-pilot/jarvis-worker.env \
@@ -55,7 +60,8 @@ jobs:
                 -f /opt/mavis-pilot/deploy/docker-compose.yml \
                 -f /opt/mavis-pilot/jarvis-worker-4f6e5e1/deploy/docker-compose.live-worker.yml \
                 -f /opt/mavis-pilot/jarvis-n8n-secret.override.yml \
-                up -d --build n8n jarvis-worker
+                -f /opt/mavis-pilot/jarvis-worker-image.override.yml \
+                up -d --no-build n8n jarvis-worker
 
               for attempt in $(seq 1 30); do
                 if docker exec deploy-jarvis-worker-1 python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/health\", timeout=3)"; then
