@@ -70,6 +70,14 @@ class BitrixUrlTests(unittest.TestCase):
             file_url,
         )
 
+    def test_validates_portal_specific_download_url(self):
+        file_url = "https://example.bitrix24.by/rest/2110/secret/download/?token=signed-file-token"
+
+        self.assertEqual(
+            validate_bitrix_download_url(file_url, "https://example.bitrix24.by/rest/2110/secret"),
+            file_url,
+        )
+
     def test_stored_url_validator_rejects_rest_download_url(self):
         with self.assertRaises(ValueError):
             validate_bitrix_file_url(
@@ -92,11 +100,12 @@ class BitrixUrlTests(unittest.TestCase):
 
     def test_safe_url_shape_never_includes_query_values(self):
         shape = bitrix_url_shape(
-            "https://example.bitrix24.by/custom/download?auth=super-secret&token=signed-secret"
+            "https://example.bitrix24.by/rest/2110/webhook-secret/download/?token=signed-secret",
+            "https://example.bitrix24.by/rest/2110/webhook-secret",
         )
 
-        self.assertEqual(shape, {"path": "/custom/download", "query_keys": ["auth", "token"]})
-        self.assertNotIn("super-secret", str(shape))
+        self.assertEqual(shape, {"route": "webhook_download", "query_keys": ["token"]})
+        self.assertNotIn("webhook-secret", str(shape))
         self.assertNotIn("signed-secret", str(shape))
 
     def test_rejects_external_or_unexpected_file_url(self):

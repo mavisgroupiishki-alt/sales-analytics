@@ -183,6 +183,37 @@ class BitrixProxyTests(unittest.TestCase):
     @patch("requests.get")
     @patch("requests.post")
     @patch.object(dashboard_app, "load_calls")
+    def test_user_audio_route_uses_portal_specific_download_url(self, load_calls, post, get):
+        load_calls.return_value = [{
+            "activity_id": "101",
+            "manager": {"id": 1286},
+            "audio": {"file_id": "42"},
+        }]
+        metadata = Mock()
+        metadata.ok = True
+        metadata.json.return_value = {
+            "result": {
+                "DOWNLOAD_URL": "https://example.bitrix24.by/rest/1/token/download/?token=signed-file-token"
+            }
+        }
+        post.return_value = metadata
+        upstream = Mock()
+        upstream.headers = {"Content-Type": "audio/mpeg"}
+        upstream.iter_content.return_value = [b"audio"]
+        upstream.raise_for_status.return_value = None
+        get.return_value = upstream
+        with self.client.session_transaction() as session:
+            session.update({"username": "rop", "role": "rop", "name": "РОП"})
+
+        response = self.client.get("/audio/101")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("/rest/1/token/download/", get.call_args.args[0])
+        self.assertFalse(get.call_args.kwargs["allow_redirects"])
+
+    @patch("requests.get")
+    @patch("requests.post")
+    @patch.object(dashboard_app, "load_calls")
     def test_audio_health_uses_same_validated_non_redirecting_download(self, load_calls, post, get):
         dashboard_app._AUDIO_HEALTH_CACHE.update({"ts": None, "payload": None, "status": 503})
         load_calls.return_value = [{"activity_id": "101", "audio": {"file_id": "42"}}]
@@ -225,7 +256,7 @@ class BitrixProxyTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         payload = response.get_json()
         self.assertEqual(payload["stage"], "url_validation")
-        self.assertEqual(payload["url_path"], "/custom/download")
+        self.assertEqual(payload["url_route"], "other")
         self.assertEqual(payload["query_keys"], ["auth", "token"])
         self.assertNotIn("super-secret", response.get_data(as_text=True))
         self.assertNotIn("signed-secret", response.get_data(as_text=True))

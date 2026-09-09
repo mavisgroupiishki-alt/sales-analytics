@@ -150,24 +150,36 @@ def validate_bitrix_download_url(file_url: str, raw_webhook_url: str) -> str:
         raise ValueError("Ссылка скачивания Bitrix24 содержит запрещённые компоненты")
     if parsed.hostname.lower() != (webhook.hostname or "").lower() or parsed.port != webhook.port:
         raise ValueError("Домен скачивания не совпадает с доменом Bitrix24")
-    if parsed.path != _BITRIX_REST_DOWNLOAD_PATH:
-        raise ValueError("Разрешена только подписанная REST-ссылка Bitrix24")
-
     pairs = parse_qsl(parsed.query, keep_blank_values=True)
     keys = [key for key, _ in pairs]
-    if len(keys) != 2 or len(keys) != len(set(keys)) or set(keys) != _BITRIX_REST_DOWNLOAD_QUERY_KEYS:
+    if len(keys) != len(set(keys)):
         raise ValueError("Недопустимые параметры ссылки Bitrix24")
     params = dict(pairs)
-    if not params.get("auth") or not params.get("token"):
-        raise ValueError("В ссылке отсутствует авторизация или подпись файла Bitrix24")
+    portal_download_path = webhook.path.rstrip("/") + "/download"
+    if parsed.path.rstrip("/") == portal_download_path:
+        if set(keys) != {"token"} or not params.get("token"):
+            raise ValueError("В портальной ссылке отсутствует подпись файла Bitrix24")
+    elif parsed.path == _BITRIX_REST_DOWNLOAD_PATH:
+        if set(keys) != _BITRIX_REST_DOWNLOAD_QUERY_KEYS or not params.get("auth") or not params.get("token"):
+            raise ValueError("В REST-ссылке отсутствует авторизация или подпись файла Bitrix24")
+    else:
+        raise ValueError("Разрешена только подписанная REST-ссылка Bitrix24")
     return file_url.strip()
 
 
-def bitrix_url_shape(file_url: str) -> dict[str, object]:
+def bitrix_url_shape(file_url: str, raw_webhook_url: str = "") -> dict[str, object]:
     """Return diagnostic URL structure without host, tokens, or query values."""
     parsed = urlsplit(str(file_url or ""))
+    route = "rest_download" if parsed.path == _BITRIX_REST_DOWNLOAD_PATH else "other"
+    if raw_webhook_url:
+        try:
+            webhook = urlsplit(normalize_bitrix_webhook_url(raw_webhook_url))
+            if parsed.path.rstrip("/") == webhook.path.rstrip("/") + "/download":
+                route = "webhook_download"
+        except ValueError:
+            pass
     return {
-        "path": parsed.path,
+        "route": route,
         "query_keys": sorted({key for key, _ in parse_qsl(parsed.query, keep_blank_values=True)}),
     }
 

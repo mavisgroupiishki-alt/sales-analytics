@@ -1750,11 +1750,11 @@ def audio_health():
                             "content_type": ctype,
                         }, 503
             except ValueError:
-                shape = bitrix_url_shape(download_url)
+                shape = bitrix_url_shape(download_url, webhook)
                 payload, status = {
                     "status": "error",
                     "stage": "url_validation",
-                    "url_path": shape["path"],
+                    "url_route": shape["route"],
                     "query_keys": shape["query_keys"],
                 }, 503
             except (_req.RequestException, TypeError) as exc:
