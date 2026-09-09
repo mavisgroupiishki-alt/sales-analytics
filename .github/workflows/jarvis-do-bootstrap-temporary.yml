@@ -2,6 +2,15 @@ name: Temporary Jarvis DigitalOcean bootstrap
 
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Safe temporary operation
+        required: true
+        default: bootstrap
+        type: choice
+        options:
+          - bootstrap
+          - status
 
 permissions:
   contents: read
@@ -23,6 +32,7 @@ jobs:
           chmod 0600 "$HOME/.ssh/known_hosts"
 
       - name: Transfer the approved worker environment to DigitalOcean
+        if: inputs.operation == 'bootstrap'
         env:
           JARVIS_WORKER_ENV: ${{ secrets.JARVIS_WORKER_ENV_TMP }}
           VIBE_API_KEY: ${{ secrets.VIBE_API_KEY }}
@@ -39,6 +49,7 @@ jobs:
             root@147.182.140.114:/opt/mavis-pilot/jarvis-worker.env
 
       - name: Start Jarvis worker and wire n8n
+        if: inputs.operation == 'bootstrap'
         run: |
           set -euo pipefail
           ssh \
@@ -86,3 +97,14 @@ jobs:
               docker exec deploy-jarvis-worker-1 python -c "import json, os, urllib.request; request=urllib.request.Request(\"http://127.0.0.1:8080/internal/sync\", data=json.dumps({\"mode\":\"reanalyze_day\",\"date\":\"2026-09-08\"}).encode(), headers={\"Content-Type\":\"application/json\",\"x-jarvis-sync-secret\":os.environ[\"JARVIS_SYNC_SECRET\"]}, method=\"POST\"); print(urllib.request.urlopen(request, timeout=10).read().decode())"
               docker ps --filter name=deploy-jarvis-worker-1 --filter name=deploy-n8n-1 --format "{{.Names}} {{.Status}}"
             '
+
+      - name: Read worker status without call data
+        if: inputs.operation == 'status'
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/jarvis_do" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=30 \
+            root@147.182.140.114 \
+            'docker exec deploy-jarvis-worker-1 python -c "import urllib.request; print(urllib.request.urlopen(\"http://127.0.0.1:8080/health\", timeout=5).read().decode())"'
