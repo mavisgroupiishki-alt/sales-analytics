@@ -113,6 +113,7 @@ class LivePipeline:
         previous_cwd = Path.cwd()
         changed = {
             "DATE_FROM": reanalysis_date or datetime.now().date().isoformat(),
+            "DATE_TO": reanalysis_date,
             "DAYS_BACK": None,
             "DOWNLOAD_AUDIO_COUNT": "-1",
             "NOTIFY_MANAGERS": "0",

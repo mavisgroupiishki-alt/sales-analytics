@@ -590,7 +590,15 @@ def main():
             print(f"📅 Обычный день — загружаем вчера (1 день назад)")
         date_from = now - timedelta(days=days_back)
 
-    date_to = now + timedelta(hours=3)
+    date_to_env = os.environ.get("DATE_TO", "")
+    if date_to_env:
+        try:
+            date_to = datetime.strptime(date_to_env, "%Y-%m-%d") + timedelta(days=1, seconds=-1)
+            print(f"⚡ Ручной запуск: DATE_TO={date_to_env}")
+        except ValueError as exc:
+            raise RuntimeError("DATE_TO должен быть в формате YYYY-MM-DD") from exc
+    else:
+        date_to = now + timedelta(hours=3)
 
     print(f"\nЗагружаем звонки за {date_from:%Y-%m-%d %H:%M} - {date_to:%Y-%m-%d %H:%M}")
     raw_calls = fetch_calls(client, date_from, date_to)
