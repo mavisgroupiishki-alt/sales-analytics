@@ -68,11 +68,24 @@ class JarvisStoreTests(unittest.TestCase):
         self.assertEqual(status, "requires_reanalysis")
         self.assertEqual(rule, "")
 
-    def test_current_low_score_is_review_not_critical(self):
+    def test_current_low_score_is_normal_not_critical(self):
         status, _, rule = evaluate_triage({"overall_score": 2.5, "overall_score_method": "applicable_rubric_v1", "flags": {}})
 
-        self.assertEqual(status, "needs_review")
+        self.assertEqual(status, "normal")
         self.assertEqual(rule, "")
+
+    def test_low_confidence_current_score_requires_review(self):
+        status, _, _ = evaluate_triage(
+            {
+                "overall_score": 5.0,
+                "overall_score_method": "applicable_rubric_v1",
+                "rubric_missing_codes": ["next_step"],
+                "analysis_confidence": "low",
+                "flags": {},
+            }
+        )
+
+        self.assertEqual(status, "needs_review")
 
     def test_critical_requires_rule_quote_and_time(self):
         status, _, _ = evaluate_triage(

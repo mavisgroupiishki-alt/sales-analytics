@@ -541,12 +541,10 @@ def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
     if flags.get("critical"):
         return "needs_review", "Нужна проверка РОПом: критичный флаг не подтверждён доказательством", ""
 
-    try:
-        low_score = float(analysis.get("overall_score")) < 4.0
-    except (TypeError, ValueError):
-        low_score = False
-    if low_score or analysis.get("overall_score") is None or analysis.get("call_type", {}).get("key") == "unknown":
-        return "needs_review", "Нужна проверка РОПом: недостаточно надёжных оснований для критичности", ""
+    if analysis.get("overall_score") is None:
+        return "needs_review", "Нужна проверка РОПом: нет итогового балла", ""
+    if analysis.get("rubric_missing_codes") or analysis.get("analysis_confidence") == "low":
+        return "needs_review", "Нужна проверка РОПом: часть критериев оценена с низкой уверенностью", ""
     return "normal", "", ""
 
 

@@ -15,16 +15,18 @@ class IncompleteAnalysisIdsTests(unittest.TestCase):
             {"activity_id": "ready", "duration_sec": 60, "audio": {"file_id": "c"}},
             {"activity_id": "short", "duration_sec": 20, "audio": {"file_id": "d"}},
             {"activity_id": "excluded", "duration_sec": 60, "audio": {"file_id": "e"}},
+            {"activity_id": "excluded-low", "duration_sec": 60, "audio": {"file_id": "f"}},
         ]
         analyses = {
             "low": {"analysis": {"overall_score": 0.6}},
             "ready": {"analysis": {"overall_score": 7.5}},
             "excluded": {"analysis": {"overall_score": None, "exclude_from_stats": True}},
+            "excluded-low": {"analysis": {"overall_score": 0.7, "exclude_from_stats": True}},
         }
 
-        result = find_incomplete_activity_ids(calls, analyses, {"a", "b", "c", "d", "e"})
+        result = find_incomplete_activity_ids(calls, analyses, {"a", "b", "c", "d", "e", "f"})
 
-        self.assertEqual(result, ["missing", "low"])
+        self.assertEqual(result, ["missing", "low", "excluded-low"])
 
 
 if __name__ == "__main__":

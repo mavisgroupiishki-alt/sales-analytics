@@ -26,12 +26,11 @@ def find_incomplete_activity_ids(
             result.append(activity_id)
             continue
         analysis = (stored.get("analysis") or {}) if isinstance(stored, dict) else {}
-        if analysis.get("exclude_from_stats"):
-            continue
         try:
             score = float(analysis.get("overall_score"))
         except (TypeError, ValueError):
-            result.append(activity_id)
+            if not analysis.get("exclude_from_stats"):
+                result.append(activity_id)
             continue
         if not 1 <= score <= 10:
             result.append(activity_id)
