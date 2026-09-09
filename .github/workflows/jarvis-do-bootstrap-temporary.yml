@@ -12,6 +12,7 @@ on:
           - bootstrap
           - status
           - diagnostics
+          - deploy_analysis_fix
 
 permissions:
   contents: read
@@ -21,6 +22,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Check out the fixed worker
+        if: inputs.operation == 'deploy_analysis_fix'
+        uses: actions/checkout@v4
+
       - name: Prepare temporary SSH access
         env:
           JARVIS_DO_SSH_KEY: ${{ secrets.JARVIS_DO_SSH_KEY_TMP }}
@@ -31,6 +36,58 @@ jobs:
           chmod 0600 "$HOME/.ssh/jarvis_do"
           printf '%s\n' '147.182.140.114 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINzrGaSuchVowpE36ssltqbYgnHLb4t/PDLJay7kPP4D' > "$HOME/.ssh/known_hosts"
           chmod 0600 "$HOME/.ssh/known_hosts"
+
+      - name: Deploy the fixed analysis worker and start the strict day run
+        if: inputs.operation == 'deploy_analysis_fix'
+        run: |
+          set -euo pipefail
+          tar --exclude=.git -czf /tmp/jarvis-worker-a2f4f81.tgz .
+          scp \
+            -i "$HOME/.ssh/jarvis_do" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=30 \
+            /tmp/jarvis-worker-a2f4f81.tgz \
+            root@147.182.140.114:/tmp/jarvis-worker-a2f4f81.tgz
+          ssh \
+            -i "$HOME/.ssh/jarvis_do" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=30 \
+            -o ServerAliveInterval=10 \
+            root@147.182.140.114 '
+              set -eu
+              install -d -m 0755 /opt/mavis-pilot/jarvis-worker-a2f4f81
+              tar -xzf /tmp/jarvis-worker-a2f4f81.tgz -C /opt/mavis-pilot/jarvis-worker-a2f4f81
+              docker build \
+                -t jarvis-worker:a2f4f81 \
+                -f /opt/mavis-pilot/jarvis-worker-a2f4f81/deploy/Dockerfile.live-worker \
+                /opt/mavis-pilot/jarvis-worker-a2f4f81
+              printf "%s\n" \
+                "services:" \
+                "  jarvis-worker:" \
+                "    image: jarvis-worker:a2f4f81" \
+                > /opt/mavis-pilot/jarvis-worker-image.override.yml
+              docker compose \
+                --env-file /opt/mavis-pilot/deploy/.env \
+                --env-file /opt/mavis-pilot/jarvis-worker.env \
+                -p deploy \
+                -f /opt/mavis-pilot/deploy/docker-compose.yml \
+                -f /opt/mavis-pilot/jarvis-worker-a2f4f81/deploy/docker-compose.live-worker.yml \
+                -f /opt/mavis-pilot/jarvis-n8n-secret.override.yml \
+                -f /opt/mavis-pilot/jarvis-worker-image.override.yml \
+                up -d --no-build --force-recreate jarvis-worker
+              for attempt in $(seq 1 30); do
+                if docker exec deploy-jarvis-worker-1 python -c "import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8080/health\", timeout=3)"; then
+                  break
+                fi
+                if [ "$attempt" -eq 30 ]; then
+                  docker logs --tail 100 deploy-jarvis-worker-1
+                  exit 1
+                fi
+                sleep 2
+              done
+              docker exec deploy-jarvis-worker-1 python -c "import json, os, urllib.request; request=urllib.request.Request(\"http://127.0.0.1:8080/internal/sync\", data=json.dumps({\"mode\":\"reanalyze_day\",\"date\":\"2026-09-08\"}).encode(), headers={\"Content-Type\":\"application/json\",\"x-jarvis-sync-secret\":os.environ[\"JARVIS_SYNC_SECRET\"]}, method=\"POST\"); print(urllib.request.urlopen(request, timeout=10).read().decode())"
+              docker inspect deploy-jarvis-worker-1 --format "{{.Config.Image}}"
+            '
 
       - name: Transfer the approved worker environment to DigitalOcean
         if: inputs.operation == 'bootstrap'
