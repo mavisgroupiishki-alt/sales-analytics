@@ -11,6 +11,7 @@ from claude_analyzer import (  # noqa: E402
     complete_missing_criteria_neutrally,
     decode_json_response,
     detect_call_type,
+    detect_service_contact_routing,
 )
 
 
@@ -116,6 +117,39 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertFalse(result["poor_audio"])
         self.assertTrue(result["poor_audio_reported_by_ai"])
         self.assertNotEqual(result["review_status"], "excluded")
+
+    def test_contact_routing_call_is_analyzed_without_lowering_sales_score(self):
+        transcript = (
+            "Со мной лучше связываться по тому номеру, с которого я сейчас набираю. "
+            "К Viber привязан другой телефон. По этому номеру можете набирать. Хорошо, спасибо."
+        )
+
+        self.assertTrue(detect_service_contact_routing(transcript))
+        with patch("claude_analyzer.call_claude_api") as api:
+            result = analyze_transcript(
+                {
+                    "text": transcript,
+                    "text_with_timecodes": "[00:20] Клиент: со мной лучше связываться по тому номеру",
+                    "duration_sec": 55,
+                },
+                {"direction": "outgoing", "duration_sec": 55, "crm": {}},
+                {},
+            )
+
+        api.assert_not_called()
+        self.assertEqual(result["call_type"]["key"], "service_contact_routing")
+        self.assertEqual(result["review_status"], "excluded")
+        self.assertTrue(result["service_call"])
+        self.assertTrue(result["exclude_from_stats"])
+        self.assertIsNone(result["overall_score"])
+
+    def test_sales_call_with_phone_detail_is_not_misclassified_as_service(self):
+        transcript = (
+            "Позвоните по другому номеру, а сейчас обсудим стоимость сертификата, сроки оплаты и договор. "
+            "Клиент возражает против цены, менеджер предлагает следующий шаг."
+        )
+
+        self.assertFalse(detect_service_contact_routing(transcript))
 
 
 if __name__ == "__main__":

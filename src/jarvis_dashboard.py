@@ -305,6 +305,8 @@ def _status_label(status: str, analysis: Dict[str, Any] | None = None) -> str:
     if status == "excluded":
         analysis = analysis or {}
         reason = str(analysis.get("exclusion_reason") or "").lower()
+        if analysis.get("service_call"):
+            return "Служебный звонок"
         if "короче 30" in reason or "short" in reason:
             return "Короткий звонок"
         if analysis.get("not_sales"):
@@ -325,7 +327,8 @@ def render_calls(
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or "—"
         crm = call.get("crm") or {}
-        score = analysis.get("overall_score") if analysis else "—"
+        score = analysis.get("overall_score") if analysis else None
+        score = score if score is not None else "—"
         rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text((analysis.get('call_type') or {}).get('label') or 'Тип не подтверждён')}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
     note = description or "«Нет разбора» — Bitrix не отдал пригодную запись либо обработка ещё не завершилась. «Короткий звонок» не оценивается. «Низкая оценка» — отдельный сигнал для разбора с менеджером."
     content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section><section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
@@ -354,6 +357,7 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
     manager = (call.get("manager") or {}).get("name") or "Менеджер не определён"
     crm = call.get("crm") or {}
     score = analysis.get("overall_score") if analysis.get("overall_score") is not None else "—"
+    score_heading = "Не оценивается" if analysis.get("service_call") else f"{score}/10"
     duration = call.get("duration_sec") or transcription.get("duration_sec")
     try:
         duration_seconds = int(float(duration)) if duration else 0
@@ -457,7 +461,7 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
 
     summary = analysis.get("summary") or reason or "Джарвис ещё обрабатывает этот разговор."
     recommendation = analysis.get("recommended_action") or analysis.get("recommendation") or "Рекомендация появится после завершения анализа."
-    content = f'''<a class="jc-back" href="/calls">← Все звонки</a><section class="jc-heading jc-call-heading"><div><p>{_text(_format_timestamp(str(call.get('created') or '')))}</p><h1>{_text(client)} <span>· {score}/10</span></h1></div><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span></section>
+    content = f'''<a class="jc-back" href="/calls">← Все звонки</a><section class="jc-heading jc-call-heading"><div><p>{_text(_format_timestamp(str(call.get('created') or '')))}</p><h1>{_text(client)} <span>· {_text(score_heading)}</span></h1></div><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span></section>
 <section class="jc-call-facts"><div><span>Ответственный</span><b>{_text(manager)}</b></div><div><span>Компания</span><b>{_text(company)}</b></div><div><span>{owner_label}</span><b>{crm_value}</b></div><div><span>Следующий контакт</span><b>{_text(str(crm.get('next_activity_date') or '')[:16].replace('T', ' ') or 'Не назначен')}</b></div></section>
 {audio_html}
 <section class="jc-detail-grid"><article><h2>Вывод Джарвиса</h2><p>{_text(summary)}</p>{quote}<h3>Рекомендованное действие</h3><p>{_text(recommendation)}</p></article><article><h2>Ключевые моменты</h2><ul class="jc-moments">{moment_rows}</ul></article></section>

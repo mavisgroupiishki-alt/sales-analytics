@@ -10,6 +10,7 @@ from bitrix_url import (  # noqa: E402
     build_bitrix_method_url,
     normalize_bitrix_webhook_url,
     safe_webhook_label,
+    validate_bitrix_download_url,
     validate_bitrix_file_url,
 )
 
@@ -61,19 +62,32 @@ class BitrixUrlTests(unittest.TestCase):
             file_url,
         )
 
-    def test_validates_signed_rest_download_url(self):
-        file_url = "https://example.bitrix24.by/rest/download.json?auth=secret&token=signed-file-token"
+    def test_validates_trusted_signed_rest_download_url_with_temporary_auth(self):
+        file_url = "https://example.bitrix24.by/rest/download.json?auth=temporary-access-token&token=signed-file-token"
         self.assertEqual(
-            validate_bitrix_file_url(file_url, "https://example.bitrix24.by/rest/1/secret/profile.json"),
+            validate_bitrix_download_url(file_url, "https://example.bitrix24.by/rest/1/secret/profile.json"),
             file_url,
         )
 
-    def test_rejects_signed_rest_download_url_with_unknown_auth(self):
+    def test_stored_url_validator_rejects_rest_download_url(self):
         with self.assertRaises(ValueError):
             validate_bitrix_file_url(
-                "https://example.bitrix24.by/rest/download.json?auth=other&token=signed-file-token",
+                "https://example.bitrix24.by/rest/download.json?auth=temporary-access-token&token=signed-file-token",
                 "https://example.bitrix24.by/rest/1/secret",
             )
+
+    def test_trusted_download_validator_rejects_external_or_malformed_url(self):
+        webhook = "https://example.bitrix24.by/rest/1/secret"
+        invalid_urls = (
+            "https://evil.example/rest/download.json?auth=temporary&token=signed",
+            "https://example.bitrix24.by/audio.mp3?auth=temporary&token=signed",
+            "https://example.bitrix24.by/rest/download.json?auth=&token=signed",
+            "https://example.bitrix24.by/rest/download.json?auth=temporary&token=",
+            "https://example.bitrix24.by/rest/download.json?auth=temporary&token=signed&next=evil",
+        )
+        for file_url in invalid_urls:
+            with self.subTest(file_url=file_url), self.assertRaises(ValueError):
+                validate_bitrix_download_url(file_url, webhook)
 
     def test_rejects_external_or_unexpected_file_url(self):
         webhook = "https://example.bitrix24.by/rest/1/secret"

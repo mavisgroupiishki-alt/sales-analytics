@@ -15,11 +15,13 @@ def find_incomplete_activity_ids(
     for call in calls:
         activity_id = str(call.get("activity_id") or "")
         audio_id = str((call.get("audio") or {}).get("file_id") or "")
+        raw_duration = call.get("duration_sec")
         try:
-            duration = int(call.get("duration_sec") or 0)
+            duration = int(raw_duration or 0)
         except (TypeError, ValueError):
             duration = 0
-        if not activity_id or not audio_id or audio_id not in audio_file_ids or duration < 30:
+        duration_is_known_short = raw_duration not in (None, "") and 0 < duration < 30
+        if not activity_id or not audio_id or audio_id not in audio_file_ids or duration_is_known_short:
             continue
         stored = analyses.get(activity_id)
         if not stored:

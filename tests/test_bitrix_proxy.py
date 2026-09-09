@@ -160,7 +160,7 @@ class BitrixProxyTests(unittest.TestCase):
         metadata.ok = True
         metadata.json.return_value = {
             "result": {
-                "DOWNLOAD_URL": "https://example.bitrix24.by/rest/download.json?auth=token&token=signed-file-token"
+                "DOWNLOAD_URL": "https://example.bitrix24.by/rest/download.json?auth=temporary-access-token&token=signed-file-token"
             }
         }
         post.return_value = metadata
@@ -177,4 +177,30 @@ class BitrixProxyTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, b"audio")
         self.assertIn("/rest/download.json", get.call_args.args[0])
+        self.assertIn("auth=temporary-access-token", get.call_args.args[0])
         self.assertFalse(get.call_args.kwargs["allow_redirects"])
+
+    @patch("requests.get")
+    @patch("requests.post")
+    @patch.object(dashboard_app, "load_calls")
+    def test_audio_health_uses_same_validated_non_redirecting_download(self, load_calls, post, get):
+        dashboard_app._AUDIO_HEALTH_CACHE.update({"ts": None, "payload": None, "status": 503})
+        load_calls.return_value = [{"activity_id": "101", "audio": {"file_id": "42"}}]
+        metadata = Mock()
+        metadata.json.return_value = {
+            "result": {
+                "DOWNLOAD_URL": "https://example.bitrix24.by/rest/download.json?auth=temporary-access-token&token=signed-file-token"
+            }
+        }
+        metadata.raise_for_status.return_value = None
+        post.return_value = metadata
+        media = Mock()
+        media.status_code = 206
+        media.headers = {"Content-Type": "audio/mpeg"}
+        get.return_value = media
+
+        response = self.client.get("/health/audio")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(get.call_args.kwargs["allow_redirects"])
+        self.assertIn("auth=temporary-access-token", get.call_args.args[0])

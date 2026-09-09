@@ -1532,6 +1532,7 @@ def serve_audio(activity_id):
         build_bitrix_method_url,
         normalize_bitrix_webhook_url,
         safe_webhook_label,
+        validate_bitrix_download_url,
         validate_bitrix_file_url,
     )
 
@@ -1586,8 +1587,7 @@ def serve_audio(activity_id):
                     file_data = payload.get("result") or {}
                     candidate_url = file_data.get("DOWNLOAD_URL", "")
                     if candidate_url:
-                        validate_bitrix_file_url(candidate_url, webhook)
-                        audio_url = add_webhook_auth_to_file_url(candidate_url, webhook)
+                        audio_url = validate_bitrix_download_url(candidate_url, webhook)
         except (_req.RequestException, ValueError, TypeError) as exc:
             # Не пишем exception целиком: requests включает секретный URL в текст ошибки.
             app.logger.warning(
@@ -1690,7 +1690,7 @@ def audio_health():
     Результат кэшируется на пять минут.
     """
     import requests as _req
-    from bitrix_url import build_bitrix_method_url, normalize_bitrix_webhook_url
+    from bitrix_url import build_bitrix_method_url, normalize_bitrix_webhook_url, validate_bitrix_download_url
 
     cached_at = _AUDIO_HEALTH_CACHE.get("ts")
     if cached_at and (datetime.now() - cached_at).total_seconds() < 300:
@@ -1726,12 +1726,13 @@ def audio_health():
                         "message": meta_json.get("error") or "DOWNLOAD_URL отсутствует",
                     }, 503
                 else:
+                    download_url = validate_bitrix_download_url(download_url, webhook)
                     media = _req.get(
                         download_url,
                         headers={"Range": "bytes=0-1023"},
                         stream=True,
                         timeout=15,
-                        allow_redirects=True,
+                        allow_redirects=False,
                     )
                     ctype = (media.headers.get("Content-Type") or "").lower()
                     ok = media.status_code in (200, 206) and any(

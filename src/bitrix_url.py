@@ -115,17 +115,8 @@ def validate_bitrix_file_url(file_url: str, raw_webhook_url: str) -> str:
         raise ValueError("Недопустимые параметры ссылки Bitrix24")
     params = dict(pairs)
 
-    if parsed.path == _BITRIX_REST_DOWNLOAD_PATH:
-        if set(keys) - _BITRIX_REST_DOWNLOAD_QUERY_KEYS:
-            raise ValueError("Недопустимые параметры ссылки Bitrix24")
-        if params.get("auth") != extract_webhook_token(raw_webhook_url):
-            raise ValueError("Ссылка содержит неизвестный токен Bitrix24")
-        if not params.get("token"):
-            raise ValueError("В ссылке отсутствует подпись файла Bitrix24")
-        return file_url.strip()
-
     if parsed.path != _BITRIX_FILE_PATH:
-        raise ValueError("Разрешён только CRM-файл или подписанная REST-ссылка Bitrix24")
+        raise ValueError("Разрешён только CRM-файл Bitrix24")
     if set(keys) - _BITRIX_FILE_QUERY_KEYS:
         raise ValueError("Недопустимые параметры ссылки Bitrix24")
     if not params.get("fileId", "").isdigit():
@@ -137,6 +128,38 @@ def validate_bitrix_file_url(file_url: str, raw_webhook_url: str) -> str:
     auth = params.get("auth", "")
     if auth and auth != extract_webhook_token(raw_webhook_url):
         raise ValueError("Ссылка содержит неизвестный токен Bitrix24")
+    return file_url.strip()
+
+
+def validate_bitrix_download_url(file_url: str, raw_webhook_url: str) -> str:
+    """Validate a fresh ``DOWNLOAD_URL`` returned by ``disk.file.get``.
+
+    Bitrix signs this URL with a short-lived access token which is intentionally
+    different from the incoming-webhook secret.  The URL is trusted only at the
+    authenticated API response boundary; stored or user-submitted URLs must go
+    through :func:`validate_bitrix_file_url` instead.
+    """
+    if not file_url or not file_url.strip():
+        raise ValueError("Ссылка скачивания Bitrix24 не задана")
+
+    parsed = urlsplit(file_url.strip())
+    webhook = urlsplit(normalize_bitrix_webhook_url(raw_webhook_url))
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("Ссылка скачивания Bitrix24 должна использовать HTTPS")
+    if parsed.username or parsed.password or parsed.fragment:
+        raise ValueError("Ссылка скачивания Bitrix24 содержит запрещённые компоненты")
+    if parsed.hostname.lower() != (webhook.hostname or "").lower() or parsed.port != webhook.port:
+        raise ValueError("Домен скачивания не совпадает с доменом Bitrix24")
+    if parsed.path != _BITRIX_REST_DOWNLOAD_PATH:
+        raise ValueError("Разрешена только подписанная REST-ссылка Bitrix24")
+
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    keys = [key for key, _ in pairs]
+    if len(keys) != 2 or len(keys) != len(set(keys)) or set(keys) != _BITRIX_REST_DOWNLOAD_QUERY_KEYS:
+        raise ValueError("Недопустимые параметры ссылки Bitrix24")
+    params = dict(pairs)
+    if not params.get("auth") or not params.get("token"):
+        raise ValueError("В ссылке отсутствует авторизация или подпись файла Bitrix24")
     return file_url.strip()
 
 

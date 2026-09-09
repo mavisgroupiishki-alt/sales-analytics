@@ -49,6 +49,30 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("Короткий звонок", journal)
         self.assertNotIn(">Исключён<", journal)
 
+    def test_service_contact_call_is_shown_as_analyzed_and_not_scored(self):
+        call = {
+            "activity_id": "1",
+            "created": "2026-09-08T17:41:00+03:00",
+            "manager": {"name": "Роман Авсеенко"},
+            "client": {"name": "Кирилл"},
+        }
+        analyses = {"1": {"analysis": {
+            "review_status": "excluded",
+            "exclude_from_stats": True,
+            "service_call": True,
+            "overall_score": None,
+            "call_type": {"key": "service_contact_routing", "label": "Служебное уточнение контакта"},
+        }}}
+
+        model = dashboard_model([call], analyses)
+        journal = render_calls([call], analyses, {"role": "rop", "name": "РОП"})
+        detail = render_call_detail(call, analyses["1"], {"role": "rop", "name": "РОП"})
+
+        self.assertEqual(model["analyzed"], 1)
+        self.assertIn("Служебный звонок", journal)
+        self.assertIn("Не оценивается", detail)
+        self.assertNotIn("—/10", detail)
+
     def test_legacy_unproven_critical_requires_reanalysis_not_rop_review(self):
         calls = [{"activity_id": "1", "manager": {"id": 1, "name": "Анна"}}]
         analyses = {"1": {"analysis": {"overall_score": 3, "flags": {"critical": True}}}}

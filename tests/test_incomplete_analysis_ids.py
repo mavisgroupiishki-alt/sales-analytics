@@ -16,6 +16,7 @@ class IncompleteAnalysisIdsTests(unittest.TestCase):
             {"activity_id": "short", "duration_sec": 20, "audio": {"file_id": "d"}},
             {"activity_id": "excluded", "duration_sec": 60, "audio": {"file_id": "e"}},
             {"activity_id": "excluded-low", "duration_sec": 60, "audio": {"file_id": "f"}},
+            {"activity_id": "unknown-duration", "duration_sec": None, "audio": {"file_id": "g"}},
         ]
         analyses = {
             "low": {"analysis": {"overall_score": 0.6}},
@@ -24,9 +25,9 @@ class IncompleteAnalysisIdsTests(unittest.TestCase):
             "excluded-low": {"analysis": {"overall_score": 0.7, "exclude_from_stats": True}},
         }
 
-        result = find_incomplete_activity_ids(calls, analyses, {"a", "b", "c", "d", "e", "f"})
+        result = find_incomplete_activity_ids(calls, analyses, {"a", "b", "c", "d", "e", "f", "g"})
 
-        self.assertEqual(result, ["missing", "low", "excluded-low"])
+        self.assertEqual(result, ["missing", "low", "excluded-low", "unknown-duration"])
 
 
 if __name__ == "__main__":

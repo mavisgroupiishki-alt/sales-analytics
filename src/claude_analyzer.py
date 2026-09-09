@@ -981,6 +981,59 @@ def build_analysis_prompt(
 # ОСНОВНАЯ ФУНКЦИЯ АНАЛИЗА
 # ============================================================
 
+_CONTACT_ROUTING_PATTERNS = (
+    r"лучше\s+(?:со\s+мной\s+)?(?:связыва\w*|звони\w*|набира\w*)",
+    r"с\s+котор\w+\s+я\s+сейчас\s+набира\w*",
+    r"(?:друг\w+\s+)?(?:номер|телефон)",
+    r"(?:viber|вайбер)\w*[^.]{0,50}привязан\w*",
+    r"по\s+(?:тому|этому|нему)[^.]{0,40}(?:звони\w*|набира\w*)",
+)
+_SALES_SUBSTANCE_PATTERN = re.compile(
+    r"\b(?:стоимост|цена|оплат|договор|счет|сертификат|услуг|заказ|предложен|возражен|сроки?\s+оплат)\w*",
+    re.IGNORECASE,
+)
+
+
+def detect_service_contact_routing(transcript: str) -> bool:
+    """Identify a narrow logistics-only call without asking AI to score sales."""
+    normalized = " ".join(str(transcript or "").lower().replace("ё", "е").split())
+    if not normalized or _SALES_SUBSTANCE_PATTERN.search(normalized):
+        return False
+    matches = sum(bool(re.search(pattern, normalized, re.IGNORECASE)) for pattern in _CONTACT_ROUTING_PATTERNS)
+    return matches >= 2
+
+
+def _service_contact_analysis(transcription: Dict, call_meta: Dict) -> Dict[str, Any]:
+    return {
+        "call_type": {
+            "key": "service_contact_routing",
+            "label": "Служебное уточнение контакта",
+            "confirmed": True,
+        },
+        "call_goal": "Уточнить корректный номер или канал связи",
+        "summary": "Клиент и менеджер уточнили, по какому номеру или каналу продолжить связь.",
+        "outcome": "Корректный способ связи согласован; продажная ситуация в этом звонке не оценивалась.",
+        "overall_score": None,
+        "model_overall_score": None,
+        "overall_score_method": "not_applicable_service_call_v1",
+        "score_explanation": "Служебное уточнение контакта не снижает оценку менеджера.",
+        "criteria": [],
+        "scripts_used": [],
+        "scripts_alignment": [],
+        "flags": {"critical": False, "not_sales": True, "not_sales_reason": "Служебная логистика контакта"},
+        "service_call": True,
+        "not_sales": True,
+        "not_sales_reason": "Служебная логистика контакта",
+        "exclude_from_stats": True,
+        "review_status": "excluded",
+        "exclusion_reason": "Служебный звонок: уточнён корректный номер или канал связи",
+        "is_critical": False,
+        "critical_reason": "",
+        "critical_rule_id": "",
+        "source_duration_seconds": call_meta.get("duration_sec") or transcription.get("duration_sec"),
+        "_meta": {"model": "deterministic", "attempts": 0, "approx_cost_usd": 0.0},
+    }
+
 def analyze_transcript(
     transcription: Dict,
     call_meta: Dict,
@@ -988,6 +1041,9 @@ def analyze_transcript(
 ) -> Dict[str, Any]:
     transcript_text = transcription["text"]
     transcript_tc = transcription.get("text_with_timecodes") or transcript_text
+    if detect_service_contact_routing(transcript_text):
+        logger.info("   Тип: Служебное уточнение контакта")
+        return _service_contact_analysis(transcription, call_meta)
     relevant_scripts = select_relevant_scripts(transcript_text, scripts_db)
 
     if relevant_scripts:
