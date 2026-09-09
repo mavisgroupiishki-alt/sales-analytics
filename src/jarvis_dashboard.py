@@ -386,6 +386,7 @@ def render_managers(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user:
 def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[str, Any]) -> str:
     analysis = (stored or {}).get("analysis") or {}
     transcription = (stored or {}).get("transcription") or {}
+    non_sales_call = bool(analysis.get("service_call") or analysis.get("not_sales"))
     if analysis:
         status, reason, _ = triage_for(analysis)
     elif recording_is_unavailable(call):
@@ -398,7 +399,7 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
     manager = (call.get("manager") or {}).get("name") or "Менеджер не определён"
     crm = call.get("crm") or {}
     score = analysis.get("overall_score") if analysis.get("overall_score") is not None else "—"
-    score_heading = "Не оценивается" if analysis.get("service_call") or recording_is_unavailable(call) else f"{score}/10"
+    score_heading = "Не оценивается" if non_sales_call or recording_is_unavailable(call) else f"{score}/10"
     duration = call.get("duration_sec") or transcription.get("duration_sec")
     try:
         duration_seconds = int(float(duration)) if duration else 0
@@ -436,7 +437,9 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
         timecode = str(item.get("time") or "")
         time_button = f'<button type="button" class="jc-timecode" data-timecode="{_text(timecode)}" onclick="seekCallAudio(this.dataset.timecode)" aria-label="Перейти к { _text(timecode) }">{_text(timecode)}</button>' if timecode else '<span class="jc-no-time">—</span>'
         moment_rows += f'<li class="{_text(item.get("type") or "neutral")}">{time_button}<span><b>{_text(item.get("text") or "Важный момент")}</b><small>{_text(item.get("detail") or "")}</small></span></li>'
-    if not moment_rows:
+    if not moment_rows and non_sales_call:
+        moment_rows = '<li><span class="jc-no-time">—</span><span><b>Звонок исключён до оценки</b><small>Консультации или продажного разговора не было.</small></span></li>'
+    elif not moment_rows:
         moment_rows = '<li><span class="jc-no-time">—</span><span><b>Ключевые моменты появятся после анализа</b><small>Джарвис добавит точные таймкоды и факты разговора.</small></span></li>'
 
     evidence = (analysis.get("flags") or {}).get("critical_evidence") or {}
@@ -502,13 +505,20 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
         transcript_rows = '<div class="jc-section-empty">Транскрипт формируется. Запись уже можно прослушать выше.</div>'
 
     summary = analysis.get("summary") or reason or "Джарвис ещё обрабатывает этот разговор."
-    recommendation = analysis.get("recommended_action") or analysis.get("recommendation") or "Рекомендация появится после завершения анализа."
+    recommendation = analysis.get("recommended_action") or analysis.get("recommendation") or ("Продажные критерии, скрипт и балл к этому звонку не применяются." if non_sales_call else "Рекомендация появится после завершения анализа.")
+    if non_sales_call:
+        exclusion_reason = analysis.get("not_sales_reason") or analysis.get("exclusion_reason") or "В разговоре не было консультации или продажи"
+        evaluation_html = f'''<section class="jc-panel-section"><div class="jc-section-head"><div><h2>Служебный звонок не оценивается</h2><p>{_text(exclusion_reason)}</p></div></div><div class="jc-section-empty">Транскрипт используется только внутри системы для определения типа звонка и в карточке не публикуется.</div></section>'''
+        transcript_html = ""
+    else:
+        evaluation_html = f'''<section class="jc-analysis-grid"><article class="jc-panel-section"><div class="jc-section-head"><h2>Оценка по применимым критериям</h2><span>1–10</span></div>{criteria_rows}</article><article class="jc-panel-section"><div class="jc-section-head"><div><h2>Соблюдение скрипта</h2><div class="jc-script-tags">{script_tags}</div></div></div>{script_rows}</article></section>'''
+        transcript_html = f'''<section class="jc-panel-section jc-transcript"><div class="jc-section-head"><div><h2>Транскрипт разговора</h2><p>Нажмите на таймкод, чтобы перейти к нужному месту записи.</p></div><input type="search" id="transcriptSearch" placeholder="Поиск по разговору" aria-label="Поиск по транскрипту" oninput="filterTranscript(this.value)"></div><div id="transcriptLines">{transcript_rows}</div></section>'''
     content = f'''<a class="jc-back" href="/calls">← Все звонки</a><section class="jc-heading jc-call-heading"><div><p>{_text(_format_timestamp(str(call.get('created') or '')))}</p><h1>{_text(client)} <span>· {_text(score_heading)}</span></h1></div><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span></section>
 <section class="jc-call-facts"><div><span>Ответственный</span><b>{_text(manager)}</b></div><div><span>Компания</span><b>{_text(company)}</b></div><div><span>{owner_label}</span><b>{crm_value}</b></div><div><span>Следующий контакт</span><b>{_text(str(crm.get('next_activity_date') or '')[:16].replace('T', ' ') or 'Не назначен')}</b></div></section>
 {audio_html}
 <section class="jc-detail-grid"><article><h2>Вывод Джарвиса</h2><p>{_text(summary)}</p>{quote}<h3>Рекомендованное действие</h3><p>{_text(recommendation)}</p></article><article><h2>Ключевые моменты</h2><ul class="jc-moments">{moment_rows}</ul></article></section>
-<section class="jc-analysis-grid"><article class="jc-panel-section"><div class="jc-section-head"><h2>Оценка по применимым критериям</h2><span>1–10</span></div>{criteria_rows}</article><article class="jc-panel-section"><div class="jc-section-head"><div><h2>Соблюдение скрипта</h2><div class="jc-script-tags">{script_tags}</div></div></div>{script_rows}</article></section>
-<section class="jc-panel-section jc-transcript"><div class="jc-section-head"><div><h2>Транскрипт разговора</h2><p>Нажмите на таймкод, чтобы перейти к нужному месту записи.</p></div><input type="search" id="transcriptSearch" placeholder="Поиск по разговору" aria-label="Поиск по транскрипту" oninput="filterTranscript(this.value)"></div><div id="transcriptLines">{transcript_rows}</div></section>
+{evaluation_html}
+{transcript_html}
 <script>function seekCallAudio(tc){{var audio=document.getElementById('callAudio');if(!audio||!tc)return;var p=tc.split(':');var seconds=p.length===2?Number(p[0])*60+Number(p[1]):Number(tc);if(Number.isFinite(seconds)){{audio.currentTime=seconds;audio.play();}}}}function filterTranscript(value){{var q=(value||'').trim().toLowerCase();document.querySelectorAll('.jc-transcript-line').forEach(function(row){{row.hidden=q&&!row.textContent.toLowerCase().includes(q);}});}}</script>'''
     return _console_page("Карточка звонка", "calls", content, user)
 

@@ -913,7 +913,7 @@ def build_analysis_prompt(
     - "missed_deal": true если клиент был готов купить а менеджер не закрыл
     - "no_next_step": true если важный звонок завершился без договорённости о следующем шаге
     - "poor_audio": true если запись с сильными помехами — текст расшифрован плохо. Укажи причину в poor_audio_reason.
-    - "not_sales": true если звонок НЕ касается продаж: ошибочный номер, не тот человек, технический вопрос не по теме. Укажи причину в not_sales_reason.
+    - "not_sales": true если в звонке нет консультации, выявления потребности, презентации, обсуждения условий или иного продажного действия. Сюда относятся ошибочный номер, технический вопрос, уточнение контакта, проверка доставки уже отправленных документов и административный контроль ранее обещанного действия. Укажи причину в not_sales_reason. Такой звонок нельзя штрафовать за отсутствие продажных этапов.
 
 13. СООТВЕТСТВИЕ СКРИПТУ — перечисли только реально применимые этапы выбранного скрипта. Для каждого укажи `full`, `partial` или `miss`, короткий факт и точный таймкод. Не штрафуй за неприменимый этап.
 
@@ -992,6 +992,46 @@ _SALES_SUBSTANCE_PATTERN = re.compile(
     r"\b(?:стоимост|цена|оплат|договор|счет|сертификат|услуг|заказ|предложен|возражен|сроки?\s+оплат)\w*",
     re.IGNORECASE,
 )
+_DOCUMENT_DELIVERY_OBJECT_PATTERN = re.compile(
+    r"\b(?:документ|информац|материал|файл|сообщен|коммерческ\w*\s+предложен|кп)\w*",
+    re.IGNORECASE,
+)
+_DOCUMENT_DELIVERY_ACTION_PATTERN = re.compile(
+    r"\b(?:получ|приш|дош|достав|отправ|откры|посмотр)\w*",
+    re.IGNORECASE,
+)
+_DOCUMENT_DELIVERY_CHANNEL_PATTERN = re.compile(
+    r"\b(?:viber|вайбер|telegram|телеграм|whatsapp|ватсап|почт|e-?mail)\w*",
+    re.IGNORECASE,
+)
+_DOCUMENT_DELIVERY_FOLLOWUP_PATTERN = re.compile(
+    r"(?:ничего\s+не\s+(?:приш|дош)\w*|(?:получ|приш|дош)\w*\s+ли|"
+    r"вы\s+(?:получ|посмотр|откры)\w*)",
+    re.IGNORECASE,
+)
+_ACTIVE_SALES_DISCUSSION_PATTERN = re.compile(
+    r"\b(?:стоимост|цен[ауые]|оплат|возраж|покуп|заказ|услови[яй]|обсуд|"
+    r"потребност|презентац|предлаг|срок\w*\s+(?:постав|оплат)|"
+    r"соглас\w*\s+(?:сумм|цен|услов))\w*",
+    re.IGNORECASE,
+)
+_ADMIN_DELIVERABLE_PATTERN = re.compile(
+    r"\b(?:письм|почт|кп|коммерческ|предложен|расчет|стоимост|документ|счет|материал|информац)\w*",
+    re.IGNORECASE,
+)
+_ADMIN_PENDING_PATTERNS = (
+    r"\bжду\b",
+    r"\b(?:нету|нет)\b",
+    r"ничего[^.]{0,35}не[^.]{0,20}(?:сдел|усп)\w*",
+    r"не\s+(?:отправ|сформир|приш|подготов|сдел|усп)\w*",
+    r"\b(?:провер|додел|доработ|подготов)\w*",
+)
+_CONSULTATION_OR_SALES_PATTERN = re.compile(
+    r"\b(?:потребност|презентац|возраж|давайте\s+обсуд|вам\s+подойд|"
+    r"мы\s+предлага|готов\w*\s+оформ|стоимост\w*\s+(?:состав|будет)|"
+    r"услови\w*\s+(?:оплат|постав|догов))\w*",
+    re.IGNORECASE,
+)
 
 
 def detect_service_contact_routing(transcript: str) -> bool:
@@ -1003,36 +1043,108 @@ def detect_service_contact_routing(transcript: str) -> bool:
     return matches >= 2
 
 
-def _service_contact_analysis(transcription: Dict, call_meta: Dict) -> Dict[str, Any]:
+def detect_service_document_delivery(transcript: str) -> bool:
+    """Identify a logistics-only follow-up about documents already sent."""
+    normalized = " ".join(str(transcript or "").lower().replace("ё", "е").split())
+    if not normalized or _ACTIVE_SALES_DISCUSSION_PATTERN.search(normalized):
+        return False
+    return bool(
+        _DOCUMENT_DELIVERY_ACTION_PATTERN.search(normalized)
+        and _DOCUMENT_DELIVERY_CHANNEL_PATTERN.search(normalized)
+        and (
+            _DOCUMENT_DELIVERY_OBJECT_PATTERN.search(normalized)
+            or _DOCUMENT_DELIVERY_FOLLOWUP_PATTERN.search(normalized)
+        )
+    )
+
+
+def detect_service_administrative_followup(transcript: str) -> bool:
+    """Identify a status-only call about an unfinished promised deliverable."""
+    normalized = " ".join(str(transcript or "").lower().replace("ё", "е").split())
+    if not normalized or _CONSULTATION_OR_SALES_PATTERN.search(normalized):
+        return False
+    pending_signals = sum(
+        bool(re.search(pattern, normalized, re.IGNORECASE))
+        for pattern in _ADMIN_PENDING_PATTERNS
+    )
+    return bool(_ADMIN_DELIVERABLE_PATTERN.search(normalized) and pending_signals >= 2)
+
+
+def _service_analysis(
+    transcription: Dict,
+    call_meta: Dict,
+    *,
+    key: str,
+    label: str,
+    goal: str,
+    summary: str,
+    outcome: str,
+    reason: str,
+) -> Dict[str, Any]:
     return {
-        "call_type": {
-            "key": "service_contact_routing",
-            "label": "Служебное уточнение контакта",
-            "confirmed": True,
-        },
-        "call_goal": "Уточнить корректный номер или канал связи",
-        "summary": "Клиент и менеджер уточнили, по какому номеру или каналу продолжить связь.",
-        "outcome": "Корректный способ связи согласован; продажная ситуация в этом звонке не оценивалась.",
+        "call_type": {"key": key, "label": label, "confirmed": True},
+        "call_goal": goal,
+        "summary": summary,
+        "outcome": outcome,
         "overall_score": None,
         "model_overall_score": None,
         "overall_score_method": "not_applicable_service_call_v1",
-        "score_explanation": "Служебное уточнение контакта не снижает оценку менеджера.",
+        "score_explanation": f"{label} не снижает оценку менеджера.",
         "criteria": [],
         "scripts_used": [],
         "scripts_alignment": [],
-        "flags": {"critical": False, "not_sales": True, "not_sales_reason": "Служебная логистика контакта"},
+        "flags": {"critical": False, "not_sales": True, "not_sales_reason": reason},
         "service_call": True,
         "not_sales": True,
-        "not_sales_reason": "Служебная логистика контакта",
+        "not_sales_reason": reason,
         "exclude_from_stats": True,
         "review_status": "excluded",
-        "exclusion_reason": "Служебный звонок: уточнён корректный номер или канал связи",
+        "exclusion_reason": f"Служебный звонок: {reason.lower()}",
         "is_critical": False,
         "critical_reason": "",
         "critical_rule_id": "",
         "source_duration_seconds": call_meta.get("duration_sec") or transcription.get("duration_sec"),
         "_meta": {"model": "deterministic", "attempts": 0, "approx_cost_usd": 0.0},
     }
+
+
+def _service_contact_analysis(transcription: Dict, call_meta: Dict) -> Dict[str, Any]:
+    return _service_analysis(
+        transcription,
+        call_meta,
+        key="service_contact_routing",
+        label="Служебное уточнение контакта",
+        goal="Уточнить корректный номер или канал связи",
+        summary="Клиент и менеджер уточнили, по какому номеру или каналу продолжить связь.",
+        outcome="Корректный способ связи согласован; продажная ситуация в этом звонке не оценивалась.",
+        reason="Служебная логистика контакта",
+    )
+
+
+def _service_document_delivery_analysis(transcription: Dict, call_meta: Dict) -> Dict[str, Any]:
+    return _service_analysis(
+        transcription,
+        call_meta,
+        key="service_document_delivery",
+        label="Служебная проверка доставки документов",
+        goal="Уточнить, дошли ли ранее отправленные документы или информация",
+        summary="Менеджер проверил получение ранее отправленных материалов; продажное обсуждение не велось.",
+        outcome="Статус доставки уточнён; продажная ситуация в этом звонке не оценивалась.",
+        reason="Проверка доставки документов или информации",
+    )
+
+
+def _service_administrative_followup_analysis(transcription: Dict, call_meta: Dict) -> Dict[str, Any]:
+    return _service_analysis(
+        transcription,
+        call_meta,
+        key="service_administrative_followup",
+        label="Служебный контроль исполнения",
+        goal="Уточнить статус ранее обещанного документа или действия",
+        summary="Разговор касался только статуса ранее обещанных материалов или работы; консультации и продажи не было.",
+        outcome="Статус исполнения уточнён; продажная ситуация в этом звонке не оценивалась.",
+        reason="Административный контроль ранее обещанного действия",
+    )
 
 def analyze_transcript(
     transcription: Dict,
@@ -1044,6 +1156,12 @@ def analyze_transcript(
     if detect_service_contact_routing(transcript_text):
         logger.info("   Тип: Служебное уточнение контакта")
         return _service_contact_analysis(transcription, call_meta)
+    if detect_service_document_delivery(transcript_text):
+        logger.info("   Тип: Служебная проверка доставки документов")
+        return _service_document_delivery_analysis(transcription, call_meta)
+    if detect_service_administrative_followup(transcript_text):
+        logger.info("   Тип: Служебный контроль исполнения")
+        return _service_administrative_followup_analysis(transcription, call_meta)
     relevant_scripts = select_relevant_scripts(transcript_text, scripts_db)
 
     if relevant_scripts:
@@ -1074,7 +1192,8 @@ def analyze_transcript(
             if attempt == 1:
                 continue
             raise
-        if compute_applicable_score(call_type_key, candidate.get("criteria")) is None and attempt == 1:
+        candidate_is_not_sales = bool((candidate.get("flags") or {}).get("not_sales"))
+        if not candidate_is_not_sales and compute_applicable_score(call_type_key, candidate.get("criteria")) is None and attempt == 1:
             continue
         result = candidate
         meta["attempts"] = attempt
@@ -1083,6 +1202,34 @@ def analyze_transcript(
         raise RuntimeError("AI response omitted the required rubric criteria")
 
     result["source_duration_seconds"] = call_meta.get("duration_sec")
+
+    preliminary_flags = result.get("flags") or {}
+    if preliminary_flags.get("not_sales"):
+        try:
+            result["model_overall_score"] = float(result.get("overall_score"))
+        except (TypeError, ValueError):
+            result["model_overall_score"] = None
+        result.update(
+            {
+                "overall_score": None,
+                "overall_score_method": "not_applicable_non_sales_v1",
+                "score_explanation": "Непродажный звонок не оценивается.",
+                "criteria": [],
+                "scripts_used": [],
+                "scripts_alignment": [],
+                "not_sales": True,
+                "not_sales_reason": preliminary_flags.get("not_sales_reason") or "Нет консультации или продажного действия",
+                "exclude_from_stats": True,
+                "review_status": "excluded",
+                "is_critical": False,
+                "critical_reason": "",
+                "critical_rule_id": "",
+                "poor_audio": False,
+                "poor_audio_reason": "",
+                "_meta": meta,
+            }
+        )
+        return result
 
     # The model's broad assessment stays as context. The stored score is
     # calculated only from structured, applicable rubric observations.

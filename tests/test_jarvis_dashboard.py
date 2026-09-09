@@ -94,6 +94,26 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("Не оценивается", detail)
         self.assertNotIn("—/10", detail)
 
+    def test_service_call_does_not_publish_its_internal_transcript(self):
+        call = {"activity_id": "1", "manager": {"name": "Роман"}, "audio": {"file_id": "99"}}
+        stored = {
+            "transcription": {"text": "Внутренняя служебная расшифровка"},
+            "analysis": {
+                "service_call": True,
+                "not_sales": True,
+                "not_sales_reason": "Проверка доставки документов",
+                "exclude_from_stats": True,
+                "review_status": "excluded",
+                "overall_score": None,
+            },
+        }
+
+        detail = render_call_detail(call, stored, {"role": "rop", "name": "РОП"})
+
+        self.assertIn("Служебный звонок не оценивается", detail)
+        self.assertNotIn("Транскрипт разговора", detail)
+        self.assertNotIn("Внутренняя служебная расшифровка", detail)
+
     def test_legacy_unproven_critical_requires_reanalysis_not_rop_review(self):
         calls = [{"activity_id": "1", "manager": {"id": 1, "name": "Анна"}}]
         analyses = {"1": {"analysis": {"overall_score": 3, "flags": {"critical": True}}}}
