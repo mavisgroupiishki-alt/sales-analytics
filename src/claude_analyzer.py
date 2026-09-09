@@ -995,6 +995,31 @@ def analyze_transcript(
     except (TypeError, ValueError):
         result["model_overall_score"] = None
     rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
+    if rubric_score is None:
+        criteria_contract = "\n".join(
+            f'- {code}: {RUBRIC_CRITERIA[code][0]}' for code in applicable_criteria(call_type_key)
+        )
+        rubric_prompt = f"""Оцени только перечисленные критерии звонка по шкале 0–10.
+Для каждого кода верни одну запись с applicable=true, конкретным фактом, цитатой и таймкодом.
+Не добавляй и не пропускай коды.
+
+КРИТЕРИИ:
+{criteria_contract}
+
+ТРАНСКРИПТ:
+---
+{transcript_tc}
+---
+
+Ответь строго валидным JSON без Markdown:
+{{"criteria":[{{"code":"код","applicable":true,"score":0.0,"finding":"факт","time":"MM:SS","quote":"цитата"}}]}}"""
+        rubric_text, _ = call_claude_api(rubric_prompt, max_tokens=3000)
+        rubric_payload = decode_json_response(rubric_text)
+        result["criteria"] = rubric_payload.get("criteria")
+        rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
+        meta["attempts"] = int(meta.get("attempts") or 2) + 1
+    if rubric_score is None:
+        raise RuntimeError("AI response omitted the required rubric criteria")
     result["overall_score"] = rubric_score
     result["overall_score_method"] = "applicable_rubric_v1" if rubric_score is not None else "not_scored"
 
