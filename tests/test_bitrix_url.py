@@ -10,6 +10,7 @@ from bitrix_url import (  # noqa: E402
     build_bitrix_method_url,
     normalize_bitrix_webhook_url,
     safe_webhook_label,
+    validate_bitrix_file_url,
 )
 
 
@@ -52,6 +53,23 @@ class BitrixUrlTests(unittest.TestCase):
     def test_rejects_non_webhook_url(self):
         with self.assertRaises(ValueError):
             normalize_bitrix_webhook_url("https://example.com/profile.json")
+
+    def test_validates_exact_bitrix_crm_file_url(self):
+        file_url = "https://example.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=42&ownerTypeId=6&ownerId=7&auth="
+        self.assertEqual(
+            validate_bitrix_file_url(file_url, "https://example.bitrix24.by/rest/1/secret"),
+            file_url,
+        )
+
+    def test_rejects_external_or_unexpected_file_url(self):
+        webhook = "https://example.bitrix24.by/rest/1/secret"
+        with self.assertRaises(ValueError):
+            validate_bitrix_file_url("https://evil.example/audio.mp3?fileId=42", webhook)
+        with self.assertRaises(ValueError):
+            validate_bitrix_file_url(
+                "https://example.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=42&next=https://evil.example",
+                webhook,
+            )
 
 
 if __name__ == "__main__":

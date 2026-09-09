@@ -18,7 +18,11 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any
 
-from bitrix_url import normalize_bitrix_webhook_url
+from bitrix_url import (
+    add_webhook_auth_to_file_url,
+    normalize_bitrix_webhook_url,
+    validate_bitrix_file_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,7 @@ def mirror_snapshot_to_jarvis(calls: List[Dict[str, Any]]) -> None:
 ACTIVITY_TYPE_CALL = 2
 DEFAULT_REQUEST_TIMEOUT = 60
 MIN_AUDIO_SIZE_BYTES = 10_000
+MAX_AUDIO_SIZE_BYTES = 64 * 1024 * 1024
 DEFAULT_AUDIO_DOWNLOAD_LIMIT = -1  # -1 = без лимита, 0 = не скачивать
 MIN_DURATION_SEC = 30  # звонки от 30 сек получают полный ИИ-анализ
 TRANSCRIBE_ONLY_MIN_SEC = 16  # звонки 16-29 сек: только аудио + транскрипт, без анализа
@@ -72,6 +77,7 @@ class Bitrix24Client:
             if not secret:
                 raise RuntimeError("JARVIS_SYNC_SECRET не задан для Bitrix proxy.")
             self.endpoint = proxy.rstrip("/") + "/internal/bitrix/"
+            self.file_proxy_url = proxy.rstrip("/") + "/internal/bitrix-audio"
             self.headers = {"x-jarvis-sync-secret": secret}
             self.webhook = ""
             return
@@ -80,6 +86,7 @@ class Bitrix24Client:
             raise RuntimeError("BITRIX_WEBHOOK_URL не задан.")
         self.webhook = normalize_bitrix_webhook_url(url).rstrip("/") + "/"
         self.endpoint = self.webhook
+        self.file_proxy_url = ""
         self.headers = {}
 
     def call(self, method: str, params: dict = None) -> dict:
@@ -181,25 +188,90 @@ def download_user_avatars(users: Dict[int, Dict], avatars_dir: Path) -> None:
             logger.warning(f"   - {uid}: ошибка фото: {e}")
 
 
-def download_audio(client: Bitrix24Client, file_id: int, save_to: Path) -> Path:
-    meta = client.call("disk.file.get", {"id": file_id})
-    file_data = meta.get("result")
-    if not file_data:
-        raise RuntimeError(f"Файл {file_id} не найден")
-    download_url = file_data.get("DOWNLOAD_URL")
-    if not download_url:
-        raise RuntimeError(f"Нет DOWNLOAD_URL для {file_id}")
+def download_audio(
+    client: Bitrix24Client,
+    file_id: int,
+    save_to: Path,
+    file_url: str | None = None,
+    activity_id: str | None = None,
+) -> Path:
+    """Download an audio file, falling back to its signed CRM file URL.
 
-    file_name = file_data.get("NAME", f"call_{file_id}.mp3")
+    Some Bitrix webhooks can read CRM activities but do not have the separate
+    ``disk`` permission.  In proxy mode the Render bridge validates and signs
+    the stored CRM URL without ever exposing the webhook token to the worker.
+    """
+    download_url = ""
+    file_name = f"call_{file_id}.mp3"
+    disk_error: Exception | None = None
+    try:
+        meta = client.call("disk.file.get", {"id": file_id})
+        file_data = meta.get("result") or {}
+        download_url = file_data.get("DOWNLOAD_URL") or ""
+        file_name = file_data.get("NAME") or file_name
+        if not download_url:
+            disk_error = RuntimeError(f"Нет DOWNLOAD_URL для {file_id}")
+    except Exception as exc:
+        disk_error = exc
+
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", file_name)
     save_path = save_to / f"{file_id}_{safe_name}"
 
-    response = requests.get(download_url, timeout=DEFAULT_REQUEST_TIMEOUT, stream=True)
-    response.raise_for_status()
+    try:
+        if download_url:
+            response = requests.get(download_url, timeout=DEFAULT_REQUEST_TIMEOUT, stream=True)
+        elif file_url and client.file_proxy_url and activity_id:
+            response = requests.post(
+                client.file_proxy_url,
+                json={"file_url": file_url, "activity_id": str(activity_id)},
+                headers=client.headers,
+                timeout=DEFAULT_REQUEST_TIMEOUT,
+                stream=True,
+            )
+        elif file_url and client.webhook:
+            validate_bitrix_file_url(file_url, client.webhook)
+            response = requests.get(
+                add_webhook_auth_to_file_url(file_url, client.webhook),
+                timeout=DEFAULT_REQUEST_TIMEOUT,
+                stream=True,
+                allow_redirects=False,
+            )
+        else:
+            raise disk_error or RuntimeError(f"Файл {file_id} не найден")
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Ошибка загрузки аудио ({type(exc).__name__})") from None
+
+    status_code = int(response.status_code)
+    if status_code < 200 or status_code >= 300:
+        response.close()
+        raise RuntimeError(f"Bitrix24 не отдал аудио: HTTP {status_code}")
+    try:
+        declared_size = int(response.headers.get("Content-Length") or 0)
+    except (TypeError, ValueError):
+        declared_size = 0
+    if declared_size > MAX_AUDIO_SIZE_BYTES:
+        response.close()
+        raise RuntimeError("Аудиофайл превышает лимит 64 МБ")
+
     save_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(save_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
+    size = 0
+    try:
+        with open(save_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                size += len(chunk)
+                if size > MAX_AUDIO_SIZE_BYTES:
+                    raise RuntimeError("Аудиофайл превышает лимит 64 МБ")
+                f.write(chunk)
+    except requests.RequestException as exc:
+        save_path.unlink(missing_ok=True)
+        raise RuntimeError(f"Ошибка загрузки аудио ({type(exc).__name__})") from None
+    except Exception:
+        save_path.unlink(missing_ok=True)
+        raise
+    finally:
+        response.close()
     return save_path
 
 
@@ -641,7 +713,13 @@ def main():
             dur_str = f"{dur} сек" if dur else "неизв."
             print(f"\n[{i}/{len(to_download)}] {call['activity_id']} ({call['manager']['name']}, {dur_str}):")
             try:
-                path = download_audio(client, file_id, audio_dir)
+                path = download_audio(
+                    client,
+                    file_id,
+                    audio_dir,
+                    call["audio"].get("url"),
+                    call["activity_id"],
+                )
                 size = path.stat().st_size
                 if size < MIN_AUDIO_SIZE_BYTES:
                     print(f"   ⚠ Слишком маленький ({size} б), пропускаем")

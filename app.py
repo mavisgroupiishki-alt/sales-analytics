@@ -1304,7 +1304,7 @@ def manager_detail(manager_id):
     manager_name = (manager_calls[0].get("manager") or {}).get("name") or "Менеджер"
     return html_response(render_calls(
         manager_calls, analyses, user, title=f"Звонки менеджера · {manager_name}",
-        description="Здесь показаны только звонки выбранного менеджера. Старые результаты ожидают нового разбора и не входят в его рейтинг.",
+        description="Здесь показаны только звонки выбранного менеджера. В рейтинг входят только завершённые разборы по текущей методике.",
     ))
 
 @app.route("/scripts")
@@ -1334,6 +1334,90 @@ def sales_funnel():
         source_error = "Агрегаты продаж временно недоступны; стадии связанных звонков показаны из Bitrix24."
     from jarvis_dashboard import render_funnel
     return html_response(render_funnel(snapshot, calls, user, source_error=source_error))
+
+@app.route("/api/funnel-details")
+@rop_required
+def funnel_details():
+    """Proxy a bounded read-only sales drilldown from the operational dashboard."""
+    import requests as _requests
+
+    metric = request.args.get("metric", "deals")
+    allowed_metrics = {"leads", "qualified", "deals", "sales", "sales_amount", "average_check", "net_revenue"}
+    if metric not in allowed_metrics:
+        return jsonify({"error": "unknown_metric"}), 400
+    stage = request.args.get("stage", "").strip()
+    if len(stage) > 160 or any(ord(char) < 32 for char in stage):
+        return jsonify({"error": "invalid_stage"}), 400
+
+    base_url = os.environ.get(
+        "MAVIS_OPERATIONAL_DASHBOARD_URL",
+        "https://mavis-operational-dashboard.onrender.com",
+    ).rstrip("/")
+    params = {
+        "scope": "sales",
+        "metric": metric,
+        "month": datetime.now().strftime("%Y-%m"),
+        "period": "month",
+        "offset": "0",
+        "limit": "500",
+    }
+    if stage:
+        params["stage"] = stage
+    try:
+        response = _requests.get(
+            f"{base_url}/api/drilldown", params=params, timeout=30, stream=True
+        )
+        response.raise_for_status()
+        if int(response.headers.get("Content-Length") or 0) > 2 * 1024 * 1024:
+            response.close()
+            raise ValueError("drilldown response is too large")
+        raw = bytearray()
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            raw.extend(chunk)
+            if len(raw) > 2 * 1024 * 1024:
+                response.close()
+                raise ValueError("drilldown response is too large")
+        response.close()
+        payload = json.loads(raw)
+        source_rows = payload.get("rows")
+        if not isinstance(source_rows, list):
+            raise ValueError("drilldown rows are invalid")
+    except (_requests.RequestException, ValueError, TypeError) as exc:
+        app.logger.warning("Operational drilldown failed: %s", type(exc).__name__)
+        return jsonify({"error": "details_unavailable"}), 502
+
+    from urllib.parse import urlsplit
+
+    configured_portal = os.environ.get("BITRIX_PORTAL_URL", "https://mavisgroup.bitrix24.by")
+    parsed_portal = urlsplit(configured_portal)
+    if (
+        parsed_portal.scheme != "https"
+        or not parsed_portal.netloc
+        or parsed_portal.username
+        or parsed_portal.password
+        or parsed_portal.path not in {"", "/"}
+    ):
+        app.logger.error("BITRIX_PORTAL_URL is invalid; omitting CRM links")
+        portal = ""
+    else:
+        portal = f"https://{parsed_portal.netloc}"
+    safe_rows = []
+    allowed_fields = ("kind", "id", "title", "manager", "source", "client_type", "group", "stage", "stage_id", "amount", "created")
+    for source in source_rows[:500]:
+        if not isinstance(source, dict):
+            continue
+        row = {
+            field: source.get(field)
+            for field in allowed_fields
+            if isinstance(source.get(field), (str, int, float)) and not isinstance(source.get(field), bool)
+        }
+        entity_id = str(row.get("id") or "")
+        kind = str(row.get("kind") or "")
+        if portal and entity_id.isdigit() and kind in {"deal", "lead"}:
+            row["url"] = f"{portal}/crm/{kind}/details/{entity_id}/"
+        safe_rows.append(row)
+    return jsonify({"count": int(payload.get("count") or len(safe_rows)), "rows": safe_rows})
+
 
 @app.route("/critical")
 @login_required
@@ -1448,6 +1532,7 @@ def serve_audio(activity_id):
         build_bitrix_method_url,
         normalize_bitrix_webhook_url,
         safe_webhook_label,
+        validate_bitrix_file_url,
     )
 
     calls = load_calls()
@@ -1499,7 +1584,10 @@ def serve_audio(activity_id):
                     )
                 else:
                     file_data = payload.get("result") or {}
-                    audio_url = file_data.get("DOWNLOAD_URL", "")
+                    candidate_url = file_data.get("DOWNLOAD_URL", "")
+                    if candidate_url:
+                        validate_bitrix_file_url(candidate_url, webhook)
+                        audio_url = add_webhook_auth_to_file_url(candidate_url, webhook)
         except (_req.RequestException, ValueError, TypeError) as exc:
             # Не пишем exception целиком: requests включает секретный URL в текст ошибки.
             app.logger.warning(
@@ -1512,11 +1600,10 @@ def serve_audio(activity_id):
         stored_url = audio_meta.get("url", "")
         if stored_url and webhook:
             try:
+                validate_bitrix_file_url(stored_url, webhook)
                 audio_url = add_webhook_auth_to_file_url(stored_url, webhook)
             except ValueError:
-                audio_url = stored_url
-        else:
-            audio_url = stored_url
+                app.logger.warning("Rejected invalid stored audio URL for activity_id=%s", activity_id)
 
     if not audio_url:
         abort(404)
@@ -1529,7 +1616,7 @@ def serve_audio(activity_id):
         data, ctype = cached["data"], cached["ctype"]
     else:
         try:
-            upstream = _req.get(audio_url, timeout=30, allow_redirects=True)
+            upstream = _req.get(audio_url, timeout=30, allow_redirects=False, stream=True)
             upstream.raise_for_status()
             ctype = (upstream.headers.get("Content-Type") or "audio/mpeg").lower()
             if not any(kind in ctype for kind in ("audio", "octet-stream", "video")):
@@ -1540,7 +1627,16 @@ def serve_audio(activity_id):
                     ctype,
                 )
                 abort(502)
-            data = upstream.content
+            max_audio_bytes = 64 * 1024 * 1024
+            data_buffer = bytearray()
+            for chunk in upstream.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                data_buffer.extend(chunk)
+                if len(data_buffer) > max_audio_bytes:
+                    app.logger.warning("Audio exceeds size limit for activity_id=%s", activity_id)
+                    abort(502)
+            data = bytes(data_buffer)
             if not data:
                 app.logger.warning("Audio upstream returned an empty body for activity_id=%s", activity_id)
                 abort(502)
@@ -1671,6 +1767,8 @@ _JARVIS_BITRIX_METHODS = {
     "user.get",
 }
 
+_MAX_INTERNAL_AUDIO_BYTES = 64 * 1024 * 1024
+
 
 @app.post("/internal/bitrix/<method>")
 def jarvis_bitrix_proxy(method):
@@ -1702,6 +1800,87 @@ def jarvis_bitrix_proxy(method):
         content_type=upstream.headers.get("Content-Type", "application/json"),
     )
     response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.post("/internal/bitrix-audio")
+def jarvis_bitrix_audio_proxy():
+    """Return one validated Bitrix CRM audio file to the private worker."""
+    import requests as _req
+    from urllib.parse import parse_qs, urlsplit
+    from bitrix_url import add_webhook_auth_to_file_url, build_bitrix_method_url, validate_bitrix_file_url
+
+    configured_secret = os.environ.get("JARVIS_SYNC_SECRET", "")
+    supplied_secret = request.headers.get("x-jarvis-sync-secret", "")
+    if not configured_secret or not hmac.compare_digest(supplied_secret, configured_secret):
+        return jsonify({"error": "unauthorized"}), 401
+    if request.content_length is not None and request.content_length > 8_192:
+        return jsonify({"error": "payload_too_large"}), 413
+
+    raw_webhook = os.environ.get("BITRIX_WEBHOOK_URL", "")
+    try:
+        submitted = request.get_json(silent=True) or {}
+        stored_url = validate_bitrix_file_url(
+            str(submitted.get("file_url") or ""),
+            raw_webhook,
+        )
+        activity_id = str(submitted.get("activity_id") or "")
+        file_id = (parse_qs(urlsplit(stored_url).query).get("fileId") or [""])[0]
+        if not activity_id.isdigit():
+            return jsonify({"error": "invalid_activity_id"}), 400
+        activity_response = _req.post(
+            build_bitrix_method_url(raw_webhook, "crm.activity.get"),
+            json={"id": activity_id},
+            timeout=30,
+        )
+        activity_response.raise_for_status()
+        activity_payload = activity_response.json() or {}
+        files = (activity_payload.get("result") or {}).get("FILES") or []
+        known_ids = {
+            str(item.get("id") or item.get("ID") or "")
+            for item in files
+            if isinstance(item, dict)
+        }
+        if activity_payload.get("error") or file_id not in known_ids:
+            return jsonify({"error": "file_not_attached_to_activity"}), 403
+        signed_url = add_webhook_auth_to_file_url(stored_url, raw_webhook)
+        upstream = _req.get(signed_url, stream=True, timeout=60, allow_redirects=False)
+        upstream.raise_for_status()
+        content_type = (upstream.headers.get("Content-Type") or "").lower()
+        media_type = content_type.split(";", 1)[0].strip()
+        if not (
+            media_type.startswith("audio/")
+            or media_type.startswith("video/")
+            or media_type == "application/octet-stream"
+        ):
+            upstream.close()
+            return jsonify({"error": "not_audio"}), 502
+        declared_size = int(upstream.headers.get("Content-Length") or 0)
+        if declared_size > _MAX_INTERNAL_AUDIO_BYTES:
+            upstream.close()
+            return jsonify({"error": "audio_too_large"}), 413
+        chunks = []
+        size = 0
+        for chunk in upstream.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            size += len(chunk)
+            if size > _MAX_INTERNAL_AUDIO_BYTES:
+                upstream.close()
+                return jsonify({"error": "audio_too_large"}), 413
+            chunks.append(chunk)
+        upstream.close()
+        if not size:
+            return jsonify({"error": "empty_audio"}), 502
+    except ValueError:
+        return jsonify({"error": "invalid_file_url"}), 400
+    except (_req.RequestException, TypeError):
+        return jsonify({"error": "bitrix_audio_unavailable"}), 502
+
+    response = Response(chunks, status=200, content_type=content_type)
+    response.headers["Content-Length"] = str(size)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
 @app.route("/calls/<activity_id>/reanalyze", methods=["POST"])

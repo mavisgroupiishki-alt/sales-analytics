@@ -11,6 +11,10 @@ from __future__ import annotations
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
+_BITRIX_FILE_PATH = "/bitrix/tools/crm_show_file.php"
+_BITRIX_FILE_QUERY_KEYS = {"fileId", "ownerTypeId", "ownerId", "auth"}
+
+
 def normalize_bitrix_webhook_url(raw_url: str) -> str:
     """Возвращает базовый URL webhook без названия REST-метода.
 
@@ -81,6 +85,46 @@ def add_webhook_auth_to_file_url(file_url: str, raw_webhook_url: str) -> str:
         updated.append(("auth", token))
 
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(updated), parsed.fragment))
+
+
+def validate_bitrix_file_url(file_url: str, raw_webhook_url: str) -> str:
+    """Validate a stored Bitrix ``crm_show_file.php`` URL before proxying it.
+
+    The internal worker may submit only the exact HTTPS host used by the
+    configured webhook and the narrow CRM file endpoint.  This prevents the
+    audio bridge from becoming a general-purpose server-side request proxy.
+    """
+    if not file_url or not file_url.strip():
+        raise ValueError("Ссылка на файл Bitrix24 не задана")
+
+    parsed = urlsplit(file_url.strip())
+    webhook = urlsplit(normalize_bitrix_webhook_url(raw_webhook_url))
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise ValueError("Ссылка на файл Bitrix24 должна использовать HTTPS")
+    if parsed.username or parsed.password or parsed.fragment:
+        raise ValueError("Ссылка на файл Bitrix24 содержит запрещённые компоненты")
+    if parsed.hostname.lower() != (webhook.hostname or "").lower():
+        raise ValueError("Домен файла не совпадает с доменом Bitrix24")
+    if parsed.port != webhook.port:
+        raise ValueError("Порт файла не совпадает с портом Bitrix24")
+    if parsed.path != _BITRIX_FILE_PATH:
+        raise ValueError("Разрешён только CRM-файл Bitrix24")
+
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    keys = [key for key, _ in pairs]
+    if not pairs or len(keys) != len(set(keys)) or set(keys) - _BITRIX_FILE_QUERY_KEYS:
+        raise ValueError("Недопустимые параметры ссылки Bitrix24")
+    params = dict(pairs)
+    if not params.get("fileId", "").isdigit():
+        raise ValueError("Некорректный fileId Bitrix24")
+    for numeric_key in ("ownerTypeId", "ownerId"):
+        value = params.get(numeric_key)
+        if value is not None and not value.isdigit():
+            raise ValueError(f"Некорректный {numeric_key} Bitrix24")
+    auth = params.get("auth", "")
+    if auth and auth != extract_webhook_token(raw_webhook_url):
+        raise ValueError("Ссылка содержит неизвестный токен Bitrix24")
+    return file_url.strip()
 
 
 def safe_webhook_label(raw_webhook_url: str) -> str:

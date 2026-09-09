@@ -74,6 +74,17 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("166", html)
         self.assertIn("5. КП отправлено", html)
         self.assertNotIn("C28:", html)
+        self.assertIn('data-funnel-detail="1"', html)
+
+    def test_linked_call_stage_opens_filtered_call_list(self):
+        call = {
+            "activity_id": "42",
+            "crm": {"owner_type": "deal", "owner_id": "7", "stage_id": "PREPARATION", "stage_name": "PREPARATION"},
+        }
+
+        html = render_funnel({"sales": {}}, [call], {"name": "РОП"})
+
+        self.assertIn("/calls?stage=5.+%D0%9A%D0%9F+%D0%BE%D1%82%D0%BF%D1%80%D0%B0%D0%B2%D0%BB%D0%B5%D0%BD%D0%BE", html)
 
 
 if __name__ == "__main__":

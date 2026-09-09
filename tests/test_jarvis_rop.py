@@ -16,7 +16,7 @@ class RopModelTests(unittest.TestCase):
                 "direction": "incoming",
                 "audio": {"file_id": 1},
                 "manager": {"id": 1286, "name": "Роман"},
-                "crm": {"owner_id": "10", "owner_type": "deal", "has_next_activity": True},
+                "crm": {"owner_id": "10", "owner_type": "deal", "stage_id": "PREPARATION", "stage_name": "PREPARATION", "has_next_activity": True},
             },
             {
                 "activity_id": "two",
@@ -42,6 +42,10 @@ class RopModelTests(unittest.TestCase):
         self.assertEqual(len(model["critical"]), 0)
         self.assertEqual(len(model["review"]), 0)
         self.assertEqual(len(model["reanalysis"]), 2)
+
+    def test_stage_filter_uses_human_readable_name(self):
+        selected = filter_calls(self.calls, self.analyses, {"stage": "5. КП отправлено"})
+        self.assertEqual([call["activity_id"] for call in selected], ["one"])
 
 
 if __name__ == "__main__":
