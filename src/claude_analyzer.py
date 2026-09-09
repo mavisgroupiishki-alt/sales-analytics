@@ -462,6 +462,42 @@ def compute_applicable_score(call_type_key: str, observations: Any) -> Optional[
     return round(sum(ratings[code] * RUBRIC_CRITERIA[code][1] for code in applicable) / denominator, 1)
 
 
+def complete_missing_criteria_neutrally(call_type_key: str, observations: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Fill unsupported rubric observations with a visible neutral value.
+
+    The neutral value prevents missing model output from becoming an invented
+    low score.  Missing codes remain explicit for the ROP and lower the
+    analysis confidence.
+    """
+    applicable = applicable_criteria(call_type_key)
+    source = observations if isinstance(observations, list) else []
+    by_code = {
+        str(item.get("code") or ""): item
+        for item in source
+        if isinstance(item, dict) and str(item.get("code") or "") in applicable
+    }
+    completed: List[Dict[str, Any]] = []
+    missing: List[str] = []
+    for code in applicable:
+        item = dict(by_code.get(code) or {})
+        try:
+            score = float(item.get("score"))
+        except (TypeError, ValueError):
+            score = -1
+        if item.get("applicable") is not True or not 0 <= score <= 10:
+            missing.append(code)
+            item = {
+                "code": code,
+                "applicable": True,
+                "score": 5.0,
+                "finding": "Недостаточно надёжных данных для оценки критерия",
+                "time": "",
+                "quote": "",
+            }
+        completed.append(item)
+    return completed, missing
+
+
 def valid_timecode(value: str, duration_seconds: Any = None) -> bool:
     """Accept only exact MM:SS evidence timestamps, never arbitrary text."""
     match = re.fullmatch(r"(\d{2,}):([0-5]\d)", value or "")
@@ -1019,7 +1055,19 @@ def analyze_transcript(
         rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
         meta["attempts"] = int(meta.get("attempts") or 2) + 1
     if rubric_score is None:
-        raise RuntimeError("AI response omitted the required rubric criteria")
+        completed_criteria, missing_codes = complete_missing_criteria_neutrally(
+            call_type_key, result.get("criteria")
+        )
+        result["criteria"] = completed_criteria
+        result["rubric_missing_codes"] = missing_codes
+        result["analysis_confidence"] = "low"
+        explanation = str(result.get("score_explanation") or "").strip()
+        result["score_explanation"] = (
+            explanation + " Недостающие AI-наблюдения учтены нейтрально как 5/10."
+        ).strip()
+        rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
+    if rubric_score is None:
+        raise RuntimeError("Rubric score could not be calculated")
     result["overall_score"] = rubric_score
     result["overall_score_method"] = "applicable_rubric_v1" if rubric_score is not None else "not_scored"
 

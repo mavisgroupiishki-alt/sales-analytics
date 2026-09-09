@@ -6,10 +6,24 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from claude_analyzer import analyze_transcript, decode_json_response, detect_call_type  # noqa: E402
+from claude_analyzer import (  # noqa: E402
+    analyze_transcript,
+    complete_missing_criteria_neutrally,
+    decode_json_response,
+    detect_call_type,
+)
 
 
 class ClaudeAnalyzerPromptTests(unittest.TestCase):
+    def test_missing_criteria_are_neutral_and_visible(self):
+        criteria, missing = complete_missing_criteria_neutrally(
+            "unknown",
+            [{"code": "expertise", "applicable": True, "score": 8}],
+        )
+
+        self.assertEqual(missing, ["next_step", "communication"])
+        self.assertEqual([item["score"] for item in criteria], [8, 5.0, 5.0])
+
     def test_json_decoder_accepts_a_fenced_object(self):
         self.assertEqual(decode_json_response('```json\n{"ok": true}\n```'), {"ok": True})
 
