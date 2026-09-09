@@ -11,6 +11,7 @@ on:
         options:
           - bootstrap
           - status
+          - diagnostics
 
 permissions:
   contents: read
@@ -108,3 +109,24 @@ jobs:
             -o ConnectTimeout=30 \
             root@147.182.140.114 \
             'docker exec deploy-jarvis-worker-1 python -c "import urllib.request; print(urllib.request.urlopen(\"http://127.0.0.1:8080/health\", timeout=5).read().decode())"'
+
+      - name: Read sanitized AI diagnostics
+        if: inputs.operation == 'diagnostics'
+        run: |
+          set -euo pipefail
+          ssh \
+            -i "$HOME/.ssh/jarvis_do" \
+            -o IdentitiesOnly=yes \
+            -o ConnectTimeout=30 \
+            root@147.182.140.114 '
+              set -eu
+              echo "Worker error summary:"
+              docker logs --since 2026-09-09T07:57:00Z deploy-jarvis-worker-1 2>&1 \
+                | grep -E "HTTPError:|JSONDecodeError:|ReadTimeout:|ConnectTimeout:|RuntimeError:|В закрытую базу сохранено|Успешно:|Ошибок:" \
+                | sed -E "s/[A-Fa-f0-9]{24,}/[redacted]/g" \
+                | sort \
+                | uniq -c \
+                | tail -80 || true
+              echo "AI model endpoint probe:"
+              docker exec deploy-jarvis-worker-1 python -c "import os, requests; u=\"https://vibecode.bitrix24.tech/v1/ai/models\"; r=requests.get(u, headers={\"X-Api-Key\":os.environ[\"VIBE_API_KEY\"]}, timeout=30); print(r.status_code); print([x.get(\"id\") for x in r.json().get(\"data\", [])] if r.ok else r.text[:300])"
+            '
