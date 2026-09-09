@@ -149,6 +149,18 @@ class JarvisStoreTests(unittest.TestCase):
 
         self.assertEqual(score, 7.2)
 
+    def test_overall_score_is_bounded_to_the_requested_one_to_ten_scale(self):
+        score = compute_applicable_score(
+            "unknown",
+            [
+                {"code": "expertise", "applicable": True, "score": 0},
+                {"code": "next_step", "applicable": True, "score": 0},
+                {"code": "communication", "applicable": True, "score": 0},
+            ],
+        )
+
+        self.assertEqual(score, 1.0)
+
     def test_legacy_invalid_critical_timecode_requires_reanalysis(self):
         status, _, _ = evaluate_triage({"flags": {"critical": True, "critical_rule_id": "confirmed_rudeness", "critical_evidence": {"time": "later", "quote": "Больше мне не звоните"}}})
         self.assertEqual(status, "requires_reanalysis")

@@ -459,7 +459,8 @@ def compute_applicable_score(call_type_key: str, observations: Any) -> Optional[
     if set(ratings) != set(applicable):
         return None
     denominator = sum(RUBRIC_CRITERIA[code][1] for code in applicable)
-    return round(sum(ratings[code] * RUBRIC_CRITERIA[code][1] for code in applicable) / denominator, 1)
+    weighted = round(sum(ratings[code] * RUBRIC_CRITERIA[code][1] for code in applicable) / denominator, 1)
+    return max(1.0, min(10.0, weighted))
 
 
 def complete_missing_criteria_neutrally(call_type_key: str, observations: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
