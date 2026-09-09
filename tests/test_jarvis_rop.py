@@ -64,6 +64,26 @@ class RopModelTests(unittest.TestCase):
         self.assertIn("Внимание РОПа", html)
         self.assertIn("0 критичных · 1 низких", html)
 
+    def test_empty_recording_is_separate_from_pending_analysis(self):
+        call = {
+            "activity_id": "empty",
+            "created": "2026-09-08T12:00:00+03:00",
+            "direction": "outgoing",
+            "audio": {"file_id": 99, "status": "empty", "error": "empty_recording", "size_bytes": 432},
+            "manager": {"id": 1286, "name": "Роман"},
+            "crm": {},
+        }
+
+        model = rop_model([call], {})
+        selected = filter_calls([call], {}, {"status": "audio_unavailable"})
+        html = render_rop_report([call], {}, {"name": "РОП"}, {"date": "2026-09-08"})
+
+        self.assertEqual(model["available_audio"], 0)
+        self.assertEqual(model["unavailable_audio"], 1)
+        self.assertEqual(model["pending_analysis"], 0)
+        self.assertEqual([item["activity_id"] for item in selected], ["empty"])
+        self.assertIn("1 пустая запись", html)
+
 
 if __name__ == "__main__":
     unittest.main()

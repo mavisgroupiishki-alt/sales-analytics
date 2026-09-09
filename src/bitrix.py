@@ -731,8 +731,12 @@ def main():
                 size = path.stat().st_size
                 if size < MIN_AUDIO_SIZE_BYTES:
                     print(f"   ⚠ Слишком маленький ({size} б), пропускаем")
+                    call["audio"]["status"] = "empty"
+                    call["audio"]["error"] = "empty_recording"
+                    call["audio"]["size_bytes"] = size
                     path.unlink()
                     continue
+                call["audio"]["status"] = "available"
                 call["audio"]["local_path"] = str(path)
                 call["audio"]["size_bytes"] = size
                 downloaded += 1

@@ -1546,6 +1546,9 @@ def serve_audio(activity_id):
         abort(403)
 
     audio_meta = call.get("audio") or {}
+    audio_status = str(audio_meta.get("status") or "").strip().lower()
+    if audio_status in {"empty", "unavailable", "error"} or audio_meta.get("error") == "empty_recording":
+        abort(404)
     file_id = audio_meta.get("file_id")
     raw_webhook = os.environ.get("BITRIX_WEBHOOK_URL", "")
 
@@ -1640,6 +1643,9 @@ def serve_audio(activity_id):
             if not data:
                 app.logger.warning("Audio upstream returned an empty body for activity_id=%s", activity_id)
                 abort(502)
+            if len(data) < 1_000:
+                app.logger.info("Audio upstream returned a zero-duration placeholder for activity_id=%s", activity_id)
+                abort(404)
             _AUDIO_CACHE[cache_key] = {"data": data, "ctype": ctype, "ts": datetime.now()}
         except _req.RequestException as exc:
             app.logger.warning(

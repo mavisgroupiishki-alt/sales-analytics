@@ -123,6 +123,51 @@ class BitrixProxyTests(unittest.TestCase):
         get.assert_not_called()
 
     @patch("requests.get")
+    @patch("requests.post")
+    @patch.object(dashboard_app, "load_calls")
+    def test_user_audio_route_rejects_known_empty_recording(self, load_calls, post, get):
+        load_calls.return_value = [{
+            "activity_id": "101",
+            "manager": {"id": 1286},
+            "audio": {"file_id": "42", "status": "empty", "error": "empty_recording", "size_bytes": 432},
+        }]
+        with self.client.session_transaction() as session:
+            session.update({"username": "rop", "role": "rop", "name": "РОП"})
+
+        response = self.client.get("/audio/101")
+
+        self.assertEqual(response.status_code, 404)
+        post.assert_not_called()
+        get.assert_not_called()
+
+    @patch("requests.get")
+    @patch("requests.post")
+    @patch.object(dashboard_app, "load_calls")
+    def test_user_audio_route_rejects_tiny_upstream_payload(self, load_calls, post, get):
+        load_calls.return_value = [{
+            "activity_id": "101",
+            "manager": {"id": 1286},
+            "audio": {"file_id": "42"},
+        }]
+        metadata = Mock()
+        metadata.ok = True
+        metadata.json.return_value = {
+            "result": {"DOWNLOAD_URL": "https://example.bitrix24.by/rest/download.json?auth=temporary-access-token&token=signed-file-token"}
+        }
+        post.return_value = metadata
+        upstream = Mock()
+        upstream.headers = {"Content-Type": "audio/mpeg"}
+        upstream.iter_content.return_value = [b"tiny"]
+        upstream.raise_for_status.return_value = None
+        get.return_value = upstream
+        with self.client.session_transaction() as session:
+            session.update({"username": "rop", "role": "rop", "name": "РОП"})
+
+        response = self.client.get("/audio/101")
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("requests.get")
     @patch.object(dashboard_app, "load_calls")
     def test_user_audio_route_disables_redirects_and_streams_media(self, load_calls, get):
         load_calls.return_value = [{
@@ -132,9 +177,10 @@ class BitrixProxyTests(unittest.TestCase):
                 "url": "https://example.bitrix24.by/bitrix/tools/crm_show_file.php?fileId=42&ownerTypeId=6&ownerId=7&auth="
             },
         }]
+        valid_audio = b"audio" * 300
         upstream = Mock()
         upstream.headers = {"Content-Type": "audio/mpeg"}
-        upstream.iter_content.return_value = [b"audio"]
+        upstream.iter_content.return_value = [valid_audio]
         upstream.raise_for_status.return_value = None
         get.return_value = upstream
         with self.client.session_transaction() as session:
@@ -143,7 +189,7 @@ class BitrixProxyTests(unittest.TestCase):
         response = self.client.get("/audio/101")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, b"audio")
+        self.assertEqual(response.data, valid_audio)
         self.assertFalse(get.call_args.kwargs["allow_redirects"])
         self.assertTrue(get.call_args.kwargs["stream"])
 
@@ -164,9 +210,10 @@ class BitrixProxyTests(unittest.TestCase):
             }
         }
         post.return_value = metadata
+        valid_audio = b"audio" * 300
         upstream = Mock()
         upstream.headers = {"Content-Type": "audio/mpeg"}
-        upstream.iter_content.return_value = [b"audio"]
+        upstream.iter_content.return_value = [valid_audio]
         upstream.raise_for_status.return_value = None
         get.return_value = upstream
         with self.client.session_transaction() as session:
@@ -175,7 +222,7 @@ class BitrixProxyTests(unittest.TestCase):
         response = self.client.get("/audio/101")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, b"audio")
+        self.assertEqual(response.data, valid_audio)
         self.assertIn("/rest/download.json", get.call_args.args[0])
         self.assertIn("auth=temporary-access-token", get.call_args.args[0])
         self.assertFalse(get.call_args.kwargs["allow_redirects"])
@@ -199,7 +246,7 @@ class BitrixProxyTests(unittest.TestCase):
         post.return_value = metadata
         upstream = Mock()
         upstream.headers = {"Content-Type": "audio/mpeg"}
-        upstream.iter_content.return_value = [b"audio"]
+        upstream.iter_content.return_value = [b"audio" * 300]
         upstream.raise_for_status.return_value = None
         get.return_value = upstream
         with self.client.session_transaction() as session:

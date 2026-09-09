@@ -11,6 +11,7 @@ from claude_analyzer import RUBRIC_CRITERIA, evaluate_triage, format_timecode
 
 
 _AQUA_CSS = r'''
+.jd-feed-status.audio_unavailable{background:#eef4f4;color:#617982}
 .jd-heading p,.jd-metrics span,.jd-panel-head p,.jd-panel-head>span,.jd-action small,.jd-review small,.jd-feed small,.jd-manager small,.jd-review-reason,.jd-call-type,.jd-empty{color:var(--muted)}.jd-source i{background:var(--amber)}.jd-source.ok i{background:var(--green)}.jd-source b{color:var(--green)}.jd-source.warning b{color:var(--amber)}.jd-metric-critical b{color:var(--red)}.jd-metric-review b{color:var(--amber)}.jd-action em{color:#9c525b}.jd-action-attention .jd-action-marker{background:var(--amber)}.jd-action-attention em{color:var(--amber)}.jd-arrow,.jd-panel-head a{color:#109d9a}.jd-empty b{color:var(--ink)}.jd-avatar{background:#dff7f5;color:#187e82}.jd-status.critical,.jd-feed-status.critical{background:var(--red-soft);color:var(--red)}.jd-status.review,.jd-status.attention,.jd-feed-status.needs_review,.jd-feed-status.low_score,.jd-review-score{background:var(--amber-soft);color:var(--amber)}.jd-status.normal,.jd-feed-status.normal{background:var(--green-soft);color:var(--green)}.jd-dot{background:#a7b6bd}.jd-dot.critical{background:var(--red)}.jd-dot.needs_review,.jd-dot.low_score{background:#e5a735}.jd-feed-status.pending{background:#eef4f4;color:#617982}.jd-funnel{grid-column:span 2}.jd-funnel-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line)}.jd-funnel-list>div,.jd-funnel-list>a{padding:16px 18px;background:#fff;color:inherit;text-decoration:none}.jd-funnel-list>a:hover{background:#f0fbfa}.jd-funnel-list b{display:block;font-size:13px}.jd-funnel-list span{display:block;margin-top:5px;color:var(--muted);font-size:11px}@media(max-width:900px){.jd-funnel{grid-column:auto}}
 '''
 
@@ -53,6 +54,32 @@ def _stage_name(crm: Dict[str, Any]) -> str:
 
 def _analysis_for(analyses: Dict[str, Any], call: Dict[str, Any]) -> Dict[str, Any]:
     return (analyses.get(str(call.get("activity_id")), {}) or {}).get("analysis") or {}
+
+
+def recording_is_unavailable(call: Dict[str, Any]) -> bool:
+    """Return true when Bitrix supplied only an empty/non-playable recording."""
+    audio = call.get("audio") or {}
+    status = str(audio.get("status") or "").strip().lower()
+    return status in {"empty", "unavailable", "error"} or audio.get("error") == "empty_recording"
+
+
+def empty_recording_count_label(count: int) -> str:
+    """Return a grammatically correct Russian label for empty recordings."""
+    remainder = count % 100
+    if 11 <= remainder <= 14:
+        noun = "пустых записей"
+    elif count % 10 == 1:
+        noun = "пустая запись"
+    elif 2 <= count % 10 <= 4:
+        noun = "пустые записи"
+    else:
+        noun = "пустых записей"
+    return f"{count} {noun}"
+
+
+def pending_analysis_count_label(count: int) -> str:
+    verb = "ожидает" if count % 10 == 1 and count % 100 != 11 else "ожидают"
+    return f"{count} {verb} обработки"
 
 
 def triage_for(analysis: Dict[str, Any]) -> tuple[str, str, str]:
@@ -135,6 +162,8 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
     attention = []
     review = []
     reanalysis = []
+    unavailable_audio = 0
+    pending_analysis = 0
     by_manager: Dict[int, Dict[str, Any]] = {}
 
     for call in calls:
@@ -147,6 +176,10 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         )
         entry["calls"] += 1
         if not analysis:
+            if recording_is_unavailable(call):
+                unavailable_audio += 1
+            else:
+                pending_analysis += 1
             continue
         analyzed.append(call)
         entry["analyzed"] += 1
@@ -203,6 +236,8 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         "attention": attention,
         "review": review,
         "reanalysis": reanalysis,
+        "unavailable_audio": unavailable_audio,
+        "pending_analysis": pending_analysis,
         "managers": managers,
         "freshness": _freshness(calls),
         "newest": newest[:6],
@@ -266,14 +301,14 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
     feed = ""
     for call in model["newest"]:
         analysis = _analysis_for(analyses, call)
-        status, _, _ = triage_for(analysis) if analysis else ("pending", "", "")
+        status, _, _ = triage_for(analysis) if analysis else (("audio_unavailable", "", "") if recording_is_unavailable(call) else ("pending", "", ""))
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or ""
         score = analysis.get("overall_score") if analysis else None
         status_label = _status_label(status, analysis)
         feed += f'''<a class="jd-feed" href="/calls/{_text(call.get("activity_id"))}">
           <span class="jd-dot {status}"></span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get("created") or ""))}</small></span>
-          <span class="jd-call-type">{_text((analysis.get("call_type") or {}).get("label") or "Тип не подтверждён")}</span>
+          <span class="jd-call-type">{_text((analysis.get("call_type") or {}).get("label") or ("Запись 0 секунд" if recording_is_unavailable(call) else "Тип не подтверждён"))}</span>
           <span class="jd-feed-status {status}">{status_label}</span><span class="jd-feed-score">{_text(score if score is not None else "—")}</span></a>'''
     if not feed:
         feed = '<div class="jd-empty"><b>Звонков пока нет.</b></div>'
@@ -286,7 +321,7 @@ def render_dashboard(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user
 <nav><a class="active" href="/">Обзор</a><a href="/calls">Звонки</a>{'<a href="/funnel">Воронка</a><a href="/managers">Команда</a><a href="/rop">Отчёт РОПа</a><a href="/scripts">Скрипты</a>' if user.get('role') in {'rop', 'director'} else ''}</nav>
 <div class="jd-user"><span>{_text(role)} · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header>
 <main class="jd-shell"><section class="jd-heading"><div><p>{today}</p><h1>Картина продаж <span>на сейчас</span></h1></div><div class="jd-source {source_class}"><i></i><span>Bitrix24</span><b>{source_text}</b><small>последняя запись: {fresh_at}</small></div></section>
-<section class="jd-metrics"><div><small>Звонки в выборке</small><b>{model['calls']}</b><span>{model['incoming']} входящих · {model['outgoing']} исходящих</span></div><div><small>Разобрано AI</small><b>{model['analyzed']}</b><span>{round(model['analyzed'] / model['calls'] * 100) if model['calls'] else 0}% от выборки</span></div><div class="jd-metric-critical"><small>Внимание РОПа</small><b>{len(model['critical']) + len(model['attention'])}</b><span>{len(model['critical'])} критичных · {len(model['attention'])} с баллом ≤3</span></div><div class="jd-metric-review"><small>Без разбора</small><b>{max(0, model['calls'] - model['analyzed'])}</b><span>нет пригодной записи или анализ ещё идёт</span></div></section>
+<section class="jd-metrics"><div><small>Звонки в выборке</small><b>{model['calls']}</b><span>{model['incoming']} входящих · {model['outgoing']} исходящих</span></div><div><small>Разобрано AI</small><b>{model['analyzed']}</b><span>{round(model['analyzed'] / model['calls'] * 100) if model['calls'] else 0}% от выборки</span></div><div class="jd-metric-critical"><small>Внимание РОПа</small><b>{len(model['critical']) + len(model['attention'])}</b><span>{len(model['critical'])} критичных · {len(model['attention'])} с баллом ≤3</span></div><div class="jd-metric-review"><small>Без разбора</small><b>{model['unavailable_audio'] + model['pending_analysis']}</b><span>{empty_recording_count_label(model['unavailable_audio'])} · {pending_analysis_count_label(model['pending_analysis'])}; нет пригодной записи или анализ ещё идёт</span></div></section>
 <section class="jd-grid"><section class="jd-panel jd-actions"><div class="jd-panel-head"><div><h2>Действия РОПа</h2><p>Подтверждённые критичные сигналы и оценки 3 или ниже</p></div><a href="/calls">Все звонки →</a></div>{alerts}</section>
 <section class="jd-panel jd-team"><div class="jd-panel-head"><div><h2>Команда</h2><p>Кого открыть первым</p></div><a href="/managers">Все менеджеры →</a></div><div class="jd-manager-list">{managers}</div></section>
 <section class="jd-panel jd-feed-panel"><div class="jd-panel-head"><div><h2>Последние звонки</h2><p>Первичные записи в хронологическом порядке</p></div><a href="/calls">Открыть журнал →</a></div>{feed}</section></section>
@@ -313,7 +348,7 @@ def _status_label(status: str, analysis: Dict[str, Any] | None = None) -> str:
             return "Не продажный"
         if analysis.get("poor_audio"):
             return "Плохая запись"
-    return {"critical": "Срочно к РОПу", "low_score": "Низкая оценка", "needs_review": "Нужна проверка", "requires_reanalysis": "Требует обновления", "normal": "Без риска", "excluded": "Исключён", "pending": "Нет разбора"}.get(status, "Нет разбора")
+    return {"critical": "Срочно к РОПу", "low_score": "Низкая оценка", "needs_review": "Нужна проверка", "requires_reanalysis": "Требует обновления", "normal": "Без риска", "excluded": "Исключён", "audio_unavailable": "Пустая запись", "pending": "Нет разбора"}.get(status, "Нет разбора")
 
 
 def render_calls(
@@ -323,14 +358,15 @@ def render_calls(
     rows = ""
     for call in sorted(calls, key=lambda item: str(item.get("created") or ""), reverse=True):
         analysis = _analysis_for(analyses, call)
-        status = triage_for(analysis)[0] if analysis else "pending"
+        status = triage_for(analysis)[0] if analysis else ("audio_unavailable" if recording_is_unavailable(call) else "pending")
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or "—"
         crm = call.get("crm") or {}
         score = analysis.get("overall_score") if analysis else None
         score = score if score is not None else "—"
-        rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text((analysis.get('call_type') or {}).get('label') or 'Тип не подтверждён')}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
-    note = description or "«Нет разбора» — Bitrix не отдал пригодную запись либо обработка ещё не завершилась. «Короткий звонок» не оценивается. «Низкая оценка» — отдельный сигнал для разбора с менеджером."
+        call_type = (analysis.get("call_type") or {}).get("label") or ("Запись 0 секунд" if recording_is_unavailable(call) else "Тип не подтверждён")
+        rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text(call_type)}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
+    note = description or "«Пустая запись» — Bitrix передал файл нулевой длительности; такой звонок нельзя прослушать или расшифровать. Пригодная запись без результата ожидает анализа. «Короткий звонок» не оценивается."
     content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section><section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
     return _console_page("Звонки", "calls", content, user)
 
@@ -350,14 +386,19 @@ def render_managers(calls: List[Dict[str, Any]], analyses: Dict[str, Any], user:
 def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[str, Any]) -> str:
     analysis = (stored or {}).get("analysis") or {}
     transcription = (stored or {}).get("transcription") or {}
-    status, reason, _ = triage_for(analysis) if analysis else ("pending", "Разбор отсутствует: запись недоступна или обработка ещё не завершилась", "")
+    if analysis:
+        status, reason, _ = triage_for(analysis)
+    elif recording_is_unavailable(call):
+        status, reason = "audio_unavailable", "Bitrix передал пустую запись нулевой длительности: транскрипция и оценка невозможны"
+    else:
+        status, reason = "pending", "Разбор отсутствует: пригодная запись ещё обрабатывается"
     client_data = call.get("client") or {}
     client = client_data.get("name") or "Клиент не определён"
     company = client_data.get("company") or "Компания не указана"
     manager = (call.get("manager") or {}).get("name") or "Менеджер не определён"
     crm = call.get("crm") or {}
     score = analysis.get("overall_score") if analysis.get("overall_score") is not None else "—"
-    score_heading = "Не оценивается" if analysis.get("service_call") else f"{score}/10"
+    score_heading = "Не оценивается" if analysis.get("service_call") or recording_is_unavailable(call) else f"{score}/10"
     duration = call.get("duration_sec") or transcription.get("duration_sec")
     try:
         duration_seconds = int(float(duration)) if duration else 0
@@ -380,11 +421,12 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
 
     activity_id = str(call.get("activity_id") or "")
     audio = call.get("audio") or {}
-    if audio.get("file_id") or audio.get("url") or audio.get("public_path"):
+    if (audio.get("file_id") or audio.get("url") or audio.get("public_path")) and not recording_is_unavailable(call):
         direction_label = {"incoming": "Входящий", "outgoing": "Исходящий"}.get(str(call.get("direction")), "Направление не определено")
         audio_html = f'''<section class="jc-audio"><div><b>Запись разговора</b><span>{_text(direction_label)} · {duration_label}</span></div><audio id="callAudio" controls preload="metadata" src="/audio/{_text(activity_id)}">Ваш браузер не поддерживает аудио.</audio></section>'''
     else:
-        audio_html = '<section class="jc-audio jc-audio-empty"><div><b>Запись недоступна</b><span>Bitrix не передал файл этого разговора.</span></div></section>'
+        empty_reason = "Bitrix передал пустой файл нулевой длительности." if recording_is_unavailable(call) else "Bitrix не передал файл этого разговора."
+        audio_html = f'<section class="jc-audio jc-audio-empty"><div><b>Запись пустая</b><span>{_text(empty_reason)}</span></div></section>'
 
     moments = analysis.get("key_moments") or []
     moment_rows = ""
@@ -546,6 +588,7 @@ def render_scripts(scripts: Dict[str, Any], user: Dict[str, Any]) -> str:
 
 _CONSOLE_CSS = r'''
 .jc-status.low_score{background:var(--amber-soft);color:var(--amber)}
+.jc-status.audio_unavailable{background:#edf3f4;color:#617982}
 .jc-shell{max-width:1470px}.jc-heading{margin-bottom:24px}.jc-heading p{margin:0 0 8px;color:#149c99;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}.jc-heading h1{margin:0;color:var(--ink);font-size:32px;letter-spacing:-.04em}.jc-heading h1 span{color:#7a9ca7;font-weight:600}.jc-heading small{display:block;max-width:720px;margin-top:10px;color:var(--muted);font-size:12px}.jc-table,.jc-detail-grid,.jc-scripts{background:#fff;border-radius:11px;box-shadow:0 7px 21px rgba(30,88,98,.1);overflow:hidden}.jc-table-head,.jc-row{display:grid;grid-template-columns:130px minmax(170px,1.25fr) minmax(130px,1fr) minmax(115px,.7fr) 44px 18px;gap:15px;align-items:center}.jc-table-head{padding:11px 18px;background:#effafa;color:#6c8991;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.jc-row{padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-row:hover,.jc-manager-row:hover{background:#f1fffe}.jc-row b,.jc-manager-row b{display:block;font-size:13px}.jc-row small,.jc-manager-row small{display:block;margin-top:4px;color:var(--muted);font-size:11px}.jc-row>span:nth-child(3),.jc-row>span:nth-child(4){color:#5f7d88;font-size:12px}.jc-row strong{font-size:16px;text-align:right}.jc-row i,.jc-manager-row i{font-style:normal;color:#11a4a0}.jc-status{display:inline-block;width:max-content;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:900}.jc-status.critical{background:var(--red-soft);color:var(--red)}.jc-status.needs_review{background:var(--amber-soft);color:var(--amber)}.jc-status.requires_reanalysis{background:#edf3ff;color:#326bcc}.jc-status.normal{background:var(--green-soft);color:var(--green)}.jc-status.pending{background:#edf3f4;color:#617982}.jc-managers .jc-table-head,.jc-manager-row{grid-template-columns:40px minmax(180px,1fr) 70px minmax(150px,.7fr) 130px 18px}.jc-manager-row{display:grid;gap:15px;align-items:center;padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-manager-row>.jd-avatar{width:36px;height:36px}.jc-manager-row strong{font-size:17px;color:#159b98}.jc-manager-row>span:nth-of-type(2){font-size:11px;color:var(--muted)}.jc-manager-row em{font-style:normal;color:#59808a;font-size:11px;font-weight:800}.jc-back{display:inline-block;margin-bottom:20px;color:#159d9a;font-weight:800;text-decoration:none}.jc-call-meta{display:flex;gap:12px;align-items:center;margin-top:14px;color:#65818d;font-size:12px;flex-wrap:wrap}.jc-detail-grid{display:grid;grid-template-columns:1.05fr .95fr}.jc-detail-grid article{padding:24px;border-right:1px solid var(--line)}.jc-detail-grid article:last-child{border:0}.jc-detail-grid h2,.jc-script h2{margin:0 0 11px;color:var(--ink);font-size:18px;letter-spacing:-.02em}.jc-detail-grid h3{margin:21px 0 7px;color:#169b98;font-size:11px;text-transform:uppercase}.jc-detail-grid p{margin:0;color:#567580;font-size:13px;line-height:1.55}.jc-detail-grid blockquote{margin:19px 0;padding:13px 15px;border-left:3px solid #15c8c3;background:#effbfa;color:#315f6e;font-size:13px}.jc-detail-grid blockquote small{display:block;margin-top:7px;color:#169b98;font-weight:800}.jc-moments{display:grid;gap:0;padding:0;margin:0;list-style:none}.jc-moments li{display:grid;grid-template-columns:48px 1fr;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);color:#557783;font-size:12px}.jc-moments b{color:#159b98}.jc-scripts{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1px;background:var(--line)}.jc-script{min-height:250px;padding:21px;background:#fff}.jc-script span{color:#14a09d;font-size:10px;font-weight:900;letter-spacing:.1em}.jc-script p{color:#587681;font-size:12px;line-height:1.55}.jc-script small{display:block;margin-top:15px;color:#758c95;font-size:10px}@media(max-width:900px){.jc-table-head{display:none}.jc-row{grid-template-columns:1fr 25px;gap:8px}.jc-row>span:not(:nth-child(2)),.jc-row strong{display:none}.jc-managers .jc-manager-row{grid-template-columns:36px minmax(0,1fr) 42px 18px}.jc-manager-row>span:nth-of-type(2),.jc-manager-row em{display:none}.jc-detail-grid{grid-template-columns:1fr}.jc-detail-grid article{border-right:0;border-bottom:1px solid var(--line)}.jc-heading h1{font-size:27px}}
 '''
 

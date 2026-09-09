@@ -7,7 +7,17 @@ from html import escape
 from typing import Any, Dict, Iterable, List, Mapping
 from urllib.parse import urlencode
 
-from jarvis_dashboard import _analysis_for, _avatar, _format_timestamp, _freshness, _stage_name, triage_for
+from jarvis_dashboard import (
+    _analysis_for,
+    _avatar,
+    _format_timestamp,
+    _freshness,
+    _stage_name,
+    empty_recording_count_label,
+    pending_analysis_count_label,
+    recording_is_unavailable,
+    triage_for,
+)
 
 
 _AQUA_CSS = r'''
@@ -54,10 +64,10 @@ def filter_calls(
         ]
     if direction in {"incoming", "outgoing"}:
         result = [call for call in result if call.get("direction") == direction]
-    if status in {"critical", "low_score", "needs_review", "requires_reanalysis", "normal", "pending"}:
+    if status in {"critical", "low_score", "needs_review", "requires_reanalysis", "normal", "audio_unavailable", "pending"}:
         result = [
             call for call in result
-            if (triage_for(_analysis_for(analyses, call))[0] if _analysis_for(analyses, call) else "pending")
+            if (triage_for(_analysis_for(analyses, call))[0] if _analysis_for(analyses, call) else ("audio_unavailable" if recording_is_unavailable(call) else "pending"))
             == status
         ]
     if stage:
@@ -69,6 +79,8 @@ def rop_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Dict[str
     """Compute management indicators from calls and analyses, never from guesses."""
     analyzed = 0
     available_audio = 0
+    unavailable_audio = 0
+    pending_analysis = 0
     linked = 0
     next_activity = 0
     critical: List[Dict[str, Any]] = []
@@ -97,7 +109,9 @@ def rop_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Dict[str
         )
         entry["calls"] += 1
         audio = call.get("audio") or {}
-        if audio.get("file_id") or audio.get("url"):
+        if recording_is_unavailable(call):
+            unavailable_audio += 1
+        elif audio.get("file_id") or audio.get("url"):
             available_audio += 1
         crm = call.get("crm") or {}
         if crm.get("owner_id") and crm.get("owner_type") in {"deal", "lead", "contact", "company"}:
@@ -109,6 +123,8 @@ def rop_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Dict[str
 
         analysis = _analysis_for(analyses, call)
         if not analysis:
+            if not recording_is_unavailable(call):
+                pending_analysis += 1
             continue
         analyzed += 1
         entry["analyzed"] += 1
@@ -148,6 +164,8 @@ def rop_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Dict[str
         "calls": len(calls),
         "analyzed": analyzed,
         "available_audio": available_audio,
+        "unavailable_audio": unavailable_audio,
+        "pending_analysis": pending_analysis,
         "linked": linked,
         "next_activity": next_activity,
         "critical": critical,
@@ -245,12 +263,12 @@ def render_rop_report(
 <header class="jr-top"><a class="jr-brand" href="/"><span>J</span><b>ДЖАРВИС<small>ЦЕНТР УПРАВЛЕНИЯ ПРОДАЖАМИ</small></b></a><nav><a href="/">Обзор</a><a href="/calls">Звонки</a><a href="/funnel">Воронка</a><a href="/managers">Команда</a><a class="active" href="/rop">Отчёт РОПа</a></nav><div class="jr-user">РОП · {_text(user.get('name'))} <a href="/logout">Выйти</a></div></header>
 <main class="jr-shell"><section class="jr-hero"><div><h1>Решения, а не<br><span>шум в отчётах.</span></h1><div class="jr-freshness {freshness_class}"><i></i><b>Bitrix24: {freshness_label}</b><span>последняя запись {model['fresh_at']}</span></div></div>
 <aside><b>Что требует внимания</b><p>{'Сначала подтверждённые критичные случаи, затем звонки с оценкой 3 и ниже.' if model['critical'] or model['attention'] else 'Подтверждённых критичных случаев и низких оценок в выборке нет.'}</p><a href="#priority">Открыть очередь ↓</a></aside></section>
-<form class="jr-filters" method="get"><label>Период<select name="date">{date_options}</select></label><label>Менеджер<select name="manager">{manager_options}</select></label><label>Направление<select name="direction"><option value="">Все звонки</option><option value="incoming" {"selected" if selected_direction == 'incoming' else ''}>Входящие</option><option value="outgoing" {"selected" if selected_direction == 'outgoing' else ''}>Исходящие</option></select></label><label>Статус<select name="status"><option value="">Все статусы</option><option value="critical" {"selected" if selected_status == 'critical' else ''}>Критично</option><option value="low_score" {"selected" if selected_status == 'low_score' else ''}>Низкая оценка</option><option value="needs_review" {"selected" if selected_status == 'needs_review' else ''}>Нужна проверка</option><option value="normal" {"selected" if selected_status == 'normal' else ''}>Без риска</option><option value="pending" {"selected" if selected_status == 'pending' else ''}>Нет разбора</option></select></label><button>Применить</button></form>
-<section class="jr-metrics"><a href="{calls_href}"><small>Звонки</small><b>{model['calls']}</b><span>первичные записи</span></a><a href="{calls_href}"><small>Покрытие AI</small><b>{model['coverage']}%</b><span>{model['analyzed']} разобрано</span></a><a href="#priority"><small>Внимание РОПа</small><b>{len(model['critical']) + len(model['attention'])}</b><span>{len(model['critical'])} критичных · {len(model['attention'])} низких</span></a><a href="/calls?{_query(**{**filter_base, 'status': 'pending'})}"><small>Без разбора</small><b>{max(0, model['calls'] - model['analyzed'])}</b><span>нет пригодной записи или анализ ещё идёт</span></a></section>
+<form class="jr-filters" method="get"><label>Период<select name="date">{date_options}</select></label><label>Менеджер<select name="manager">{manager_options}</select></label><label>Направление<select name="direction"><option value="">Все звонки</option><option value="incoming" {"selected" if selected_direction == 'incoming' else ''}>Входящие</option><option value="outgoing" {"selected" if selected_direction == 'outgoing' else ''}>Исходящие</option></select></label><label>Статус<select name="status"><option value="">Все статусы</option><option value="critical" {"selected" if selected_status == 'critical' else ''}>Критично</option><option value="low_score" {"selected" if selected_status == 'low_score' else ''}>Низкая оценка</option><option value="needs_review" {"selected" if selected_status == 'needs_review' else ''}>Нужна проверка</option><option value="normal" {"selected" if selected_status == 'normal' else ''}>Без риска</option><option value="audio_unavailable" {"selected" if selected_status == 'audio_unavailable' else ''}>Пустая запись</option><option value="pending" {"selected" if selected_status == 'pending' else ''}>Ожидает анализа</option></select></label><button>Применить</button></form>
+<section class="jr-metrics"><a href="{calls_href}"><small>Звонки</small><b>{model['calls']}</b><span>первичные записи</span></a><a href="{calls_href}"><small>Покрытие AI</small><b>{model['coverage']}%</b><span>{model['analyzed']} разобрано</span></a><a href="#priority"><small>Внимание РОПа</small><b>{len(model['critical']) + len(model['attention'])}</b><span>{len(model['critical'])} критичных · {len(model['attention'])} низких</span></a><a href="/calls?{_query(**{**filter_base, 'status': 'audio_unavailable'})}"><small>Без разбора</small><b>{model['unavailable_audio'] + model['pending_analysis']}</b><span>{empty_recording_count_label(model['unavailable_audio'])} · {pending_analysis_count_label(model['pending_analysis'])}</span></a></section>
 <section id="priority" class="jr-section"><div class="jr-section-title"><div><h2>Очередь внимания РОПа</h2></div><span>Критичный = правило и доказательство; низкая оценка = разбор с менеджером</span></div><div class="jr-panel">{actions}</div></section>
 <section class="jr-two"><section class="jr-section"><div class="jr-section-title"><div><h2>Где нужен разговор с менеджером</h2></div><a href="/managers">все профили →</a></div><div class="jr-panel jr-manager-head"><span></span><span>Менеджер</span><span>Качество</span><span>CRM-дисциплина</span><span>Сигнал</span></div><div class="jr-panel jr-manager-list">{manager_rows}</div></section>
 <section id="review" class="jr-section"><div class="jr-section-title"><div><h2>Очередь проверки</h2></div><a href="/calls?{_query(**{**filter_base, 'status': 'needs_review'})}">все звонки →</a></div><div class="jr-panel">{review_rows}</div></section></section>
-<section class="jr-section"><div class="jr-section-title"><div><h2>Что можно использовать в управлении сегодня</h2></div></div><div class="jr-source-grid"><div class="jr-source-card good"><span>Bitrix24 · звонки</span><b>{model['calls']}</b><p>Записи из текущей выборки. CRM-связь подтверждена у {model['crm_coverage']}%.</p><small>Последняя запись: {model['fresh_at']}</small></div><div class="jr-source-card {'good' if model['coverage'] >= 80 else 'warn'}"><span>AI-разбор</span><b>{model['coverage']}%</b><p>Только разобранные записи участвуют в оценке качества.</p><small>{model['analyzed']} из {model['calls']} звонков</small></div><div class="jr-source-card {'good' if model['audio_coverage'] >= 80 else 'warn'}"><span>Доступность аудио</span><b>{model['audio_coverage']}%</b><p>Без записи звонок не получает выдуманную оценку.</p><small>{model['available_audio']} записей доступны</small></div><div class="jr-source-card muted"><span>План / факт / оплаты</span><b>—</b><p>Не подключены: Джарвис не подставляет цифры из непроверенных источников.</p><small>Нужна карта полей и владельца источника</small></div></div></section>
+<section class="jr-section"><div class="jr-section-title"><div><h2>Что можно использовать в управлении сегодня</h2></div></div><div class="jr-source-grid"><div class="jr-source-card good"><span>Bitrix24 · звонки</span><b>{model['calls']}</b><p>Записи из текущей выборки. CRM-связь подтверждена у {model['crm_coverage']}%.</p><small>Последняя запись: {model['fresh_at']}</small></div><div class="jr-source-card {'good' if model['coverage'] >= 80 else 'warn'}"><span>AI-разбор</span><b>{model['coverage']}%</b><p>Только разобранные записи участвуют в оценке качества.</p><small>{model['analyzed']} из {model['calls']} звонков</small></div><div class="jr-source-card {'good' if model['audio_coverage'] >= 80 else 'warn'}"><span>Доступность аудио</span><b>{model['audio_coverage']}%</b><p>Без записи звонок не получает выдуманную оценку.</p><small>{model['available_audio']} доступны · {model['unavailable_audio']} пустые</small></div><div class="jr-source-card muted"><span>План / факт / оплаты</span><b>—</b><p>Не подключены: Джарвис не подставляет цифры из непроверенных источников.</p><small>Нужна карта полей и владельца источника</small></div></div></section>
 <section class="jr-note"><b>Как читать отчёт</b><span>Сначала подтверждённые критичные случаи, затем оценки 3 и ниже для разбора с менеджером, затем очередь ручной проверки. Низкая оценка не объявляется критическим инцидентом без правила, цитаты и таймкода.</span></section></main></body></html>'''
 
 

@@ -36,6 +36,27 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("нет пригодной записи или анализ ещё идёт", overview)
         self.assertIn("Нет разбора", journal)
 
+    def test_empty_bitrix_recording_is_not_presented_as_pending_or_playable(self):
+        call = {
+            "activity_id": "1",
+            "created": "2026-09-08T12:00:00+03:00",
+            "manager": {"name": "Анна"},
+            "audio": {"file_id": "99", "status": "empty", "error": "empty_recording", "size_bytes": 432},
+        }
+
+        model = dashboard_model([call], {})
+        overview = render_dashboard([call], {}, {"role": "rop", "name": "РОП"})
+        journal = render_calls([call], {}, {"role": "rop", "name": "РОП"})
+        detail = render_call_detail(call, {}, {"role": "rop", "name": "РОП"})
+
+        self.assertEqual(model["unavailable_audio"], 1)
+        self.assertEqual(model["pending_analysis"], 0)
+        self.assertIn("1 пустая запись", overview)
+        self.assertIn("Пустая запись", journal)
+        self.assertNotIn("Нет разбора", journal)
+        self.assertIn("Запись пустая", detail)
+        self.assertNotIn('src="/audio/1"', detail)
+
     def test_excluded_short_call_has_a_specific_status(self):
         calls = [{"activity_id": "1", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}}]
         analyses = {"1": {"analysis": {

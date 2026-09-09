@@ -59,6 +59,18 @@ class JarvisStoreTests(unittest.TestCase):
         self.assertIsNone(normalized.crm_owner_type)
         self.assertIsNone(normalized.crm_owner_id)
 
+    def test_empty_recording_is_not_marked_available(self):
+        normalized = normalize_bitrix_call(
+            {
+                "activity_id": "1",
+                "created": "2026-09-08T10:00:00+03:00",
+                "audio": {"file_id": 42, "status": "empty", "error": "empty_recording", "size_bytes": 432},
+            }
+        )
+
+        self.assertFalse(normalized.recording_available)
+        self.assertEqual(normalized.audio_status, "empty")
+
     def test_payload_hash_is_stable_for_equivalent_dicts(self):
         self.assertEqual(payload_sha256({"a": 1, "b": 2}), payload_sha256({"b": 2, "a": 1}))
 
