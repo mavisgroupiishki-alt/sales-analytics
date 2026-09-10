@@ -22,6 +22,8 @@ services:
         sync: false
       - key: JARVIS_SYNC_SECRET
         sync: false
+      - key: OPERATIONS_DASHBOARD_TOKEN
+        sync: false
       - key: USE_AUDIO_PROXY
         value: "1"
       - key: DATA_DIR

@@ -89,6 +89,11 @@ python src/claude_analyzer.py
 
 ## Переменные окружения
 
+Для read-only передачи свода звонков в операционный дашборд задайте отдельный
+общий секрет `OPERATIONS_DASHBOARD_TOKEN`. Он принимается только на маршрутах
+`/api/integrations/operations/*`, не заменяет `JARVIS_SYNC_SECRET` и не
+отдаётся браузеру.
+
 | Переменная | Обязательная | Описание |
 |------------|-------------|----------|
 | `ANTHROPIC_API_KEY` | ✅ | Ключ Claude API |

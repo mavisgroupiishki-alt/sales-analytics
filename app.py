@@ -1045,6 +1045,60 @@ def latest_call_date(calls):
     dates = [str(call.get("created") or "")[:10] for call in calls if str(call.get("created") or "")[:10]]
     return max(dates) if dates else ""
 
+
+def _require_operations_dashboard_token():
+    expected = (os.environ.get("OPERATIONS_DASHBOARD_TOKEN") or "").strip()
+    provided = (request.headers.get("Authorization") or "").strip()
+    prefix = "Bearer "
+    if not expected:
+        raise RuntimeError("Интеграция операционного дашборда не настроена.")
+    if not provided.startswith(prefix) or not hmac.compare_digest(provided[len(prefix):], expected):
+        raise PermissionError("Требуется авторизация операционного дашборда.")
+
+
+def _operations_sales_calls_payload():
+    from jarvis_dashboard import dashboard_model, triage_for
+
+    calls, analyses = get_data()
+    source_date = latest_call_date(calls)
+    if source_date:
+        calls = [call for call in calls if str(call.get("created") or "")[:10] == source_date]
+    model = dashboard_model(calls, analyses)
+    rows = []
+    for call in sorted(calls, key=lambda item: str(item.get("created") or ""), reverse=True)[:200]:
+        analysis = (analyses.get(str(call.get("activity_id")), {}) or {}).get("analysis") or {}
+        status, reason, _ = triage_for(analysis)
+        manager = call.get("manager") or {}
+        crm = call.get("crm") or {}
+        rows.append({
+            "activityId": str(call.get("activity_id") or ""),
+            "created": str(call.get("created") or ""),
+            "direction": str(call.get("direction") or ""),
+            "durationSeconds": int(call.get("duration_sec") or 0),
+            "manager": str(manager.get("name") or "Не назначен"),
+            "stage": str(crm.get("stage_name") or crm.get("stage_id") or ""),
+            "score": analysis.get("overall_score") if isinstance(analysis.get("overall_score"), (int, float)) else None,
+            "status": status,
+            "reason": reason,
+        })
+    return {
+        "ok": True,
+        "sourceDate": source_date,
+        "summary": {
+            "calls": model["calls"],
+            "analyzed": model["analyzed"],
+            "critical": len(model["critical"]),
+            "attention": len(model["attention"]),
+            "review": len(model["review"]),
+            "reanalysis": len(model["reanalysis"]),
+        },
+        "managers": [
+            {"name": str(item["manager"].get("name") or "Не назначен"), "calls": item["calls"], "average": item["average"], "critical": item["critical"], "attention": item["attention"]}
+            for item in model["managers"]
+        ],
+        "calls": rows,
+    }
+
 # ============================================================
 # ИНЪЕКЦИЯ НАВИГАЦИИ В HTML
 # ============================================================
@@ -1417,6 +1471,31 @@ def funnel_details():
             row["url"] = f"{portal}/crm/{kind}/details/{entity_id}/"
         safe_rows.append(row)
     return jsonify({"count": int(payload.get("count") or len(safe_rows)), "rows": safe_rows})
+
+
+@app.route("/api/integrations/operations/sales-calls")
+def operations_sales_calls():
+    try:
+        _require_operations_dashboard_token()
+        return jsonify(_operations_sales_calls_payload())
+    except PermissionError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 401
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 503
+    except Exception as exc:
+        app.logger.warning("Operations sales-calls export failed: %s", type(exc).__name__)
+        return jsonify({"ok": False, "error": "Данные звонков временно недоступны."}), 502
+
+
+@app.route("/api/integrations/operations/crm-audit")
+def operations_crm_audit():
+    try:
+        _require_operations_dashboard_token()
+    except PermissionError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 401
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 503
+    return jsonify({"ok": False, "status": "not_configured"}), 503
 
 
 @app.route("/critical")
