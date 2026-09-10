@@ -1507,7 +1507,10 @@ def operations_crm_audit():
     try:
         return jsonify({"ok": True, **build_crm_audit_snapshot()})
     except Exception as exc:
-        app.logger.warning("Operations CRM-audit export failed: %s", type(exc).__name__)
+        # The audit source errors are safe operational diagnostics (never a
+        # webhook URL or request payload) and make a live integration failure
+        # actionable without exposing credentials.
+        app.logger.warning("Operations CRM-audit export failed: %s", str(exc))
         return jsonify({"ok": False, "status": "unavailable"}), 502
 
 
