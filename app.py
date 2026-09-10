@@ -1904,7 +1904,14 @@ _JARVIS_BITRIX_METHODS = {
     "crm.lead.fields",
     "crm.status.list",
     "disk.file.get",
+    "entity.item.get",
     "user.get",
+}
+_PAYMENT_LEDGER_ENTITIES = {
+    "bank_allocations",
+    "bank_txns",
+    "manual_pay_fact",
+    "pay_schedule",
 }
 
 _MAX_INTERNAL_AUDIO_BYTES = 64 * 1024 * 1024
@@ -1924,11 +1931,14 @@ def jarvis_bitrix_proxy(method):
         return jsonify({"error": "method_not_allowed"}), 403
     if request.content_length is not None and request.content_length > 65_536:
         return jsonify({"error": "payload_too_large"}), 413
+    payload = request.get_json(silent=True) or {}
+    if method == "entity.item.get" and str(payload.get("ENTITY") or "") not in _PAYMENT_LEDGER_ENTITIES:
+        return jsonify({"error": "entity_not_allowed"}), 403
     try:
         webhook = normalize_bitrix_webhook_url(os.environ.get("BITRIX_WEBHOOK_URL", ""))
         upstream = _req.post(
             build_bitrix_method_url(webhook, method),
-            json=request.get_json(silent=True) or {},
+            json=payload,
             timeout=60,
         )
     except (ValueError, _req.RequestException) as exc:

@@ -71,6 +71,35 @@ class BitrixProxyTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"result": {"items": []}})
 
+    @patch("requests.post")
+    def test_proxy_forwards_local_entity_rows_for_clean_revenue(self, post):
+        upstream = Mock()
+        upstream.status_code = 200
+        upstream.content = b'{"result":[]}'
+        upstream.headers = {"Content-Type": "application/json"}
+        post.return_value = upstream
+
+        response = self.client.post(
+            "/internal/bitrix/entity.item.get",
+            json={"ENTITY": "bank_txns"},
+            headers={"x-jarvis-sync-secret": "test-bridge-secret"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"result": []})
+
+    @patch("requests.post")
+    def test_proxy_rejects_unrelated_local_entity(self, post):
+        response = self.client.post(
+            "/internal/bitrix/entity.item.get",
+            json={"ENTITY": "employees"},
+            headers={"x-jarvis-sync-secret": "test-bridge-secret"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json(), {"error": "entity_not_allowed"})
+        post.assert_not_called()
+
     @patch("requests.get")
     @patch("requests.post")
     def test_audio_proxy_validates_signs_and_returns_media(self, post, get):
