@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
+import re
 from typing import Any
 
 from bitrix import Bitrix24Client
@@ -86,10 +87,10 @@ def _bucket(source: str, client_type: str) -> str:
 
 def _stage_bucket(stage: dict[str, str]) -> str | None:
     value = _norm(stage.get("name"))
-    if any(word in value for word in ("отказ", "проигран", "неуспеш", "не успеш")): return "rejected"
-    if "отложенн" in value and "спрос" in value: return "postponed"
-    if any(word in value for word in ("согласован", "согласование договор", "договор выслан", "оплата до")) or ("жд" in value and "оплат" in value): return "agreement"
-    if any(word in value for word in ("кп отправ", "получ", "ос", "защит", "обратн")): return "kp"
+    if re.search(r"отказ|проигран|неуспеш|не успеш", value): return "rejected"
+    if re.search(r"отложенн.*спрос", value): return "postponed"
+    if re.search(r"согласован|согласование.*договор|договор.*выслан|жд.*оплат|оплата до", value): return "agreement"
+    if re.search(r"кп.*отправ|получ.*ос.*кп|защит.*кп|обратн.*связ.*кп", value): return "kp"
     return "inWork" if "в работе" in value else None
 
 

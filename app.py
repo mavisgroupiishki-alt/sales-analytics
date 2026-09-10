@@ -1534,7 +1534,7 @@ def operations_marketing():
         return jsonify({"ok": True, **build_marketing_snapshot(month)})
     except Exception as exc:
         app.logger.warning("Operations marketing export failed: %s", str(exc))
-        return jsonify({"ok": False, "status": "unavailable", "diagnostic": str(exc)}), 502
+        return jsonify({"ok": False, "status": "unavailable"}), 502
 
 
 @app.route("/critical")
