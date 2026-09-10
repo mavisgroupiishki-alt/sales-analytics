@@ -1870,8 +1870,10 @@ def audio_health():
 
 
 _JARVIS_BITRIX_METHODS = {
+    "batch",
     "crm.activity.list",
     "crm.deal.list",
+    "crm.item.list",
     "crm.lead.list",
     "crm.status.list",
     "disk.file.get",

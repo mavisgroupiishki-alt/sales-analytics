@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-import requests
+from bitrix import Bitrix24Client
 
 
 class CrmAuditError(RuntimeError):
@@ -50,17 +50,15 @@ class BitrixAuditClient:
         self.webhook_url = webhook_url.rstrip("/") + "/"
         self.portal_url = _portal_url(webhook_url)
         self.timeout = timeout
+        # Reuse the service's authenticated Bitrix bridge when it is present.
+        # That bridge is the live source already used by Jarvis, rather than a
+        # second, potentially stale webhook credential.
+        self.client = Bitrix24Client(webhook_url)
 
     def call(self, method: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         try:
-            response = requests.post(
-                f"{self.webhook_url}{method}.json",
-                json=payload or {},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            body = response.json()
-        except (requests.RequestException, ValueError) as exc:
+            body = self.client.call(method, payload or {})
+        except (RuntimeError, ValueError) as exc:
             raise CrmAuditError("Bitrix24 временно недоступен.") from exc
         if not isinstance(body, dict) or body.get("error"):
             raise CrmAuditError(str((body or {}).get("error_description") or "Bitrix24 вернул ошибку."))
@@ -83,12 +81,7 @@ class BitrixAuditClient:
                 )
                 for offset in starts[group_start:group_start + 50]
             }
-            try:
-                response = requests.post(f"{self.webhook_url}batch.json", data={f"cmd[{key}]": value for key, value in commands.items()}, timeout=self.timeout)
-                response.raise_for_status()
-                body = response.json()
-            except (requests.RequestException, ValueError) as exc:
-                raise CrmAuditError("Bitrix24 временно недоступен.") from exc
+            body = self.call("batch", {"cmd": commands})
             if not isinstance(body, dict) or body.get("error"):
                 raise CrmAuditError(str((body or {}).get("error_description") or "Bitrix24 вернул ошибку."))
             pages = ((body.get("result") or {}).get("result") or {})
