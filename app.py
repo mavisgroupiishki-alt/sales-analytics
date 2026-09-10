@@ -1099,6 +1099,13 @@ def _operations_sales_calls_payload():
         "calls": rows,
     }
 
+
+def build_crm_audit_snapshot():
+    """Keep the dashboard exporter independent from the HTTP route."""
+    from crm_audit import build_crm_audit_snapshot as build_snapshot
+
+    return build_snapshot()
+
 # ============================================================
 # ИНЪЕКЦИЯ НАВИГАЦИИ В HTML
 # ============================================================
@@ -1495,7 +1502,13 @@ def operations_crm_audit():
         return jsonify({"ok": False, "error": str(exc)}), 401
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 503
-    return jsonify({"ok": False, "status": "not_configured"}), 503
+    if not (os.environ.get("BITRIX_WEBHOOK_URL") or "").strip():
+        return jsonify({"ok": False, "status": "not_configured"}), 503
+    try:
+        return jsonify({"ok": True, **build_crm_audit_snapshot()})
+    except Exception as exc:
+        app.logger.warning("Operations CRM-audit export failed: %s", type(exc).__name__)
+        return jsonify({"ok": False, "status": "unavailable"}), 502
 
 
 @app.route("/critical")

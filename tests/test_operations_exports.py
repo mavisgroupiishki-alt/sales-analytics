@@ -47,6 +47,35 @@ class OperationsExportsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.get_json()["status"], "not_configured")
 
+    @patch.object(jarvis_app, "build_crm_audit_snapshot")
+    def test_audit_export_returns_existing_table_shape(self, build_snapshot):
+        build_snapshot.return_value = {
+            "generatedAt": "2026-09-10T09:00:00+00:00",
+            "summary": {"activeDeals": 12, "missingSource": 3},
+            "funnelBreakdown": [{"name": "1. Продажи", "activeDeals": 4}],
+            "details": [{
+                "observedOn": "2026-09-10",
+                "issue": "Нет источника",
+                "priority": "Высокий",
+                "funnel": "1. Продажи",
+                "entityType": "Сделка",
+                "entityId": "42",
+                "url": "https://portal.example/crm/deal/details/42/",
+            }],
+        }
+
+        with patch.dict(os.environ, {"BITRIX_WEBHOOK_URL": "https://portal.example/rest/1/token/"}, clear=False):
+            response = self.client.get(
+                "/api/integrations/operations/crm-audit",
+                headers={"Authorization": "Bearer shared-secret"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["summary"]["activeDeals"], 12)
+        self.assertEqual(payload["funnelBreakdown"][0]["name"], "1. Продажи")
+        self.assertEqual(payload["details"][0]["entityId"], "42")
+
 
 if __name__ == "__main__":
     unittest.main()
