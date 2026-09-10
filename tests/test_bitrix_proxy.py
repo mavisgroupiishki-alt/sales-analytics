@@ -54,6 +54,23 @@ class BitrixProxyTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"result": []})
         self.assertNotIn("x-jarvis-sync-secret", post.call_args.kwargs.get("headers", {}))
 
+    @patch("requests.post")
+    def test_proxy_forwards_stage_history_for_clean_revenue(self, post):
+        upstream = Mock()
+        upstream.status_code = 200
+        upstream.content = b'{"result":{"items":[]}}'
+        upstream.headers = {"Content-Type": "application/json"}
+        post.return_value = upstream
+
+        response = self.client.post(
+            "/internal/bitrix/crm.stagehistory.list",
+            json={"entityTypeId": 2, "filter": {"OWNER_ID": 42}},
+            headers={"x-jarvis-sync-secret": "test-bridge-secret"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"result": {"items": []}})
+
     @patch("requests.get")
     @patch("requests.post")
     def test_audio_proxy_validates_signs_and_returns_media(self, post, get):

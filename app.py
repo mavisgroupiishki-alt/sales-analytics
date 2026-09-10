@@ -1898,6 +1898,7 @@ _JARVIS_BITRIX_METHODS = {
     "crm.category.list",
     "crm.deal.list",
     "crm.deal.fields",
+    "crm.stagehistory.list",
     "crm.item.list",
     "crm.lead.list",
     "crm.lead.fields",
