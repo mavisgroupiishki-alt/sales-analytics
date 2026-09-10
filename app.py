@@ -1106,6 +1106,13 @@ def build_crm_audit_snapshot():
 
     return build_snapshot()
 
+
+def build_marketing_snapshot(month: str):
+    """Use the installed Bitrix Marketing v7 rules for Operations."""
+    from marketing_dashboard import build_marketing_snapshot as build_snapshot
+
+    return build_snapshot(month)
+
 # ============================================================
 # ИНЪЕКЦИЯ НАВИГАЦИИ В HTML
 # ============================================================
@@ -1514,6 +1521,22 @@ def operations_crm_audit():
         return jsonify({"ok": False, "status": "unavailable"}), 502
 
 
+@app.route("/api/integrations/operations/marketing")
+def operations_marketing():
+    try:
+        _require_operations_dashboard_token()
+    except PermissionError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 401
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 503
+    month = str(request.args.get("month") or datetime.now().strftime("%Y-%m"))
+    try:
+        return jsonify({"ok": True, **build_marketing_snapshot(month)})
+    except Exception as exc:
+        app.logger.warning("Operations marketing export failed: %s", str(exc))
+        return jsonify({"ok": False, "status": "unavailable"}), 502
+
+
 @app.route("/critical")
 @login_required
 def critical():
@@ -1872,9 +1895,12 @@ def audio_health():
 _JARVIS_BITRIX_METHODS = {
     "batch",
     "crm.activity.list",
+    "crm.category.list",
     "crm.deal.list",
+    "crm.deal.fields",
     "crm.item.list",
     "crm.lead.list",
+    "crm.lead.fields",
     "crm.status.list",
     "disk.file.get",
     "user.get",
