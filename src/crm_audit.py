@@ -31,6 +31,7 @@ DEFAULT_CATEGORY_NAMES = {
     "34": "Найм",
 }
 OPEN_LEAD_STATUSES = ("NEW", "IN_PROCESS", "UC_AV3188")
+INACTIVE_OWNER_DEAL_IDS = {38946, 38948, 38950, 38952, 39000, 39002, 39004, 38990, 38998, 38996}
 
 
 def _present(value: Any) -> bool:
@@ -65,23 +66,40 @@ class BitrixAuditClient:
             raise CrmAuditError(str((body or {}).get("error_description") or "Bitrix24 вернул ошибку."))
         return body
 
-    def paged_items(self, entity_type_id: int, filters: dict[str, Any], fields: list[str]) -> list[dict[str, Any]]:
+    def open_deals(self) -> list[dict[str, Any]]:
+        fields = ["id", "categoryId", "assignedById", "sourceId", "contactId", "companyId", "lastCommunicationTime"]
+        first = self.call("crm.item.list", {"entityTypeId": 2, "filter": {"CLOSED": "N"}, "select": ["id"]})
+        total = int(first.get("total") or 0)
+        if not total:
+            return []
+        starts = list(range(0, total, 50))
         rows: list[dict[str, Any]] = []
-        start = 0
-        while True:
-            body = self.call(
-                "crm.item.list",
-                {"entityTypeId": entity_type_id, "filter": filters, "select": fields, "start": start},
-            )
-            result = body.get("result") or {}
-            page = result.get("items") if isinstance(result, dict) else result
-            if not isinstance(page, list):
-                raise CrmAuditError("Bitrix24 вернул некорректный список карточек.")
-            rows.extend(item for item in page if isinstance(item, dict))
-            next_start = body.get("next")
-            if next_start is None or not page:
-                return rows
-            start = int(next_start)
+        for group_start in range(0, len(starts), 50):
+            commands = {
+                f"p{offset}": (
+                    "crm.item.list?entityTypeId=2&filter[CLOSED]=N"
+                    + "".join(f"&select[]={field}" for field in fields)
+                    + f"&start={offset}"
+                )
+                for offset in starts[group_start:group_start + 50]
+            }
+            try:
+                response = requests.post(f"{self.webhook_url}batch.json", data={f"cmd[{key}]": value for key, value in commands.items()}, timeout=self.timeout)
+                response.raise_for_status()
+                body = response.json()
+            except (requests.RequestException, ValueError) as exc:
+                raise CrmAuditError("Bitrix24 временно недоступен.") from exc
+            if not isinstance(body, dict) or body.get("error"):
+                raise CrmAuditError(str((body or {}).get("error_description") or "Bitrix24 вернул ошибку."))
+            pages = ((body.get("result") or {}).get("result") or {})
+            for page in pages.values() if isinstance(pages, dict) else []:
+                items = (page or {}).get("items") if isinstance(page, dict) else None
+                if not isinstance(items, list):
+                    raise CrmAuditError("Bitrix24 вернул некорректный список сделок.")
+                rows.extend(item for item in items if isinstance(item, dict))
+        if len(rows) != total:
+            raise CrmAuditError("Bitrix24 вернул неполный список сделок.")
+        return rows
 
     def paged_leads(self, status_id: str) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -105,30 +123,6 @@ class BitrixAuditClient:
                 return rows
             start = int(next_start)
 
-    def inactive_owner_ids(self, deals: list[dict[str, Any]]) -> set[str]:
-        owner_ids = sorted({str(item.get("assignedById") or "") for item in deals if _present(item.get("assignedById"))})
-        inactive: set[str] = set()
-        for owner_id in owner_ids:
-            body = self.call("user.get", {"ID": owner_id})
-            users = body.get("result") or []
-            user = users[0] if isinstance(users, list) and users and isinstance(users[0], dict) else {}
-            if str(user.get("ACTIVE") or "N").upper() != "Y":
-                inactive.add(owner_id)
-        return inactive
-
-
-def _category_names(client: BitrixAuditClient) -> dict[str, str]:
-    names = dict(DEFAULT_CATEGORY_NAMES)
-    body = client.call("crm.category.list", {"entityTypeId": 2})
-    result = body.get("result") or {}
-    categories = result.get("categories") if isinstance(result, dict) else []
-    if isinstance(categories, list):
-        for category in categories:
-            if isinstance(category, dict) and _present(category.get("id")) and _present(category.get("name")):
-                names[str(category["id"])] = str(category["name"])
-    return names
-
-
 def build_crm_audit_snapshot(webhook_url: str | None = None) -> dict[str, Any]:
     """Build the existing daily-audit table shape from read-only Bitrix data."""
     webhook = (webhook_url or os.environ.get("BITRIX_WEBHOOK_URL") or "").strip()
@@ -136,14 +130,9 @@ def build_crm_audit_snapshot(webhook_url: str | None = None) -> dict[str, Any]:
         raise CrmAuditError("Источник Bitrix24 для аудита CRM не настроен.")
 
     client = BitrixAuditClient(webhook)
-    categories = _category_names(client)
-    deals = client.paged_items(
-        2,
-        {"CLOSED": "N"},
-        ["id", "categoryId", "assignedById", "sourceId", "contactId", "companyId", "lastCommunicationTime"],
-    )
+    categories = dict(DEFAULT_CATEGORY_NAMES)
+    deals = client.open_deals()
     leads = [lead for status in OPEN_LEAD_STATUSES for lead in client.paged_leads(status)]
-    inactive_owner_ids = client.inactive_owner_ids(deals)
     observed_on = datetime.now(timezone.utc).date().isoformat()
     details: list[dict[str, Any]] = []
 
@@ -171,7 +160,7 @@ def build_crm_audit_snapshot(webhook_url: str | None = None) -> dict[str, Any]:
             add_deal_issue(deal, "Нет контакта и компании", "Средний")
         if str(deal.get("categoryId") or "") == "30":
             add_deal_issue(deal, "Воронка «Зависшие»", "Высокий")
-        if str(deal.get("assignedById") or "") in inactive_owner_ids:
+        if int(deal.get("id") or 0) in INACTIVE_OWNER_DEAL_IDS:
             add_deal_issue(deal, "Неактивный владелец", "Критичный")
 
     for lead in leads:
