@@ -134,7 +134,7 @@ def build_marketing_snapshot(month: str) -> dict[str, Any]:
             _result(client.call("crm.lead.fields")) or {},
         )
     except Exception as exc:
-        raise MarketingDashboardError("Не удалось получить справочники Bitrix24.") from exc
+        raise MarketingDashboardError(f"Не удалось получить справочники Bitrix24 ({type(exc).__name__}).") from exc
 
     source_map = {str(row.get("STATUS_ID")): str(row.get("NAME") or row.get("STATUS_ID") or "") for row in sources if isinstance(row, dict)}
     lead_status_map = {str(row.get("STATUS_ID")): {"name": str(row.get("NAME") or ""), "semantics": str(row.get("SEMANTICS") or (row.get("EXTRA") or {}).get("SEMANTICS") or "").upper()} for row in lead_statuses if isinstance(row, dict)}
@@ -158,7 +158,7 @@ def build_marketing_snapshot(month: str) -> dict[str, Any]:
             for deal in client.call_all("crm.deal.list", {"order": {"ID": "ASC"}, "filter": {"CATEGORY_ID": category_id, "STAGE_ID": stage_id, ">=MOVED_TIME": period_start, "<MOVED_TIME": period_end}, "select": deal_select}):
                 sales_by_id[str(deal.get("ID"))] = deal
     except Exception as exc:
-        raise MarketingDashboardError("Не удалось получить лиды и сделки Bitrix24.") from exc
+        raise MarketingDashboardError(f"Не удалось получить лиды и сделки Bitrix24 ({type(exc).__name__}).") from exc
 
     store: dict[str, dict[str, dict[str, float]]] = {"new": defaultdict(_empty), "existing": defaultdict(_empty)}
 
