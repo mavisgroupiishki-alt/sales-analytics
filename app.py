@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import sys
 import math
+import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
@@ -917,6 +918,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "mavis-secret-2026")
+app.config.update(SESSION_COOKIE_SECURE=True, SESSION_COOKIE_SAMESITE="None")
 app.register_blueprint(admin_bp)
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
@@ -946,6 +948,22 @@ def find_user(username, password):
 def current_user():
     return {"username": session.get("username",""), "role": session.get("role",""),
             "name": session.get("name",""), "manager_id": session.get("manager_id")}
+
+def _dashboard_embed_is_valid(timestamp: str, signature: str) -> bool:
+    """Validate the one-minute dashboard handoff without exposing its secret."""
+    shared_secret = (os.environ.get("OPERATIONS_DASHBOARD_TOKEN") or "").strip()
+    try:
+        issued_at = int(timestamp)
+    except (TypeError, ValueError):
+        return False
+    if not shared_secret or abs(int(time.time()) - issued_at) > 60:
+        return False
+    expected = hmac.new(
+        shared_secret.encode("utf-8"),
+        f"mavis-dashboard-embed:{issued_at}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(signature or "", expected)
 
 def login_required(f):
     @wraps(f)
@@ -1291,6 +1309,16 @@ def login():
 def logout():
     session.clear()
     return redirect("/login")
+
+
+@app.route("/dashboard-embed")
+def dashboard_embed():
+    """Create a short-lived read-only dashboard session from a signed handoff."""
+    if not _dashboard_embed_is_valid(request.args.get("ts", ""), request.args.get("sig", "")):
+        abort(403)
+    session.clear()
+    session.update({"username": "operations-dashboard", "role": "dashboard", "name": "Операционный дашборд", "manager_id": None})
+    return redirect("/")
 
 # ============================================================
 # ОСНОВНЫЕ МАРШРУТЫ — используем report_generator

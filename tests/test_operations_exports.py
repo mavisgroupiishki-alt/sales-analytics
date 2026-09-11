@@ -1,4 +1,7 @@
 import os
+import hashlib
+import hmac
+import time
 import unittest
 from unittest.mock import patch
 
@@ -18,6 +21,29 @@ class OperationsExportsTests(unittest.TestCase):
     def test_exports_reject_missing_token(self):
         self.assertEqual(self.client.get("/api/integrations/operations/sales-calls").status_code, 401)
         self.assertEqual(self.client.get("/api/integrations/operations/crm-audit").status_code, 401)
+
+    def test_dashboard_embed_rejects_unsigned_or_expired_requests(self):
+        self.assertEqual(self.client.get("/dashboard-embed").status_code, 403)
+        old = int(time.time()) - 61
+        stale_signature = hmac.new(
+            b"shared-secret", f"mavis-dashboard-embed:{old}".encode(), hashlib.sha256
+        ).hexdigest()
+        self.assertEqual(self.client.get("/dashboard-embed", query_string={"ts": old, "sig": stale_signature}).status_code, 403)
+
+    def test_dashboard_embed_creates_read_only_session_only_for_valid_short_lived_signature(self):
+        issued_at = int(time.time())
+        signature = hmac.new(
+            b"shared-secret", f"mavis-dashboard-embed:{issued_at}".encode(), hashlib.sha256
+        ).hexdigest()
+
+        response = self.client.get("/dashboard-embed", query_string={"ts": issued_at, "sig": signature})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/")
+        with self.client.session_transaction() as session:
+            self.assertEqual(session["username"], "operations-dashboard")
+            self.assertEqual(session["role"], "dashboard")
+        self.assertEqual(self.client.get("/rop").status_code, 403)
 
     @patch.object(jarvis_app, "get_data")
     def test_sales_calls_export_returns_source_backed_summary(self, get_data):
