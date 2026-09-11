@@ -1935,6 +1935,8 @@ def jarvis_bitrix_proxy(method):
         return jsonify({"error": "payload_too_large"}), 413
     payload = request.get_json(silent=True) or {}
     entity = str(payload.get("ENTITY") or "")
+    if method == "entity.item.get":
+        print(f"Payment bridge entity request: {entity[:80]}", flush=True)
     if method == "entity.item.get" and entity not in _PAYMENT_LEDGER_ENTITIES:
         app.logger.warning("Denied payment bridge entity: %s", entity[:80])
         return jsonify({"error": "entity_not_allowed"}), 403
