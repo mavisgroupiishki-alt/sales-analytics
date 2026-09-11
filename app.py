@@ -1932,7 +1932,9 @@ def jarvis_bitrix_proxy(method):
     if request.content_length is not None and request.content_length > 65_536:
         return jsonify({"error": "payload_too_large"}), 413
     payload = request.get_json(silent=True) or {}
-    if method == "entity.item.get" and str(payload.get("ENTITY") or "") not in _PAYMENT_LEDGER_ENTITIES:
+    entity = str(payload.get("ENTITY") or "")
+    if method == "entity.item.get" and entity not in _PAYMENT_LEDGER_ENTITIES:
+        app.logger.warning("Denied payment bridge entity: %s", entity[:80])
         return jsonify({"error": "entity_not_allowed"}), 403
     try:
         webhook = normalize_bitrix_webhook_url(os.environ.get("BITRIX_WEBHOOK_URL", ""))
