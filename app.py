@@ -1928,8 +1928,10 @@ def jarvis_bitrix_proxy(method):
     if not configured_secret or not hmac.compare_digest(supplied_secret, configured_secret):
         return jsonify({"error": "unauthorized"}), 401
     if method not in _JARVIS_BITRIX_METHODS:
+        app.logger.warning("Denied payment bridge method: %s", method[:80])
         return jsonify({"error": "method_not_allowed"}), 403
     if request.content_length is not None and request.content_length > 65_536:
+        app.logger.warning("Denied oversized payment bridge payload: method=%s", method[:80])
         return jsonify({"error": "payload_too_large"}), 413
     payload = request.get_json(silent=True) or {}
     entity = str(payload.get("ENTITY") or "")
