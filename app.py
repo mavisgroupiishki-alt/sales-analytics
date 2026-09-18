@@ -1183,6 +1183,7 @@ def auth_bar(user):
         <a href="/rop" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Отчёт РОПа</a>
         <a href="/compare" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Сравнение</a>
         <a href="/managers" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Менеджеры</a>
+        <a href="/daily-reports" style="color:rgba(255,255,255,.75);font-size:13px;padding:4px 2px;border-bottom:2px solid transparent;text-decoration:none;white-space:nowrap">Отчёты менеджеров</a>
         """
         admin_link = '<a href="/admin" style="color:#C9A961;text-decoration:none;font-weight:600;white-space:nowrap;border:1px solid #C9A961;padding:4px 10px;border-radius:4px">⚙️ Админ</a>'
     if user["role"] == "director":
@@ -1410,6 +1411,19 @@ def managers():
     calls = filter_calls(calls, analyses, {"period": period})
     from jarvis_dashboard import render_managers
     return html_response(render_managers(calls, analyses, user, period=period))
+
+
+@app.route("/daily-reports")
+@rop_required
+def daily_reports():
+    """Show actionable AI recommendations, grouped by manager and day."""
+    user = current_user()
+    calls, analyses = get_data(user)
+    period = requested_period()
+    from jarvis_rop import filter_calls
+    from jarvis_dashboard import render_daily_reports
+    calls = filter_calls(calls, analyses, {"period": period})
+    return html_response(render_daily_reports(calls, analyses, user, period=period))
 
 @app.route("/managers/<int:manager_id>")
 @app.route("/managers/<int:manager_id>.html")

@@ -4,7 +4,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from jarvis_dashboard import dashboard_model, render_call_detail, render_calls, render_dashboard, render_funnel  # noqa: E402
+from jarvis_dashboard import (  # noqa: E402
+    dashboard_model,
+    render_call_detail,
+    render_calls,
+    render_daily_reports,
+    render_dashboard,
+    render_funnel,
+)
 
 
 class DashboardModelTests(unittest.TestCase):
@@ -213,6 +220,33 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn('href="/?period=week"', overview)
         self.assertIn('aria-current="page">Неделя</a>', overview)
         self.assertIn('/calls?period=week', overview)
+
+    def test_daily_reports_group_actions_and_exclude_service_calls(self):
+        calls = [
+            {
+                "activity_id": "42",
+                "created": "2026-09-17T10:00:00+03:00",
+                "manager": {"id": 1286, "name": "Роман Авсеенко"},
+                "client": {"name": "Анастасия"},
+            },
+            {
+                "activity_id": "43",
+                "created": "2026-09-17T11:00:00+03:00",
+                "manager": {"id": 1286, "name": "Роман Авсеенко"},
+                "client": {"name": "Служебный клиент"},
+            },
+        ]
+        analyses = {
+            "42": {"analysis": {"overall_score": 4.0, "recommended_action": "Перезвонить и предложить СПК", "flags": {}}},
+            "43": {"analysis": {"service_call": True, "exclude_from_stats": True, "recommended_action": "Служебный текст", "flags": {}}},
+        }
+
+        html = render_daily_reports(calls, analyses, {"role": "rop", "name": "РОП"}, period="yesterday")
+
+        self.assertIn("Роман Авсеенко", html)
+        self.assertIn("Перезвонить и предложить СПК", html)
+        self.assertIn('href="/calls/42"', html)
+        self.assertNotIn("Служебный текст", html)
 
 
 if __name__ == "__main__":

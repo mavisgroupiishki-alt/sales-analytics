@@ -342,11 +342,12 @@ def render_dashboard(
     calls_href = _period_url("/calls", period)
     funnel_href = _period_url("/funnel", period)
     managers_href = _period_url("/managers", period)
+    daily_reports_href = _period_url("/daily-reports", period)
     rop_href = _period_url("/rop", period)
     privileged_nav = ""
     if user.get("role") in {"rop", "director"}:
         privileged_nav = (
-            f'<a href="{funnel_href}">Воронка</a><a href="{managers_href}">Команда</a>'
+            f'<a href="{funnel_href}">Воронка</a><a href="{managers_href}">Команда</a><a href="{daily_reports_href}">Отчёты менеджеров</a>'
             f'<a href="{rop_href}">Отчёт РОПа</a><a href="/scripts">Скрипты</a>'
         )
     funnel_links = "".join(
@@ -377,7 +378,7 @@ def render_dashboard(
 def _console_page(
     title: str, active: str, body: str, user: Dict[str, Any], *, period: str = "",
 ) -> str:
-    pages = (("", "Обзор"), ("calls", "Звонки"), ("funnel", "Воронка"), ("managers", "Команда"), ("rop", "Отчёт РОПа"), ("scripts", "Скрипты"))
+    pages = (("", "Обзор"), ("calls", "Звонки"), ("funnel", "Воронка"), ("managers", "Команда"), ("daily-reports", "Отчёты менеджеров"), ("rop", "Отчёт РОПа"), ("scripts", "Скрипты"))
     links = "".join(
         f'<a {"class=\"active\" " if key == active else ""}href="{_period_url(f"/{key}" if key else "/", period) if period and key != "scripts" else (f"/{key}" if key else "/")}">{label}</a>'
         for key, label in pages
@@ -419,6 +420,52 @@ def render_calls(
     note = description or "«Пустая запись» — Bitrix передал файл нулевой длительности; такой звонок нельзя прослушать или расшифровать. Пригодная запись без результата ожидает анализа. «Короткий звонок» не оценивается."
     content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section>{_period_switch(period, '/calls')}<section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
     return _console_page("Звонки", "calls", content, user, period=period)
+
+
+def daily_reports_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Group actionable, completed call reviews for the manager daily report."""
+    grouped: Dict[int, Dict[str, Any]] = {}
+    for call in calls:
+        analysis = _analysis_for(analyses, call)
+        if not analysis or analysis.get("exclude_from_stats") or analysis.get("service_call") or analysis.get("not_sales"):
+            continue
+        action = str(analysis.get("recommended_action") or analysis.get("recommendation") or "").strip()
+        if not action:
+            continue
+        manager = call.get("manager") or {}
+        manager_id = int(manager.get("id") or 0)
+        group = grouped.setdefault(manager_id, {"manager": manager, "items": []})
+        status, _, _ = triage_for(analysis)
+        group["items"].append({"call": call, "analysis": analysis, "action": action, "status": status})
+
+    reports = list(grouped.values())
+    for report in reports:
+        report["items"].sort(key=lambda item: str(item["call"].get("created") or ""), reverse=True)
+    reports.sort(key=lambda report: str((report["manager"] or {}).get("name") or ""))
+    return reports
+
+
+def render_daily_reports(
+    calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any], *, period: str = "today",
+) -> str:
+    reports = daily_reports_model(calls, analyses)
+    sections = ""
+    for report in reports:
+        manager = report["manager"] or {}
+        rows = ""
+        for item in report["items"]:
+            call = item["call"]
+            analysis = item["analysis"]
+            client = (call.get("client") or {}).get("name") or "Клиент не определён"
+            score = analysis.get("overall_score")
+            score_label = f"{score:g}/10" if isinstance(score, (int, float)) else "без оценки"
+            rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}">
+              <span class="jc-status {item['status']}">{_text(_status_label(item['status'], analysis))}</span>
+              <span><b>{_text(client)}</b><small>{_format_timestamp(str(call.get('created') or ''))} · {score_label}</small></span>
+              <span>{_text(item['action'])}</span><i>→</i></a>'''
+        sections += f'''<section class="jd-panel" style="margin-top:16px"><div class="jd-panel-head"><div><h2>{_text(manager.get('name') or 'Менеджер')}</h2><p>{len(report['items'])} рекомендаций по разобранным продажным звонкам</p></div>{_avatar(manager)}</div><div class="jc-table"><div class="jc-table-head" style="grid-template-columns:130px minmax(170px,.8fr) minmax(260px,1.5fr) 18px"><span>Статус</span><span>Звонок</span><span>Действие</span><span></span></div>{rows}</div></section>'''
+    content = f'''<section class="jc-heading"><p>Ежедневный отчёт</p><h1>Что сделать <span>по звонкам менеджеров.</span></h1><small>Только завершённые AI-разборы с рекомендацией. Служебные и не-продажные звонки не включаются. Нажмите на строку, чтобы открыть запись и расшифровку.</small></section>{_period_switch(period, '/daily-reports')}{sections or '<div class="jd-empty"><b>Нет готовых рекомендаций за выбранный период.</b><span>Звонки появятся здесь после завершения разбора.</span></div>'}'''
+    return _console_page("Отчёты менеджеров", "daily-reports", content, user, period=period)
 
 
 def render_managers(

@@ -48,6 +48,29 @@ class SalesScopeTests(unittest.TestCase):
         self.assertNotIn("Клиент Сегодня", html)
         self.assertIn('aria-current="page">Вчера</a>', html)
 
+    @patch.object(jarvis_app, "get_data")
+    def test_daily_reports_show_only_the_selected_period(self, get_data):
+        yesterday = date.today() - timedelta(days=1)
+        get_data.return_value = (
+            [
+                {
+                    "activity_id": "yesterday",
+                    "created": f"{yesterday.isoformat()}T10:00:00+03:00",
+                    "client": {"name": "Клиент Вчера"},
+                    "manager": {"id": 1286, "name": "Роман Авсеенко"},
+                },
+            ],
+            {"yesterday": {"analysis": {"overall_score": 5, "recommended_action": "Перезвонить клиенту", "flags": {}}}},
+        )
+
+        response = self.client.get("/daily-reports?period=yesterday")
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Отчёты менеджеров", html)
+        self.assertIn("Клиент Вчера", html)
+        self.assertIn("Перезвонить клиенту", html)
+
 
 if __name__ == "__main__":
     unittest.main()
