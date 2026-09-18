@@ -45,7 +45,7 @@ def normalize_bitrix_call(call: Dict[str, Any]) -> NormalizedCall:
 
     audio = call.get("audio") or {}
     explicit_audio_status = str(audio.get("status") or "").strip().lower()
-    known_unavailable = explicit_audio_status in {"empty", "unavailable", "error"} or audio.get("error") == "empty_recording"
+    known_unavailable = explicit_audio_status in {"empty", "unavailable", "error", "invalid"} or audio.get("error") in {"empty_recording", "non_audio_file"}
     recording_available = bool(audio.get("file_id") or audio.get("url")) and not known_unavailable
     # The database contract uses ``unavailable`` for every non-playable source.
     # Keep the more precise ``empty`` reason in the raw Bitrix payload while

@@ -1693,7 +1693,7 @@ def serve_audio(activity_id):
 
     audio_meta = call.get("audio") or {}
     audio_status = str(audio_meta.get("status") or "").strip().lower()
-    if audio_status in {"empty", "unavailable", "error"} or audio_meta.get("error") == "empty_recording":
+    if audio_status in {"empty", "unavailable", "error", "invalid"} or audio_meta.get("error") in {"empty_recording", "non_audio_file"}:
         abort(404)
     file_id = audio_meta.get("file_id")
     raw_webhook = os.environ.get("BITRIX_WEBHOOK_URL", "")

@@ -54,6 +54,54 @@ DEFAULT_AUDIO_DOWNLOAD_LIMIT = -1  # -1 = без лимита, 0 = не скач
 MIN_DURATION_SEC = 30  # звонки от 30 сек получают полный ИИ-анализ
 TRANSCRIBE_ONLY_MIN_SEC = 16  # звонки 16-29 сек: только аудио + транскрипт, без анализа
 HARD_FLOOR_SEC = 15  # звонки ≤ 15 сек не попадают в систему вообще
+TERMINAL_AUDIO_STATUSES = {"empty", "invalid"}
+
+
+class NonAudioFileError(RuntimeError):
+    """The file returned by Bitrix cannot be sent to speech-to-text."""
+
+
+def should_skip_audio_download(previous_call: Dict[str, Any], file_id: Any = None) -> bool:
+    """Do not retry a recording already proven to be empty or not audio.
+
+    A new file attached to the same CRM activity remains eligible: Bitrix can
+    replace a temporary placeholder with a real recording later.
+    """
+    audio = (previous_call or {}).get("audio") or {}
+    if str(audio.get("status") or "").strip().lower() not in TERMINAL_AUDIO_STATUSES:
+        return False
+    previous_file_id = audio.get("file_id")
+    return file_id is None or str(previous_file_id or "") == str(file_id or "")
+
+
+def _is_supported_audio_content_type(content_type: str) -> bool:
+    media_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    if not media_type:
+        return True
+    return (
+        media_type.startswith("audio/")
+        or media_type.startswith("video/")
+        or media_type in {"application/octet-stream", "application/ogg", "application/x-ogg"}
+    )
+
+
+def _has_audio_signature(payload: bytes) -> bool:
+    """Recognize common audio containers without trusting a filename or header."""
+    return (
+        payload.startswith((b"ID3", b"OggS", b"fLaC", b"#!AMR", b"\x1a\x45\xdf\xa3"))
+        or (len(payload) >= 4 and payload[0] == 0xFF and payload[1] & 0xE0 == 0xE0)
+        or (payload.startswith(b"RIFF") and payload[8:12] == b"WAVE")
+        or payload[4:8] == b"ftyp"
+    )
+
+
+def _validate_downloaded_audio(path: Path) -> None:
+    with path.open("rb") as file:
+        probe = file.read(64 * 1024)
+    if _has_audio_signature(probe):
+        return
+    path.unlink(missing_ok=True)
+    raise NonAudioFileError("Bitrix returned a non-audio file")
 
 # Имена менеджеров для фильтрации (приведём к lower при сравнении)
 ALLOWED_MANAGERS = [
@@ -245,6 +293,9 @@ def download_audio(
     if status_code < 200 or status_code >= 300:
         response.close()
         raise RuntimeError(f"Bitrix24 не отдал аудио: HTTP {status_code}")
+    if not _is_supported_audio_content_type(response.headers.get("Content-Type") or ""):
+        response.close()
+        raise NonAudioFileError("Bitrix returned a non-audio content type")
     try:
         declared_size = int(response.headers.get("Content-Length") or 0)
     except (TypeError, ValueError):
@@ -272,6 +323,7 @@ def download_audio(
         raise
     finally:
         response.close()
+    _validate_downloaded_audio(save_path)
     return save_path
 
 
@@ -695,6 +747,29 @@ def main():
     print(f"   ≥ {MIN_DURATION_SEC} сек (полный анализ): {len(long_enough)}")
     print(f"   {TRANSCRIBE_ONLY_MIN_SEC}-{MIN_DURATION_SEC-1} сек (только транскрипт): {len(transcribe_only)}")
 
+    # Keep terminal recording statuses across scheduled runs. The runtime
+    # directory is persistent, whereas audio_temp is intentionally cleared.
+    out_file = Path("calls_data.json")
+    existing = []
+    if out_file.exists():
+        try:
+            existing = json.loads(out_file.read_text(encoding="utf-8"))
+            print(f"\nСуществующих звонков в базе: {len(existing)}")
+        except Exception:
+            existing = []
+    existing_by_activity_id = {
+        str(call.get("activity_id") or ""): call
+        for call in existing
+        if str(call.get("activity_id") or "")
+    }
+    for call in results:
+        audio = call.get("audio") or {}
+        previous = existing_by_activity_id.get(str(call.get("activity_id") or ""), {})
+        if should_skip_audio_download(previous, audio.get("file_id")):
+            previous_audio = previous.get("audio") or {}
+            audio["status"] = previous_audio.get("status")
+            audio["error"] = previous_audio.get("error")
+
     # Скачивание аудио
     audio_limit = int(os.environ.get("DOWNLOAD_AUDIO_COUNT", DEFAULT_AUDIO_DOWNLOAD_LIMIT))
     print(f"\nDOWNLOAD_AUDIO_COUNT = {audio_limit}")
@@ -708,6 +783,7 @@ def main():
             r for r in results
             if r.get("audio") and r["audio"].get("file_id")
             and (r.get("duration_sec") is None or r["duration_sec"] >= TRANSCRIBE_ONLY_MIN_SEC)
+            and not should_skip_audio_download(r, r["audio"].get("file_id"))
         ]
         candidates.sort(key=lambda x: x.get("created", ""), reverse=True)
 
@@ -741,6 +817,10 @@ def main():
                 call["audio"]["size_bytes"] = size
                 downloaded += 1
                 print(f"   ✅ {path.name} ({size:,} б)")
+            except NonAudioFileError:
+                print("   ⚠ Неаудиофайл, исключён из повторных попыток")
+                call["audio"]["status"] = "invalid"
+                call["audio"]["error"] = "non_audio_file"
             except Exception as e:
                 print(f"   ❌ {e}")
                 call["audio"]["error"] = str(e)
@@ -750,17 +830,6 @@ def main():
     # Обогащаем данными о статусе сделки и делах
     print("\nПолучаем статусы сделок и дела...")
     results = enrich_with_deal_info(client, results)
-
-    out_file = Path("calls_data.json")
-
-    # Загружаем существующие звонки и мёрджим — не перезаписываем
-    existing = []
-    if out_file.exists():
-        try:
-            existing = json.loads(out_file.read_text(encoding="utf-8"))
-            print(f"\nСуществующих звонков в базе: {len(existing)}")
-        except Exception:
-            existing = []
 
     # Индекс по activity_id чтобы не дублировать
     existing_ids = {c["activity_id"] for c in existing}

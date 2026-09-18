@@ -60,7 +60,7 @@ def recording_is_unavailable(call: Dict[str, Any]) -> bool:
     """Return true when Bitrix supplied only an empty/non-playable recording."""
     audio = call.get("audio") or {}
     status = str(audio.get("status") or "").strip().lower()
-    return status in {"empty", "unavailable", "error"} or audio.get("error") == "empty_recording"
+    return status in {"empty", "unavailable", "error", "invalid"} or audio.get("error") in {"empty_recording", "non_audio_file"}
 
 
 def empty_recording_count_label(count: int) -> str:

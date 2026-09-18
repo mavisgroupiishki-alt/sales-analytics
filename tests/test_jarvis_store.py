@@ -71,6 +71,18 @@ class JarvisStoreTests(unittest.TestCase):
         self.assertFalse(normalized.recording_available)
         self.assertEqual(normalized.audio_status, "unavailable")
 
+    def test_rejected_non_audio_file_is_not_marked_available(self):
+        normalized = normalize_bitrix_call(
+            {
+                "activity_id": "1",
+                "created": "2026-09-18T10:00:00+03:00",
+                "audio": {"file_id": 42, "status": "invalid", "error": "non_audio_file"},
+            }
+        )
+
+        self.assertFalse(normalized.recording_available)
+        self.assertEqual(normalized.audio_status, "unavailable")
+
     def test_payload_hash_is_stable_for_equivalent_dicts(self):
         self.assertEqual(payload_sha256({"a": 1, "b": 2}), payload_sha256({"b": 2, "a": 1}))
 
