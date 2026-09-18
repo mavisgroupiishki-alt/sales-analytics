@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from html import escape
 from typing import Any, Dict, Iterable, List, Mapping
 from urllib.parse import urlencode
@@ -21,7 +21,7 @@ from jarvis_dashboard import (
 
 
 _AQUA_CSS = r'''
-:root{--ink:#115172;--nav:#15c8c3;--blue:#15c8c3;--paper:#fff;--canvas:#f5faf9;--line:#d8e8ea;--muted:#6d8791;--red:#d94d5c;--redbg:#fff1f3;--amber:#a97813;--amberbg:#fff8e8;--green:#12a986;--greenbg:#e6faf4}body{background:var(--canvas);color:var(--ink)}.jr-top{position:fixed;inset:0 auto 0 0;width:218px;height:100vh;padding:26px 20px;background:var(--nav);display:flex;flex-direction:column;align-items:stretch;gap:39px;z-index:30}.jr-brand{align-items:flex-start}.jr-brand>span{flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:#fff;color:#139c9b;font-size:16px}.jr-brand b{font-size:20px;letter-spacing:.01em}.jr-brand small{color:#ddffff;line-height:1.35;margin-top:5px}.jr-top nav{height:auto;display:grid;gap:3px}.jr-top nav a{height:auto;padding:10px 11px;border:0;border-radius:7px;color:#e0ffff;font-size:12px}.jr-top nav a:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:9px;opacity:.75}.jr-top nav a.active,.jr-top nav a:hover{border:0;background:rgba(255,255,255,.2);color:#fff}.jr-user{margin-top:auto;color:#e3ffff;line-height:1.8}.jr-user a{display:block;margin:0;color:#fff;border-bottom:1px solid rgba(255,255,255,.6);width:max-content}.jr-shell{max-width:1490px;margin-left:218px;padding:34px 36px 42px}.jr-hero{margin-bottom:22px}.jr-hero h1{font-size:35px;letter-spacing:-.035em}.jr-hero h1 span{color:#78a4ad}.jr-freshness b{color:#148b89}.jr-hero aside{border:0;border-radius:10px;background:#e6fbfa;box-shadow:0 7px 18px rgba(30,101,105,.1)}.jr-hero aside a,.jr-section-title>a{color:#0d9f9c}.jr-filters{border:0;border-radius:10px;box-shadow:0 7px 18px rgba(30,86,97,.1)}.jr-filters select{border-color:#cfe2e5;background:#fbfefe}.jr-filters button{background:var(--blue)}.jr-metrics{gap:15px;margin-bottom:36px}.jr-metrics a{border:0;border-radius:10px;box-shadow:0 7px 19px rgba(30,86,97,.11)}.jr-metrics a:hover{border:0;box-shadow:0 10px 25px rgba(22,130,132,.18)}.jr-section{margin-bottom:33px}.jr-section-title{margin-bottom:12px}.jr-section-title h2{font-size:19px;letter-spacing:-.025em}.jr-panel{border:0;border-radius:10px;box-shadow:0 7px 20px rgba(30,86,97,.1)}.jr-action:hover,.jr-review:hover,.jr-manager-row:hover{background:#f0fffe}.jr-alert{border-radius:50%}.jr-source-grid{gap:15px}.jr-source-card{border:0;border-top:3px solid #a9c9ce;border-radius:10px;box-shadow:0 7px 18px rgba(30,86,97,.1)}.jr-source-card.good{border-top-color:var(--blue)}.jr-source-card.warn{border-top-color:#e0ab33}.jr-note{border:0;border-radius:10px;background:#e6fbfa;color:#397783}.jr-note b{color:#13817f}@media(max-width:900px){.jr-top{position:static;width:100%;height:auto;padding:14px 18px;display:flex;flex-direction:row;align-items:center}.jr-top nav{display:none}.jr-user{margin:0 0 0 auto;font-size:0}.jr-user a{font-size:12px}.jr-shell{margin-left:0;padding:28px 16px}.jr-brand b{font-size:17px}.jr-brand small{display:none}}
+:root{--ink:#115172;--nav:#15c8c3;--blue:#15c8c3;--paper:#fff;--canvas:#f5faf9;--line:#d8e8ea;--muted:#6d8791;--red:#d94d5c;--redbg:#fff1f3;--amber:#a97813;--amberbg:#fff8e8;--green:#12a986;--greenbg:#e6faf4}body{background:var(--canvas);color:var(--ink)}.jr-top{position:fixed;inset:0 auto 0 0;width:218px;height:100vh;padding:26px 20px;background:var(--nav);display:flex;flex-direction:column;align-items:stretch;gap:39px;z-index:30}.jr-brand{align-items:flex-start}.jr-brand>span{flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:#fff;color:#139c9b;font-size:16px}.jr-brand b{font-size:20px;letter-spacing:.01em}.jr-brand small{color:#ddffff;line-height:1.35;margin-top:5px}.jr-top nav{height:auto;display:grid;gap:3px}.jr-top nav a{height:auto;padding:10px 11px;border:0;border-radius:7px;color:#e0ffff;font-size:12px}.jr-top nav a:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;margin-right:9px;opacity:.75}.jr-top nav a.active,.jr-top nav a:hover{border:0;background:rgba(255,255,255,.2);color:#fff}.jr-user{margin-top:auto;color:#e3ffff;line-height:1.8}.jr-user a{display:block;margin:0;color:#fff;border-bottom:1px solid rgba(255,255,255,.6);width:max-content}.jr-shell{max-width:1490px;margin-left:218px;padding:34px 36px 42px}.jr-hero{margin-bottom:22px}.jr-hero h1{font-size:35px;letter-spacing:-.035em}.jr-hero h1 span{color:#78a4ad}.jr-freshness b{color:#148b89}.jr-hero aside{border:0;border-radius:10px;background:#e6fbfa;box-shadow:0 7px 18px rgba(30,101,105,.1)}.jr-hero aside a,.jr-section-title>a{color:#0d9f9c}.jr-filters{grid-template-columns:1fr 1.05fr 1.2fr .9fr 1fr auto;border:0;border-radius:10px;box-shadow:0 7px 18px rgba(30,86,97,.1)}.jr-filters select{border-color:#cfe2e5;background:#fbfefe}.jr-filters button{background:var(--blue)}.jr-metrics{gap:15px;margin-bottom:36px}.jr-metrics a{border:0;border-radius:10px;box-shadow:0 7px 19px rgba(30,86,97,.11)}.jr-metrics a:hover{border:0;box-shadow:0 10px 25px rgba(22,130,132,.18)}.jr-section{margin-bottom:33px}.jr-section-title{margin-bottom:12px}.jr-section-title h2{font-size:19px;letter-spacing:-.025em}.jr-panel{border:0;border-radius:10px;box-shadow:0 7px 20px rgba(30,86,97,.1)}.jr-action:hover,.jr-review:hover,.jr-manager-row:hover{background:#f0fffe}.jr-alert{border-radius:50%}.jr-source-grid{gap:15px}.jr-source-card{border:0;border-top:3px solid #a9c9ce;border-radius:10px;box-shadow:0 7px 18px rgba(30,86,97,.1)}.jr-source-card.good{border-top-color:var(--blue)}.jr-source-card.warn{border-top-color:#e0ab33}.jr-note{border:0;border-radius:10px;background:#e6fbfa;color:#397783}.jr-note b{color:#13817f}@media(max-width:900px){.jr-top{position:static;width:100%;height:auto;padding:14px 18px;display:flex;flex-direction:row;align-items:center}.jr-top nav{display:none}.jr-user{margin:0 0 0 auto;font-size:0}.jr-user a{font-size:12px}.jr-shell{margin-left:0;padding:28px 16px}.jr-brand b{font-size:17px}.jr-brand small{display:none}}
 '''
 
 
@@ -44,19 +44,45 @@ def _query(**values: str) -> str:
     return urlencode({key: value for key, value in values.items() if value})
 
 
+QUICK_PERIODS = {"today", "yesterday", "week", "month"}
+
+
+def normalize_period(value: Any, default: str = "today") -> str:
+    period = str(value or "").strip().lower()
+    return period if period in QUICK_PERIODS else default
+
+
+def _in_quick_period(created: Any, period: str, today: date) -> bool:
+    try:
+        call_date = date.fromisoformat(_date(created))
+    except ValueError:
+        return False
+    if period == "today":
+        return call_date == today
+    if period == "yesterday":
+        return call_date == today - timedelta(days=1)
+    days = 6 if period == "week" else 29
+    return today - timedelta(days=days) <= call_date <= today
+
+
 def filter_calls(
-    calls: Iterable[Dict[str, Any]], analyses: Mapping[str, Any], filters: Mapping[str, str]
+    calls: Iterable[Dict[str, Any]], analyses: Mapping[str, Any], filters: Mapping[str, str],
+    *, today: date | None = None,
 ) -> List[Dict[str, Any]]:
     """Filter raw call rows only; no metric can escape the selected period."""
     result = list(calls)
-    date = filters.get("date", "")
+    exact_date = filters.get("date", "")
+    period = normalize_period(filters.get("period"), default="")
     manager_id = filters.get("manager", "")
     direction = filters.get("direction", "")
     status = filters.get("status", "")
     stage = filters.get("stage", "")
 
-    if date:
-        result = [call for call in result if _date(call.get("created")) == date]
+    if exact_date:
+        result = [call for call in result if _date(call.get("created")) == exact_date]
+    elif period:
+        current_date = today or date.today()
+        result = [call for call in result if _in_quick_period(call.get("created"), period, current_date)]
     if manager_id:
         result = [
             call for call in result
@@ -193,7 +219,9 @@ def render_rop_report(
         {_date(call.get("created")) for call in (available_calls or calls) if _date(call.get("created"))},
         reverse=True,
     )
-    active_date = filters.get("date") or (all_dates[0] if all_dates else "")
+    active_date = filters.get("date", "")
+    if not active_date and not filters.get("period"):
+        active_date = all_dates[0] if all_dates else ""
     available_managers = sorted(
         {(str((call.get("manager") or {}).get("id") or ""), str((call.get("manager") or {}).get("name") or "Менеджер")) for call in calls},
         key=lambda item: item[1],
@@ -201,13 +229,13 @@ def render_rop_report(
     selected_manager = filters.get("manager", "")
     selected_direction = filters.get("direction", "")
     selected_status = filters.get("status", "")
-    selected_title = active_date or "вся доступная выборка"
-
+    selected_period = normalize_period(filters.get("period"), default="")
+    period_labels = {"today": "Сегодня", "yesterday": "Вчера", "week": "Неделя", "month": "Месяц"}
     manager_options = '<option value="">Все менеджеры</option>' + "".join(
         f'<option value="{_text(manager_id)}" {"selected" if manager_id == selected_manager else ""}>{_text(name)}</option>'
         for manager_id, name in available_managers
     )
-    filter_base = {"date": active_date, "manager": selected_manager, "direction": selected_direction, "status": selected_status}
+    filter_base = {"date": active_date, "period": "" if active_date else selected_period, "manager": selected_manager, "direction": selected_direction, "status": selected_status}
     calls_href = "/calls?" + _query(**filter_base)
 
     actions = ""
@@ -258,12 +286,16 @@ def render_rop_report(
     date_options = '<option value="">Все даты</option>' + "".join(
         f'<option value="{_text(date)}" {"selected" if date == active_date else ""}>{_text(date)}</option>' for date in all_dates
     )
+    period_options = '<option value="">Точная дата</option>' + "".join(
+        f'<option value="{value}" {"selected" if value == selected_period and not active_date else ""}>{label}</option>'
+        for value, label in period_labels.items()
+    )
     return f'''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Джарвис — отчёт РОПа</title><style>{_CSS}{_AQUA_CSS}</style></head><body>
 <header class="jr-top"><a class="jr-brand" href="/"><span>J</span><b>ДЖАРВИС<small>ЦЕНТР УПРАВЛЕНИЯ ПРОДАЖАМИ</small></b></a><nav><a href="/">Обзор</a><a href="/calls">Звонки</a><a href="/funnel">Воронка</a><a href="/managers">Команда</a><a class="active" href="/rop">Отчёт РОПа</a></nav><div class="jr-user">РОП · {_text(user.get('name'))} <a href="/logout">Выйти</a></div></header>
 <main class="jr-shell"><section class="jr-hero"><div><h1>Решения, а не<br><span>шум в отчётах.</span></h1><div class="jr-freshness {freshness_class}"><i></i><b>Bitrix24: {freshness_label}</b><span>последняя запись {model['fresh_at']}</span></div></div>
 <aside><b>Что требует внимания</b><p>{'Сначала подтверждённые критичные случаи, затем звонки с оценкой 3 и ниже.' if model['critical'] or model['attention'] else 'Подтверждённых критичных случаев и низких оценок в выборке нет.'}</p><a href="#priority">Открыть очередь ↓</a></aside></section>
-<form class="jr-filters" method="get"><label>Период<select name="date">{date_options}</select></label><label>Менеджер<select name="manager">{manager_options}</select></label><label>Направление<select name="direction"><option value="">Все звонки</option><option value="incoming" {"selected" if selected_direction == 'incoming' else ''}>Входящие</option><option value="outgoing" {"selected" if selected_direction == 'outgoing' else ''}>Исходящие</option></select></label><label>Статус<select name="status"><option value="">Все статусы</option><option value="critical" {"selected" if selected_status == 'critical' else ''}>Критично</option><option value="low_score" {"selected" if selected_status == 'low_score' else ''}>Низкая оценка</option><option value="needs_review" {"selected" if selected_status == 'needs_review' else ''}>Нужна проверка</option><option value="normal" {"selected" if selected_status == 'normal' else ''}>Без риска</option><option value="audio_unavailable" {"selected" if selected_status == 'audio_unavailable' else ''}>Пустая запись</option><option value="pending" {"selected" if selected_status == 'pending' else ''}>Ожидает анализа</option></select></label><button>Применить</button></form>
+<form class="jr-filters" method="get"><label>Быстрый период<select name="period" onchange="if(this.value)this.form.date.value=''">{period_options}</select></label><label>Точная дата<select name="date" onchange="if(this.value)this.form.period.value=''">{date_options}</select></label><label>Менеджер<select name="manager">{manager_options}</select></label><label>Направление<select name="direction"><option value="">Все звонки</option><option value="incoming" {"selected" if selected_direction == 'incoming' else ''}>Входящие</option><option value="outgoing" {"selected" if selected_direction == 'outgoing' else ''}>Исходящие</option></select></label><label>Статус<select name="status"><option value="">Все статусы</option><option value="critical" {"selected" if selected_status == 'critical' else ''}>Критично</option><option value="low_score" {"selected" if selected_status == 'low_score' else ''}>Низкая оценка</option><option value="needs_review" {"selected" if selected_status == 'needs_review' else ''}>Нужна проверка</option><option value="normal" {"selected" if selected_status == 'normal' else ''}>Без риска</option><option value="audio_unavailable" {"selected" if selected_status == 'audio_unavailable' else ''}>Пустая запись</option><option value="pending" {"selected" if selected_status == 'pending' else ''}>Ожидает анализа</option></select></label><button>Применить</button></form>
 <section class="jr-metrics"><a href="{calls_href}"><small>Звонки</small><b>{model['calls']}</b><span>первичные записи</span></a><a href="{calls_href}"><small>Покрытие AI</small><b>{model['coverage']}%</b><span>{model['analyzed']} разобрано</span></a><a href="#priority"><small>Внимание РОПа</small><b>{len(model['critical']) + len(model['attention'])}</b><span>{len(model['critical'])} критичных · {len(model['attention'])} низких</span></a><a href="/calls?{_query(**{**filter_base, 'status': 'audio_unavailable'})}"><small>Без разбора</small><b>{model['unavailable_audio'] + model['pending_analysis']}</b><span>{empty_recording_count_label(model['unavailable_audio'])} · {pending_analysis_count_label(model['pending_analysis'])}</span></a></section>
 <section id="priority" class="jr-section"><div class="jr-section-title"><div><h2>Очередь внимания РОПа</h2></div><span>Критичный = правило и доказательство; низкая оценка = разбор с менеджером</span></div><div class="jr-panel">{actions}</div></section>
 <section class="jr-two"><section class="jr-section"><div class="jr-section-title"><div><h2>Где нужен разговор с менеджером</h2></div><a href="/managers">все профили →</a></div><div class="jr-panel jr-manager-head"><span></span><span>Менеджер</span><span>Качество</span><span>CRM-дисциплина</span><span>Сигнал</span></div><div class="jr-panel jr-manager-list">{manager_rows}</div></section>

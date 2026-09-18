@@ -1,5 +1,6 @@
 import sys
 import unittest
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -34,6 +35,36 @@ class RopModelTests(unittest.TestCase):
         model = rop_model(selected, self.analyses)
         self.assertEqual(model["calls"], 1)
         self.assertEqual(len(model["review"]), 0)
+
+    def test_quick_periods_cover_today_yesterday_week_and_month(self):
+        calls = [
+            {"activity_id": "today", "created": "2026-09-11T10:00:00+03:00"},
+            {"activity_id": "yesterday", "created": "2026-09-10T10:00:00+03:00"},
+            {"activity_id": "week", "created": "2026-09-05T10:00:00+03:00"},
+            {"activity_id": "month", "created": "2026-08-13T10:00:00+03:00"},
+            {"activity_id": "old", "created": "2026-08-12T10:00:00+03:00"},
+        ]
+        expected = {
+            "today": ["today"],
+            "yesterday": ["yesterday"],
+            "week": ["today", "yesterday", "week"],
+            "month": ["today", "yesterday", "week", "month"],
+        }
+
+        for period, activity_ids in expected.items():
+            with self.subTest(period=period):
+                selected = filter_calls(calls, {}, {"period": period}, today=date(2026, 9, 11))
+                self.assertEqual([call["activity_id"] for call in selected], activity_ids)
+
+    def test_exact_date_takes_precedence_over_quick_period(self):
+        selected = filter_calls(
+            self.calls,
+            self.analyses,
+            {"date": "2026-09-07", "period": "today"},
+            today=date(2026, 9, 11),
+        )
+
+        self.assertEqual([call["activity_id"] for call in selected], ["two"])
 
     def test_crm_and_next_activity_are_only_counted_when_present(self):
         model = rop_model(self.calls, self.analyses)

@@ -986,7 +986,7 @@ def rop_required(f):
 # ============================================================
 
 def load_calls():
-    return load_snapshot()[0]
+    return sales_manager_calls(load_snapshot()[0])
 
 def load_analyses():
     return load_snapshot()[1]
@@ -1011,6 +1011,19 @@ def load_snapshot():
     calls = json.loads(calls_path.read_text(encoding="utf-8")) if calls_path.exists() else []
     analyses = json.loads(analyses_path.read_text(encoding="utf-8")) if analyses_path.exists() else {}
     return calls, analyses
+
+
+def sales_manager_calls(calls):
+    """Keep Jarvis scoped to the two sales managers, including legacy rows."""
+    from bitrix import ALLOWED_MANAGER_IDS, ALLOWED_MANAGERS
+
+    allowed_ids = {str(manager_id) for manager_id in ALLOWED_MANAGER_IDS}
+    allowed_names = {name.strip().casefold() for name in ALLOWED_MANAGERS}
+    return [
+        call for call in calls
+        if str((call.get("manager") or {}).get("id") or "") in allowed_ids
+        or str((call.get("manager") or {}).get("name") or "").strip().casefold() in allowed_names
+    ]
 
 def load_corrections():
     p = DATA_DIR / "manual_corrections.json"
@@ -1039,6 +1052,7 @@ def apply_corrections(analyses, corrections):
 
 def get_data(user=None):
     calls, analyses = load_snapshot()
+    calls = sales_manager_calls(calls)
     corrections = load_corrections()
     analyses = apply_corrections(analyses, corrections)
     # Legacy records were marked critical by the model alone.  Re-classify every
@@ -1064,6 +1078,12 @@ def latest_call_date(calls):
     return max(dates) if dates else ""
 
 
+def requested_period(default="today"):
+    from jarvis_rop import normalize_period
+
+    return normalize_period(request.args.get("period"), default=default)
+
+
 def _require_operations_dashboard_token():
     expected = (os.environ.get("OPERATIONS_DASHBOARD_TOKEN") or "").strip()
     provided = (request.headers.get("Authorization") or "").strip()
@@ -1076,11 +1096,11 @@ def _require_operations_dashboard_token():
 
 def _operations_sales_calls_payload():
     from jarvis_dashboard import dashboard_model, triage_for
+    from jarvis_rop import filter_calls
 
     calls, analyses = get_data()
-    source_date = latest_call_date(calls)
-    if source_date:
-        calls = [call for call in calls if str(call.get("created") or "")[:10] == source_date]
+    source_date = datetime.now().date().isoformat()
+    calls = filter_calls(calls, analyses, {"period": "today"})
     model = dashboard_model(calls, analyses)
     rows = []
     for call in sorted(calls, key=lambda item: str(item.get("created") or ""), reverse=True)[:200]:
@@ -1329,11 +1349,11 @@ def dashboard_embed():
 def index():
     user = current_user()
     calls, analyses = get_data(user)
-    latest_date = latest_call_date(calls)
-    if latest_date:
-        calls = [call for call in calls if str(call.get("created") or "")[:10] == latest_date]
+    period = requested_period()
+    from jarvis_rop import filter_calls
+    calls = filter_calls(calls, analyses, {"period": period})
     from jarvis_dashboard import render_dashboard
-    return html_response(render_dashboard(calls, analyses, user))
+    return html_response(render_dashboard(calls, analyses, user, period=period))
 
 
 @app.route("/avatars/<path:filename>")
@@ -1348,9 +1368,12 @@ def all_calls():
     user = current_user()
     calls, analyses = get_data(user)
     from jarvis_rop import filter_calls
-    calls = filter_calls(calls, analyses, request.args)
+    filters = request.args.to_dict(flat=True)
+    if not filters.get("date"):
+        filters.setdefault("period", requested_period())
+    calls = filter_calls(calls, analyses, filters)
     from jarvis_dashboard import render_calls
-    return html_response(render_calls(calls, analyses, user))
+    return html_response(render_calls(calls, analyses, user, period=filters.get("period", "")))
 
 @app.route("/calls/<activity_id>")
 @app.route("/calls/<activity_id>.html")
@@ -1373,7 +1396,7 @@ def rop_report():
     from jarvis_rop import filter_calls, render_rop_report
     filters = request.args.to_dict(flat=True)
     if not filters.get("date"):
-        filters["date"] = latest_call_date(calls)
+        filters.setdefault("period", requested_period())
     filtered_calls = filter_calls(calls, analyses, filters)
     return html_response(render_rop_report(filtered_calls, analyses, user, filters, available_calls=calls))
 
@@ -1382,8 +1405,11 @@ def rop_report():
 def managers():
     user = current_user()
     calls, analyses = get_data(user)
+    period = requested_period()
+    from jarvis_rop import filter_calls
+    calls = filter_calls(calls, analyses, {"period": period})
     from jarvis_dashboard import render_managers
-    return html_response(render_managers(calls, analyses, user))
+    return html_response(render_managers(calls, analyses, user, period=period))
 
 @app.route("/managers/<int:manager_id>")
 @app.route("/managers/<int:manager_id>.html")
@@ -1393,6 +1419,9 @@ def manager_detail(manager_id):
     if user["role"] == "manager" and user["manager_id"] != manager_id:
         abort(403)
     calls, analyses = get_data(user)
+    period = requested_period()
+    from jarvis_rop import filter_calls
+    calls = filter_calls(calls, analyses, {"period": period})
     manager_calls = [call for call in calls if (call.get("manager") or {}).get("id") == manager_id]
     if not manager_calls:
         abort(404)
@@ -1401,6 +1430,7 @@ def manager_detail(manager_id):
     return html_response(render_calls(
         manager_calls, analyses, user, title=f"Звонки менеджера · {manager_name}",
         description="Здесь показаны только звонки выбранного менеджера. В рейтинг входят только завершённые разборы по текущей методике.",
+        period=period,
     ))
 
 @app.route("/scripts")
@@ -1421,6 +1451,9 @@ def scripts_catalog():
 def sales_funnel():
     user = current_user()
     calls, _ = get_data(user)
+    period = requested_period()
+    from jarvis_rop import filter_calls
+    calls = filter_calls(calls, {}, {"period": period})
     try:
         snapshot = load_operational_sales_snapshot()
         source_error = ""
@@ -1429,7 +1462,7 @@ def sales_funnel():
         snapshot = {}
         source_error = "Агрегаты продаж временно недоступны; стадии связанных звонков показаны из Bitrix24."
     from jarvis_dashboard import render_funnel
-    return html_response(render_funnel(snapshot, calls, user, source_error=source_error))
+    return html_response(render_funnel(snapshot, calls, user, source_error=source_error, period=period))
 
 @app.route("/api/funnel-details")
 @rop_required
@@ -1572,12 +1605,15 @@ def critical():
     calls, analyses = get_data(user)
     from jarvis_rop import filter_calls
     filters = request.args.to_dict(flat=True)
+    if not filters.get("date"):
+        filters.setdefault("period", requested_period())
     filters["status"] = "critical"
     calls = filter_calls(calls, analyses, filters)
     from jarvis_dashboard import render_calls
     return html_response(render_calls(
         calls, analyses, user, title="Срочно к РОПу",
         description="Здесь бывают только звонки с правилом, цитатой и проверяемым таймкодом. Низкий балл сам по себе сюда не попадает.",
+        period=filters.get("period", ""),
     ))
 
 @app.route("/triggers")

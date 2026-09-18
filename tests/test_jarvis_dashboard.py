@@ -194,7 +194,25 @@ class DashboardModelTests(unittest.TestCase):
 
         html = render_funnel({"sales": {}}, [call], {"name": "РОП"})
 
-        self.assertIn("/calls?stage=5.+%D0%9A%D0%9F+%D0%BE%D1%82%D0%BF%D1%80%D0%B0%D0%B2%D0%BB%D0%B5%D0%BD%D0%BE", html)
+        self.assertIn("/calls?period=today&stage=5.+%D0%9A%D0%9F+%D0%BE%D1%82%D0%BF%D1%80%D0%B0%D0%B2%D0%BB%D0%B5%D0%BD%D0%BE", html)
+
+    def test_period_switch_is_visible_and_preserved_in_links(self):
+        call = {
+            "activity_id": "42",
+            "created": "2026-09-11T10:00:00+03:00",
+            "manager": {"id": 1286, "name": "Роман Авсеенко"},
+            "crm": {"owner_type": "deal", "owner_id": "7", "stage_name": "5. КП отправлено"},
+        }
+
+        overview = render_dashboard([call], {}, {"role": "rop", "name": "РОП"}, period="week")
+        journal = render_calls([call], {}, {"role": "rop", "name": "РОП"}, period="week")
+
+        for label in ("Сегодня", "Вчера", "Неделя", "Месяц"):
+            self.assertIn(label, overview)
+            self.assertIn(label, journal)
+        self.assertIn('href="/?period=week"', overview)
+        self.assertIn('aria-current="page">Неделя</a>', overview)
+        self.assertIn('/calls?period=week', overview)
 
 
 if __name__ == "__main__":

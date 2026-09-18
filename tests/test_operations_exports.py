@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import time
 import unittest
+from datetime import date
 from unittest.mock import patch
 
 import app as jarvis_app
@@ -48,7 +49,7 @@ class OperationsExportsTests(unittest.TestCase):
     @patch.object(jarvis_app, "get_data")
     def test_sales_calls_export_returns_source_backed_summary(self, get_data):
         get_data.return_value = (
-            [{"activity_id": "42", "created": "2026-09-09T10:00:00+03:00", "duration_sec": 90, "direction": "outgoing", "manager": {"name": "Роман"}, "client": {"company": "Мавис"}, "crm": {"stage_name": "КП"}}],
+            [{"activity_id": "42", "created": f"{date.today().isoformat()}T10:00:00+03:00", "duration_sec": 90, "direction": "outgoing", "manager": {"name": "Роман"}, "client": {"company": "Мавис"}, "crm": {"stage_name": "КП"}}],
             {"42": {"analysis": {"overall_score": 8.5, "review_status": "normal", "flags": {}}}},
         )
 
