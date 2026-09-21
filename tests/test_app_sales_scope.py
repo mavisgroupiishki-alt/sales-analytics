@@ -71,6 +71,26 @@ class SalesScopeTests(unittest.TestCase):
         self.assertIn("Клиент Вчера", html)
         self.assertIn("Перезвонить клиенту", html)
 
+    @patch.object(jarvis_app, "get_data")
+    def test_calls_accept_a_custom_date_range(self, get_data):
+        get_data.return_value = (
+            [
+                {"activity_id": "first", "created": "2026-09-19T10:00:00+03:00", "client": {"name": "Первый"}, "manager": {"id": 1286, "name": "Роман Авсеенко"}},
+                {"activity_id": "second", "created": "2026-09-20T10:00:00+03:00", "client": {"name": "Второй"}, "manager": {"id": 1286, "name": "Роман Авсеенко"}},
+                {"activity_id": "third", "created": "2026-09-21T10:00:00+03:00", "client": {"name": "Третий"}, "manager": {"id": 1286, "name": "Роман Авсеенко"}},
+            ],
+            {},
+        )
+
+        response = self.client.get("/calls?date_from=2026-09-20&date_to=2026-09-21")
+        html = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Первый", html)
+        self.assertIn("Второй", html)
+        self.assertIn("Третий", html)
+        self.assertIn('name="date_from" value="2026-09-20"', html)
+
 
 if __name__ == "__main__":
     unittest.main()

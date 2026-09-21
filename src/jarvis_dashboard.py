@@ -12,7 +12,7 @@ from claude_analyzer import RUBRIC_CRITERIA, evaluate_triage, format_timecode
 
 _AQUA_CSS = r'''
 .jd-feed-status.audio_unavailable{background:#eef4f4;color:#617982}
-.jd-period{display:inline-flex;gap:3px;margin:-4px 0 18px;padding:4px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 5px 16px rgba(30,86,97,.08)}.jd-period a{padding:7px 12px;border-radius:7px;color:var(--muted);font-size:11px;font-weight:800;text-decoration:none}.jd-period a:hover{color:var(--ink);background:#effafa}.jd-period a[aria-current="page"]{color:#fff;background:#13aaa6}.jc-section-head .jd-period{flex:0 0 auto;margin:0;box-shadow:none}@media(max-width:700px){.jd-period{width:100%;overflow-x:auto}.jd-period a{flex:1;text-align:center;white-space:nowrap}.jc-section-head .jd-period{width:100%}}
+.jd-period{display:flex;align-items:center;flex-wrap:wrap;gap:3px;margin:-4px 0 18px;padding:4px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 5px 16px rgba(30,86,97,.08)}.jd-period a{padding:7px 12px;border-radius:7px;color:var(--muted);font-size:11px;font-weight:800;text-decoration:none}.jd-period a:hover{color:var(--ink);background:#effafa}.jd-period a[aria-current="page"]{color:#fff;background:#13aaa6}.jd-period form{display:flex;align-items:center;gap:6px;margin-left:auto;padding-left:7px;border-left:1px solid var(--line)}.jd-period label{color:var(--muted);font-size:10px;font-weight:800;white-space:nowrap}.jd-period input{width:132px;padding:6px 7px;border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit;font-size:11px}.jd-period button{padding:7px 10px;border:0;border-radius:7px;background:#13aaa6;color:#fff;cursor:pointer;font:inherit;font-size:11px;font-weight:800}.jc-section-head .jd-period{flex:0 0 auto;margin:0;box-shadow:none}@media(max-width:700px){.jd-period{width:100%;overflow-x:auto}.jd-period a{flex:1;text-align:center;white-space:nowrap}.jd-period form{width:100%;margin:4px 0 0;padding:8px 0 0;border-top:1px solid var(--line);border-left:0}.jd-period input{min-width:0;flex:1}.jc-section-head .jd-period{width:100%}}
 .jd-heading p,.jd-metrics span,.jd-panel-head p,.jd-panel-head>span,.jd-action small,.jd-review small,.jd-feed small,.jd-manager small,.jd-review-reason,.jd-call-type,.jd-empty{color:var(--muted)}.jd-source i{background:var(--amber)}.jd-source.ok i{background:var(--green)}.jd-source b{color:var(--green)}.jd-source.warning b{color:var(--amber)}.jd-metric-critical b{color:var(--red)}.jd-metric-review b{color:var(--amber)}.jd-action em{color:#9c525b}.jd-action-attention .jd-action-marker{background:var(--amber)}.jd-action-attention em{color:var(--amber)}.jd-arrow,.jd-panel-head a{color:#109d9a}.jd-empty b{color:var(--ink)}.jd-avatar{background:#dff7f5;color:#187e82}.jd-status.critical,.jd-feed-status.critical{background:var(--red-soft);color:var(--red)}.jd-status.review,.jd-status.attention,.jd-feed-status.needs_review,.jd-feed-status.low_score,.jd-review-score{background:var(--amber-soft);color:var(--amber)}.jd-status.normal,.jd-feed-status.normal{background:var(--green-soft);color:var(--green)}.jd-dot{background:#a7b6bd}.jd-dot.critical{background:var(--red)}.jd-dot.needs_review,.jd-dot.low_score{background:#e5a735}.jd-feed-status.pending{background:#eef4f4;color:#617982}.jd-funnel{grid-column:span 2}.jd-funnel-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line)}.jd-funnel-list>div,.jd-funnel-list>a{padding:16px 18px;background:#fff;color:inherit;text-decoration:none}.jd-funnel-list>a:hover{background:#f0fbfa}.jd-funnel-list b{display:block;font-size:13px}.jd-funnel-list span{display:block;margin-top:5px;color:var(--muted);font-size:11px}@media(max-width:900px){.jd-funnel{grid-column:auto}}
 '''
 
@@ -30,16 +30,21 @@ _PERIOD_LABELS = (
 
 
 def _period_url(path: str, period: str, **params: Any) -> str:
-    query = {"period": period, **params}
+    query = {"period": period, **params} if period else params
     return f"{path}?{urlencode({key: value for key, value in query.items() if value})}"
 
 
-def _period_switch(period: str, path: str) -> str:
+def _period_switch(period: str, path: str, *, date_from: str = "", date_to: str = "") -> str:
     links = []
     for value, label in _PERIOD_LABELS:
         current = ' aria-current="page"' if value == period else ""
         links.append(f'<a href="{_period_url(path, value)}"{current}>{label}</a>')
-    return '<div class="jd-period" role="group" aria-label="Период звонков">' + "".join(links) + "</div>"
+    return f'''<div class="jd-period" role="group" aria-label="Период звонков">{"".join(links)}
+<form action="{_text(path)}" method="get" aria-label="Выбор диапазона звонков"><label for="jarvisDateFrom">Период</label><input id="jarvisDateFrom" type="date" name="date_from" value="{_text(date_from)}" aria-label="Дата начала"><span>—</span><input type="date" name="date_to" value="{_text(date_to)}" aria-label="Дата окончания"><button type="submit">Показать</button></form></div>'''
+
+
+def _call_url(activity_id: Any, period: str, *, date_from: str = "", date_to: str = "") -> str:
+    return _period_url(f"/calls/{_text(activity_id)}", period, date_from=date_from, date_to=date_to)
 
 
 _STAGE_FALLBACKS = {
@@ -269,7 +274,7 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
 
 def render_dashboard(
     calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any],
-    *, period: str = "today",
+    *, period: str = "today", date_from: str = "", date_to: str = "",
 ) -> str:
     model = dashboard_model(calls, analyses)
     fresh_at, fresh_state = model["freshness"]
@@ -284,7 +289,7 @@ def render_dashboard(
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         evidence = ((analysis.get("flags") or {}).get("critical_evidence") or {})
         quote = evidence.get("quote") or item["reason"]
-        alerts += f'''<a class="jd-action jd-action-critical" href="/calls/{_text(call.get("activity_id"))}">
+        alerts += f'''<a class="jd-action jd-action-critical" href="{_call_url(call.get("activity_id"), period, date_from=date_from, date_to=date_to)}">
           <span class="jd-action-marker">!</span><span><b>{_text(client)}</b><small>{_text(item["reason"])} · {_text(evidence.get("time") or "без таймкода")}</small>
           <em>«{_text(str(quote)[:120])}»</em></span><span class="jd-arrow">→</span></a>'''
     for item in model["attention"][: max(0, 4 - len(model["critical"]))]:
@@ -292,7 +297,7 @@ def render_dashboard(
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         score = analysis.get("overall_score")
         explanation = analysis.get("score_explanation") or analysis.get("recommendation") or item["reason"]
-        alerts += f'''<a class="jd-action jd-action-attention" href="/calls/{_text(call.get("activity_id"))}">
+        alerts += f'''<a class="jd-action jd-action-attention" href="{_call_url(call.get("activity_id"), period, date_from=date_from, date_to=date_to)}">
           <span class="jd-action-marker">↓</span><span><b>{_text(client)}</b><small>Низкая оценка: {_text(score)}/10</small>
           <em>{_text(str(explanation)[:120])}</em></span><span class="jd-arrow">→</span></a>'''
     if not alerts:
@@ -304,7 +309,7 @@ def render_dashboard(
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or "Менеджер не определён"
         score = analysis.get("overall_score")
-        reviews += f'''<a class="jd-review" href="/calls/{_text(call.get("activity_id"))}">
+        reviews += f'''<a class="jd-review" href="{_call_url(call.get("activity_id"), period, date_from=date_from, date_to=date_to)}">
           <span class="jd-review-score">{_text(score if score is not None else "—")}</span>
           <span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get("created") or ""))}</small></span>
           <span class="jd-review-reason">{_text(item["reason"])}</span></a>'''
@@ -317,7 +322,7 @@ def render_dashboard(
         average = f'{item["average"]:.1f}' if item["average"] is not None else "—"
         signal = "Критично" if item["critical"] else ("Разобрать" if item["attention"] else ("Проверить" if item["review"] else "В норме"))
         signal_class = "critical" if item["critical"] else ("attention" if item["attention"] else ("review" if item["review"] else "normal"))
-        managers += f'''<a class="jd-manager" href="{_period_url(f'/managers/{_text(manager.get("id"))}', period)}">
+        managers += f'''<a class="jd-manager" href="{_period_url(f'/managers/{_text(manager.get("id"))}', period, date_from=date_from, date_to=date_to)}">
           {_avatar(manager)}<span class="jd-manager-name"><b>{_text(manager.get("name") or "Менеджер")}</b><small>{item["analyzed"]} разборов · {item["calls"]} звонков</small></span>
           <span class="jd-score">{average}</span><span class="jd-status {signal_class}">{signal}</span></a>'''
     if not managers:
@@ -331,19 +336,19 @@ def render_dashboard(
         manager = (call.get("manager") or {}).get("name") or ""
         score = analysis.get("overall_score") if analysis else None
         status_label = _status_label(status, analysis)
-        feed += f'''<a class="jd-feed" href="/calls/{_text(call.get("activity_id"))}">
+        feed += f'''<a class="jd-feed" href="{_call_url(call.get("activity_id"), period, date_from=date_from, date_to=date_to)}">
           <span class="jd-dot {status}"></span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get("created") or ""))}</small></span>
           <span class="jd-call-type">{_text((analysis.get("call_type") or {}).get("label") or ("Запись 0 секунд" if recording_is_unavailable(call) else "Тип не подтверждён"))}</span>
           <span class="jd-feed-status {status}">{status_label}</span><span class="jd-feed-score">{_text(score if score is not None else "—")}</span></a>'''
     if not feed:
         feed = '<div class="jd-empty"><b>Звонков пока нет.</b></div>'
 
-    overview_href = _period_url("/", period)
-    calls_href = _period_url("/calls", period)
-    funnel_href = _period_url("/funnel", period)
-    managers_href = _period_url("/managers", period)
-    daily_reports_href = _period_url("/daily-reports", period)
-    rop_href = _period_url("/rop", period)
+    overview_href = _period_url("/", period, date_from=date_from, date_to=date_to)
+    calls_href = _period_url("/calls", period, date_from=date_from, date_to=date_to)
+    funnel_href = _period_url("/funnel", period, date_from=date_from, date_to=date_to)
+    managers_href = _period_url("/managers", period, date_from=date_from, date_to=date_to)
+    daily_reports_href = _period_url("/daily-reports", period, date_from=date_from, date_to=date_to)
+    rop_href = _period_url("/rop", period, date_from=date_from, date_to=date_to)
     privileged_nav = ""
     if user.get("role") in {"rop", "director"}:
         privileged_nav = (
@@ -351,7 +356,7 @@ def render_dashboard(
             f'<a href="{rop_href}">Отчёт РОПа</a><a href="/scripts">Скрипты</a>'
         )
     funnel_links = "".join(
-        f'<a href="{_period_url("/calls", period, stage=item["name"] or "Стадия не определена")}">'
+        f'<a href="{_period_url("/calls", period, date_from=date_from, date_to=date_to, stage=item["name"] or "Стадия не определена")}">'
         f'<b>{_text(item["name"] or "Стадия не определена")}</b>'
         f'<span>{item["deals"]} сделок · {item["calls"]} звонков</span></a>'
         for item in model["funnel"]
@@ -365,7 +370,7 @@ def render_dashboard(
 <nav><a class="active" href="{overview_href}">Обзор</a><a href="{calls_href}">Звонки</a>{privileged_nav}</nav>
 <div class="jd-user"><span>{_text(role)} · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header>
 <main class="jd-shell"><section class="jd-heading"><div><p>{today}</p><h1>Картина продаж <span>на сейчас</span></h1></div><div class="jd-source {source_class}"><i></i><span>Bitrix24</span><b>{source_text}</b><small>последняя запись: {fresh_at}</small></div></section>
-{_period_switch(period, '/')}
+{_period_switch(period, '/', date_from=date_from, date_to=date_to)}
 <section class="jd-metrics"><div><small>Звонки в выборке</small><b>{model['calls']}</b><span>{model['incoming']} входящих · {model['outgoing']} исходящих</span></div><div><small>Разобрано AI</small><b>{model['analyzed']}</b><span>{round(model['analyzed'] / model['calls'] * 100) if model['calls'] else 0}% от выборки</span></div><div class="jd-metric-critical"><small>Внимание РОПа</small><b>{len(model['critical']) + len(model['attention'])}</b><span>{len(model['critical'])} критичных · {len(model['attention'])} с баллом ≤3</span></div><div class="jd-metric-review"><small>Без разбора</small><b>{model['unavailable_audio'] + model['pending_analysis']}</b><span>{empty_recording_count_label(model['unavailable_audio'])} · {pending_analysis_count_label(model['pending_analysis'])}; нет пригодной записи или анализ ещё идёт</span></div></section>
 <section class="jd-grid"><section class="jd-panel jd-actions"><div class="jd-panel-head"><div><h2>Действия РОПа</h2><p>Подтверждённые критичные сигналы и оценки 3 или ниже</p></div><a href="{calls_href}">Все звонки →</a></div>{alerts}</section>
 <section class="jd-panel jd-team"><div class="jd-panel-head"><div><h2>Команда</h2><p>Кого открыть первым</p></div><a href="{managers_href}">Все менеджеры →</a></div><div class="jd-manager-list">{managers}</div></section>
@@ -376,14 +381,14 @@ def render_dashboard(
 
 
 def _console_page(
-    title: str, active: str, body: str, user: Dict[str, Any], *, period: str = "",
+    title: str, active: str, body: str, user: Dict[str, Any], *, period: str = "", date_from: str = "", date_to: str = "",
 ) -> str:
     pages = (("", "Обзор"), ("calls", "Звонки"), ("funnel", "Воронка"), ("managers", "Команда"), ("daily-reports", "Отчёты менеджеров"), ("rop", "Отчёт РОПа"), ("scripts", "Скрипты"))
     links = "".join(
-        f'<a {"class=\"active\" " if key == active else ""}href="{_period_url(f"/{key}" if key else "/", period) if period and key != "scripts" else (f"/{key}" if key else "/")}">{label}</a>'
+        f'<a {"class=\"active\" " if key == active else ""}href="{_period_url(f"/{key}" if key else "/", period, date_from=date_from, date_to=date_to) if key != "scripts" else "/scripts"}">{label}</a>'
         for key, label in pages
     )
-    home_href = _period_url("/", period) if period else "/"
+    home_href = _period_url("/", period, date_from=date_from, date_to=date_to)
     return f'''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Джарвис — {_text(title)}</title><style>{_CSS}{_AQUA_CSS}{_CONSOLE_CSS}{_CALL_DETAIL_CSS}{_INTERACTION_CSS}</style></head><body><header class="jd-top"><a class="jd-brand" href="{home_href}"><span class="jd-mark">J</span><span><strong>ДЖАРВИС</strong><small>ЦЕНТР УПРАВЛЕНИЯ ПРОДАЖАМИ</small></span></a><nav>{links}</nav><div class="jd-user"><span>РОП · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header><main class="jd-shell jc-shell">{body}</main></body></html>'''
 
 
@@ -404,7 +409,7 @@ def _status_label(status: str, analysis: Dict[str, Any] | None = None) -> str:
 
 def render_calls(
     calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any],
-    *, title: str = "Журнал звонков", description: str | None = None, period: str = "today",
+    *, title: str = "Журнал звонков", description: str | None = None, period: str = "today", date_from: str = "", date_to: str = "",
 ) -> str:
     rows = ""
     for call in sorted(calls, key=lambda item: str(item.get("created") or ""), reverse=True):
@@ -416,10 +421,10 @@ def render_calls(
         score = analysis.get("overall_score") if analysis else None
         score = score if score is not None else "—"
         call_type = (analysis.get("call_type") or {}).get("label") or ("Запись 0 секунд" if recording_is_unavailable(call) else "Тип не подтверждён")
-        rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text(call_type)}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
+        rows += f'''<a class="jc-row" href="{_call_url(call.get('activity_id'), period, date_from=date_from, date_to=date_to)}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text(call_type)}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
     note = description or "«Пустая запись» — Bitrix передал файл нулевой длительности; такой звонок нельзя прослушать или расшифровать. Пригодная запись без результата ожидает анализа. «Короткий звонок» не оценивается."
-    content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section>{_period_switch(period, '/calls')}<section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
-    return _console_page("Звонки", "calls", content, user, period=period)
+    content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section>{_period_switch(period, '/calls', date_from=date_from, date_to=date_to)}<section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
+    return _console_page("Звонки", "calls", content, user, period=period, date_from=date_from, date_to=date_to)
 
 
 def daily_reports_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -446,7 +451,7 @@ def daily_reports_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -
 
 
 def render_daily_reports(
-    calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any], *, period: str = "today",
+    calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any], *, period: str = "today", date_from: str = "", date_to: str = "",
 ) -> str:
     reports = daily_reports_model(calls, analyses)
     sections = ""
@@ -459,18 +464,18 @@ def render_daily_reports(
             client = (call.get("client") or {}).get("name") or "Клиент не определён"
             score = analysis.get("overall_score")
             score_label = f"{score:g}/10" if isinstance(score, (int, float)) else "без оценки"
-            rows += f'''<a class="jc-row" href="/calls/{_text(call.get('activity_id'))}">
+            rows += f'''<a class="jc-row" href="{_call_url(call.get('activity_id'), period, date_from=date_from, date_to=date_to)}">
               <span class="jc-status {item['status']}">{_text(_status_label(item['status'], analysis))}</span>
               <span><b>{_text(client)}</b><small>{_format_timestamp(str(call.get('created') or ''))} · {score_label}</small></span>
               <span>{_text(item['action'])}</span><i>→</i></a>'''
         sections += f'''<section class="jd-panel" style="margin-top:16px"><div class="jd-panel-head"><div><h2>{_text(manager.get('name') or 'Менеджер')}</h2><p>{len(report['items'])} рекомендаций по разобранным продажным звонкам</p></div>{_avatar(manager)}</div><div class="jc-table"><div class="jc-table-head" style="grid-template-columns:130px minmax(170px,.8fr) minmax(260px,1.5fr) 18px"><span>Статус</span><span>Звонок</span><span>Действие</span><span></span></div>{rows}</div></section>'''
-    content = f'''<section class="jc-heading"><p>Ежедневный отчёт</p><h1>Что сделать <span>по звонкам менеджеров.</span></h1><small>Только завершённые AI-разборы с рекомендацией. Служебные и не-продажные звонки не включаются. Нажмите на строку, чтобы открыть запись и расшифровку.</small></section>{_period_switch(period, '/daily-reports')}{sections or '<div class="jd-empty"><b>Нет готовых рекомендаций за выбранный период.</b><span>Звонки появятся здесь после завершения разбора.</span></div>'}'''
-    return _console_page("Отчёты менеджеров", "daily-reports", content, user, period=period)
+    content = f'''<section class="jc-heading"><p>Ежедневный отчёт</p><h1>Что сделать <span>по звонкам менеджеров.</span></h1><small>Только завершённые AI-разборы с рекомендацией. Служебные и не-продажные звонки не включаются. Нажмите на строку, чтобы открыть запись и расшифровку.</small></section>{_period_switch(period, '/daily-reports', date_from=date_from, date_to=date_to)}{sections or '<div class="jd-empty"><b>Нет готовых рекомендаций за выбранный период.</b><span>Звонки появятся здесь после завершения разбора.</span></div>'}'''
+    return _console_page("Отчёты менеджеров", "daily-reports", content, user, period=period, date_from=date_from, date_to=date_to)
 
 
 def render_managers(
     calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any],
-    *, period: str = "today",
+    *, period: str = "today", date_from: str = "", date_to: str = "",
 ) -> str:
     model = dashboard_model(calls, analyses)
     rows = ""
@@ -478,10 +483,10 @@ def render_managers(
         manager = item["manager"]
         score = f"{item['average']:.1f}" if item["average"] is not None else "—"
         signal = "Срочно" if item["critical"] else ("Разобрать" if item["attention"] else ("Проверить" if item["review"] else ("Требует обновления" if item["reanalysis"] else "В норме")))
-        manager_href = _period_url(f"/managers/{_text(manager.get('id'))}", period)
+        manager_href = _period_url(f"/managers/{_text(manager.get('id'))}", period, date_from=date_from, date_to=date_to)
         rows += f'''<a class="jc-manager-row" href="{manager_href}">{_avatar(manager)}<span><b>{_text(manager.get('name') or 'Менеджер')}</b><small>{item['calls']} звонков · AI-покрытие {round(item['analyzed'] / item['calls'] * 100) if item['calls'] else 0}%</small></span><strong>{score}</strong><span>{item['critical']} срочно · {item['attention']} низких · {item['review']} проверить</span><em>{_text(signal)}</em><i>→</i></a>'''
-    content = f'''<section class="jc-heading"><p>Команда</p><h1>Качество — <span>без ложных рейтингов.</span></h1><small>Средний балл строится только по завершённым разборам и применимым критериям текущей методики.</small></section>{_period_switch(period, '/managers')}<section class="jc-table jc-managers"><div class="jc-table-head"><span></span><span>Менеджер</span><span>Балл</span><span>Сигналы</span><span>Статус</span><span></span></div>{rows or '<div class="jd-empty"><b>Нет менеджеров в выборке.</b></div>'}</section>'''
-    return _console_page("Команда", "managers", content, user, period=period)
+    content = f'''<section class="jc-heading"><p>Команда</p><h1>Качество — <span>без ложных рейтингов.</span></h1><small>Средний балл строится только по завершённым разборам и применимым критериям текущей методики.</small></section>{_period_switch(period, '/managers', date_from=date_from, date_to=date_to)}<section class="jc-table jc-managers"><div class="jc-table-head"><span></span><span>Менеджер</span><span>Балл</span><span>Сигналы</span><span>Статус</span><span></span></div>{rows or '<div class="jd-empty"><b>Нет менеджеров в выборке.</b></div>'}</section>'''
+    return _console_page("Команда", "managers", content, user, period=period, date_from=date_from, date_to=date_to)
 
 
 def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[str, Any]) -> str:
@@ -632,7 +637,7 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
 
 def render_funnel(
     snapshot: Dict[str, Any], calls: List[Dict[str, Any]], user: Dict[str, Any],
-    *, source_error: str = "", period: str = "today",
+    *, source_error: str = "", period: str = "today", date_from: str = "", date_to: str = "",
 ) -> str:
     """Render the ROP funnel from the existing operational sales aggregate."""
     sales = snapshot.get("sales") or {}
@@ -683,7 +688,7 @@ def render_funnel(
         entry["calls"] += 1
     period_caption = {"today": "сегодня", "yesterday": "вчера", "week": "за 7 дней", "month": "за 30 дней"}.get(period, "за период")
     linked_rows = "".join(
-        f'<a href="{_period_url("/calls", period, stage=name)}"><b>{_text(name)}</b><span>{len(item["deals"])} сделок · {item["calls"]} звонков {period_caption}</span></a>'
+        f'<a href="{_period_url("/calls", period, date_from=date_from, date_to=date_to, stage=name)}"><b>{_text(name)}</b><span>{len(item["deals"])} сделок · {item["calls"]} звонков {period_caption}</span></a>'
         for name, item in sorted(linked.items(), key=lambda pair: (-len(pair[1]["deals"]), pair[0]))
     )
     if not linked_rows:
@@ -692,7 +697,7 @@ def render_funnel(
     error = f'<div class="jf-warning">{_text(source_error)}</div>' if source_error else ""
     updated = _text(str(snapshot.get("generated_at") or snapshot.get("updated_at") or "текущий снимок"))
     content = f'''<section class="jc-heading"><p>Воронка продаж</p><h1>Что происходит <span>со сделками сейчас.</span></h1><small>Ключевые цифры отдела продаж за текущий месяц и распределение активных сделок по стадиям Bitrix24. Обновлено: {updated}.</small></section>{error}<section class="jf-metrics">{metric_cards}</section><section id="funnelStages" class="jc-panel-section jf-pipeline"><div class="jc-section-head"><div><h2>Активные сделки по стадиям</h2><p>Нажмите на стадию: откроются конкретные сделки, компании, ответственные и суммы.</p></div></div>{stage_rows or '<div class="jc-section-empty">Стадии временно недоступны.</div>'}</section><section class="jc-panel-section"><div class="jc-section-head"><div><h2>Связь со звонками · {period_caption}</h2><p>На каких стадиях находятся сделки клиентов из выбранной выборки звонков.</p></div>{_period_switch(period, '/funnel')}</div><div class="jd-funnel-list">{linked_rows}</div></section><dialog id="funnelDialog" class="jf-dialog"><section><header><div><span>РАСШИФРОВКА</span><h2 id="funnelDialogTitle">Сделки</h2><small id="funnelDialogCount"></small></div><button type="button" data-close-dialog="1" aria-label="Закрыть">×</button></header><input id="funnelSearch" type="search" placeholder="Поиск по компании, менеджеру или источнику" aria-label="Поиск по сделкам"><div id="funnelDialogBody"></div></section></dialog><script>var funnelRows=[];function escF(v){{return String(v??'').replace(/[&<>\"']/g,function(c){{return {{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[c]}})}}function renderFunnelRows(){{var q=(document.getElementById('funnelSearch').value||'').trim().toLowerCase();var rows=funnelRows.filter(function(r){{return !q||JSON.stringify(r).toLowerCase().includes(q)}});document.getElementById('funnelDialogCount').textContent=rows.length+' из '+funnelRows.length+' записей';document.getElementById('funnelDialogBody').innerHTML=rows.map(function(r){{var meta=[r.stage,r.manager,r.source,r.client_type].filter(Boolean).map(function(x){{return '<span>'+escF(x)+'</span>'}}).join('');var amount=new Intl.NumberFormat('ru-RU',{{maximumFractionDigits:0}}).format(Number(r.amount||0));var title=escF(r.title||r.deal_title||('Сделка '+(r.id||'')));return '<article class="jf-deal"><div><b>'+(r.url?'<a href="'+escF(r.url)+'" target="_blank" rel="noopener noreferrer">'+title+'</a>':title)+'</b><p>'+meta+'</p></div><strong>'+amount+' BYN</strong></article>'}}).join('')||'<div class="jc-section-empty">Ничего не найдено.</div>'}}document.querySelectorAll('[data-funnel-detail]').forEach(function(button){{button.addEventListener('click',async function(){{var dialog=document.getElementById('funnelDialog');document.getElementById('funnelDialogTitle').textContent=button.dataset.title||'Расшифровка';document.getElementById('funnelDialogBody').innerHTML='<div class="jc-section-empty">Загружаю сделки…</div>';dialog.showModal();var params=new URLSearchParams({{metric:button.dataset.metric||'deals'}});if(button.dataset.stage)params.set('stage',button.dataset.stage);try{{var response=await fetch('/api/funnel-details?'+params.toString());if(!response.ok)throw new Error();var payload=await response.json();funnelRows=payload.rows||[];renderFunnelRows()}}catch(error){{document.getElementById('funnelDialogBody').innerHTML='<div class="jc-section-empty">Детализация временно не загрузилась.</div>'}}}})}});document.querySelector('[data-scroll-stages]')?.addEventListener('click',function(){{document.getElementById('funnelStages').scrollIntoView({{behavior:'smooth'}})}});document.querySelector('[data-close-dialog]')?.addEventListener('click',function(){{document.getElementById('funnelDialog').close()}});document.getElementById('funnelSearch')?.addEventListener('input',renderFunnelRows);</script>'''
-    return _console_page("Воронка", "funnel", content, user, period=period)
+    return _console_page("Воронка", "funnel", content, user, period=period, date_from=date_from, date_to=date_to)
 
 
 def render_scripts(scripts: Dict[str, Any], user: Dict[str, Any]) -> str:

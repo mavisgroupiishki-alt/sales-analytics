@@ -245,7 +245,7 @@ class DashboardModelTests(unittest.TestCase):
 
         self.assertIn("Роман Авсеенко", html)
         self.assertIn("Перезвонить и предложить СПК", html)
-        self.assertIn('href="/calls/42"', html)
+        self.assertIn('href="/calls/42?period=yesterday"', html)
         self.assertNotIn("Служебный текст", html)
 
 

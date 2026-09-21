@@ -66,6 +66,18 @@ class RopModelTests(unittest.TestCase):
 
         self.assertEqual([call["activity_id"] for call in selected], ["two"])
 
+    def test_date_range_includes_both_calendar_bounds_and_overrides_quick_period(self):
+        calls = self.calls + [{"activity_id": "three", "created": "2026-09-09T12:00:00+03:00"}]
+
+        selected = filter_calls(
+            calls,
+            self.analyses,
+            {"date_from": "2026-09-08", "date_to": "2026-09-09", "period": "today"},
+            today=date(2026, 9, 11),
+        )
+
+        self.assertEqual([call["activity_id"] for call in selected], ["one", "three"])
+
     def test_crm_and_next_activity_are_only_counted_when_present(self):
         model = rop_model(self.calls, self.analyses)
         self.assertEqual(model["crm_coverage"], 50)

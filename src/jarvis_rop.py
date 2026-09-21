@@ -72,13 +72,23 @@ def filter_calls(
     """Filter raw call rows only; no metric can escape the selected period."""
     result = list(calls)
     exact_date = filters.get("date", "")
+    date_from = filters.get("date_from", "")
+    date_to = filters.get("date_to", "")
     period = normalize_period(filters.get("period"), default="")
     manager_id = filters.get("manager", "")
     direction = filters.get("direction", "")
     status = filters.get("status", "")
     stage = filters.get("stage", "")
 
-    if exact_date:
+    if date_from or date_to:
+        def in_date_range(call: Dict[str, Any]) -> bool:
+            call_date = _date(call.get("created"))
+            if not call_date:
+                return False
+            return (not date_from or call_date >= date_from) and (not date_to or call_date <= date_to)
+
+        result = [call for call in result if in_date_range(call)]
+    elif exact_date:
         result = [call for call in result if _date(call.get("created")) == exact_date]
     elif period:
         current_date = today or date.today()

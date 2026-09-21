@@ -1084,6 +1084,32 @@ def requested_period(default="today"):
     return normalize_period(request.args.get("period"), default=default)
 
 
+def requested_date_range():
+    """Return validated inclusive calendar bounds for the Jarvis call analysis."""
+    def valid(value):
+        value = str(value or "").strip()
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            return ""
+
+    date_from = valid(request.args.get("date_from"))
+    date_to = valid(request.args.get("date_to"))
+    if date_from and date_to and date_from > date_to:
+        date_from, date_to = date_to, date_from
+    return date_from, date_to
+
+
+def requested_jarvis_filters(default="today"):
+    """A selected range takes precedence over one of the quick period buttons."""
+    date_from, date_to = requested_date_range()
+    return {
+        "period": "" if date_from or date_to else requested_period(default),
+        "date_from": date_from,
+        "date_to": date_to,
+    }
+
+
 def _require_operations_dashboard_token():
     expected = (os.environ.get("OPERATIONS_DASHBOARD_TOKEN") or "").strip()
     provided = (request.headers.get("Authorization") or "").strip()
@@ -1350,11 +1376,11 @@ def dashboard_embed():
 def index():
     user = current_user()
     calls, analyses = get_data(user)
-    period = requested_period()
+    filters = requested_jarvis_filters()
     from jarvis_rop import filter_calls
-    calls = filter_calls(calls, analyses, {"period": period})
+    calls = filter_calls(calls, analyses, filters)
     from jarvis_dashboard import render_dashboard
-    return html_response(render_dashboard(calls, analyses, user, period=period))
+    return html_response(render_dashboard(calls, analyses, user, **filters))
 
 
 @app.route("/avatars/<path:filename>")
@@ -1370,11 +1396,16 @@ def all_calls():
     calls, analyses = get_data(user)
     from jarvis_rop import filter_calls
     filters = request.args.to_dict(flat=True)
-    if not filters.get("date"):
+    date_from, date_to = requested_date_range()
+    filters["date_from"] = date_from
+    filters["date_to"] = date_to
+    if not filters.get("date") and not date_from and not date_to:
         filters.setdefault("period", requested_period())
     calls = filter_calls(calls, analyses, filters)
     from jarvis_dashboard import render_calls
-    return html_response(render_calls(calls, analyses, user, period=filters.get("period", "")))
+    return html_response(render_calls(
+        calls, analyses, user, period=filters.get("period", ""), date_from=date_from, date_to=date_to,
+    ))
 
 @app.route("/calls/<activity_id>")
 @app.route("/calls/<activity_id>.html")
@@ -1406,11 +1437,11 @@ def rop_report():
 def managers():
     user = current_user()
     calls, analyses = get_data(user)
-    period = requested_period()
+    filters = requested_jarvis_filters()
     from jarvis_rop import filter_calls
-    calls = filter_calls(calls, analyses, {"period": period})
+    calls = filter_calls(calls, analyses, filters)
     from jarvis_dashboard import render_managers
-    return html_response(render_managers(calls, analyses, user, period=period))
+    return html_response(render_managers(calls, analyses, user, **filters))
 
 
 @app.route("/daily-reports")
@@ -1419,11 +1450,11 @@ def daily_reports():
     """Show actionable AI recommendations, grouped by manager and day."""
     user = current_user()
     calls, analyses = get_data(user)
-    period = requested_period()
+    filters = requested_jarvis_filters()
     from jarvis_rop import filter_calls
     from jarvis_dashboard import render_daily_reports
-    calls = filter_calls(calls, analyses, {"period": period})
-    return html_response(render_daily_reports(calls, analyses, user, period=period))
+    calls = filter_calls(calls, analyses, filters)
+    return html_response(render_daily_reports(calls, analyses, user, **filters))
 
 @app.route("/managers/<int:manager_id>")
 @app.route("/managers/<int:manager_id>.html")
@@ -1433,9 +1464,9 @@ def manager_detail(manager_id):
     if user["role"] == "manager" and user["manager_id"] != manager_id:
         abort(403)
     calls, analyses = get_data(user)
-    period = requested_period()
+    filters = requested_jarvis_filters()
     from jarvis_rop import filter_calls
-    calls = filter_calls(calls, analyses, {"period": period})
+    calls = filter_calls(calls, analyses, filters)
     manager_calls = [call for call in calls if (call.get("manager") or {}).get("id") == manager_id]
     if not manager_calls:
         abort(404)
@@ -1444,7 +1475,7 @@ def manager_detail(manager_id):
     return html_response(render_calls(
         manager_calls, analyses, user, title=f"Звонки менеджера · {manager_name}",
         description="Здесь показаны только звонки выбранного менеджера. В рейтинг входят только завершённые разборы по текущей методике.",
-        period=period,
+        **filters,
     ))
 
 @app.route("/scripts")
@@ -1465,9 +1496,9 @@ def scripts_catalog():
 def sales_funnel():
     user = current_user()
     calls, _ = get_data(user)
-    period = requested_period()
+    filters = requested_jarvis_filters()
     from jarvis_rop import filter_calls
-    calls = filter_calls(calls, {}, {"period": period})
+    calls = filter_calls(calls, {}, filters)
     try:
         snapshot = load_operational_sales_snapshot()
         source_error = ""
@@ -1476,7 +1507,7 @@ def sales_funnel():
         snapshot = {}
         source_error = "Агрегаты продаж временно недоступны; стадии связанных звонков показаны из Bitrix24."
     from jarvis_dashboard import render_funnel
-    return html_response(render_funnel(snapshot, calls, user, source_error=source_error, period=period))
+    return html_response(render_funnel(snapshot, calls, user, source_error=source_error, **filters))
 
 @app.route("/api/funnel-details")
 @rop_required
