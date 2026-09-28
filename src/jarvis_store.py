@@ -447,7 +447,6 @@ class JarvisRepository:
         outside this server-side request.
         """
         with self.connection.cursor() as cursor:
-            self.ensure_review_schema(cursor)
             cursor.execute(
                 """
                 select status, coalesce(finished_at, started_at) as happened_at
@@ -556,24 +555,6 @@ class JarvisRepository:
             }
         return calls, analyses
 
-    @staticmethod
-    def ensure_review_schema(cursor: Any) -> None:
-        """Keep human call decisions durable in the private Jarvis database."""
-        cursor.execute(
-            """
-            create table if not exists jarvis.call_reviews (
-              id bigserial primary key,
-              call_id bigint not null references jarvis.calls(id) on delete cascade,
-              call_type_key text not null,
-              reason text not null,
-              reviewer_name text not null,
-              reviewed_at timestamptz not null default now(),
-              reanalysis_requested boolean not null default false,
-              unique (call_id)
-            )
-            """
-        )
-
     def save_call_review(
         self,
         activity_id: str,
@@ -584,7 +565,6 @@ class JarvisRepository:
         reanalysis_requested: bool = False,
     ) -> Dict[str, Any]:
         with self.connection.cursor() as cursor:
-            self.ensure_review_schema(cursor)
             cursor.execute(
                 """
                 select id from jarvis.calls
@@ -621,7 +601,6 @@ class JarvisRepository:
     def review_corrections(self) -> Dict[str, Any]:
         """Expose current manual type decisions to the isolated analysis worker."""
         with self.connection.cursor() as cursor:
-            self.ensure_review_schema(cursor)
             cursor.execute(
                 """
                 select c.source_call_id, cr.call_type_key, cr.reason, cr.reviewer_name, cr.reviewed_at
