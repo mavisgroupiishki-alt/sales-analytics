@@ -550,6 +550,12 @@ def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
         low_confidence = confidence == "low"
     if analysis.get("rubric_missing_codes") or low_confidence:
         return "needs_review", "Нужна проверка РОПом: часть критериев оценена с низкой уверенностью", ""
+    call_type = analysis.get("call_type") or {}
+    # Historical records can predate call-type classification. Keep them out of
+    # the new queue until they are re-analysed; only an explicit unconfirmed
+    # classification requires a ROP decision.
+    if isinstance(call_type, dict) and call_type and call_type.get("confirmed") is not True:
+        return "needs_review", "Нужна проверка РОПом: тип звонка не подтверждён", ""
     return "normal", "", ""
 
 
@@ -601,6 +607,18 @@ def select_relevant_scripts(transcript: str, scripts: Dict[str, Any]) -> List[Tu
 # ============================================================
 
 def load_manual_corrections() -> Dict[str, Any]:
+    database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
+    if database_url:
+        try:
+            from jarvis_store import JarvisRepository
+
+            repository = JarvisRepository.connect(database_url)
+            try:
+                return repository.review_corrections()
+            finally:
+                repository.close()
+        except Exception as exc:
+            logger.warning("Не удалось получить ручные проверки из Jarvis DB: %s", type(exc).__name__)
     p = Path("manual_corrections.json")
     if not p.exists():
         return {}
@@ -622,6 +640,21 @@ def apply_manual_corrections(activity_id: str, analysis: Dict[str, Any], correct
         for crit, val in corr["scores"].items():
             analysis.setdefault("scores", {})[crit] = val
         analysis["manually_corrected"] = True
+    call_type_key = str(corr.get("call_type_key") or "").strip()
+    if call_type_key in CALL_TYPES:
+        analysis["ai_call_type"] = dict(analysis.get("call_type") or {})
+        analysis["call_type"] = {
+            "key": call_type_key,
+            "label": CALL_TYPES[call_type_key]["label"],
+            "confirmed": True,
+            "source": "manual",
+        }
+        analysis["manual_review"] = {
+            "call_type_key": call_type_key,
+            "reason": str(corr.get("reason") or corr.get("comment") or ""),
+            "reviewer_name": str(corr.get("reviewer_name") or "Руководитель"),
+            "reviewed_at": str(corr.get("reviewed_at") or ""),
+        }
     return analysis
 
 
@@ -753,7 +786,97 @@ def decode_json_response(text: str) -> Dict[str, Any]:
 # ОПРЕДЕЛЕНИЕ ТИПА ЗВОНКА
 # ============================================================
 
-def detect_call_type(transcript: str, call_meta: Dict) -> str:
+def _context_prompt_block(deal_context: Optional[Dict[str, Any]]) -> str:
+    """Return a bounded, fact-only history for the model prompt."""
+    if not deal_context:
+        return ""
+    crm = deal_context.get("crm") or {}
+    previous_calls = deal_context.get("previous_calls") or []
+    lines = [
+        "\nКОНТЕКСТ СДЕЛКИ (факты предыдущих разговоров, не выдумывай отсутствующее):",
+        f"- Текущая стадия CRM: {crm.get('stage') or 'не указана'}",
+        f"- Ответственный: {crm.get('responsible') or 'не указан'}",
+        f"- Следующая активность CRM: {crm.get('next_activity_date') or 'не назначена'}",
+    ]
+    if not previous_calls:
+        lines.append("- Предыдущих разобранных разговоров по этой сделке нет.")
+        return "\n".join(lines)
+    lines.append(f"- Использовано предыдущих разговоров: {len(previous_calls)} из 8.")
+    for index, item in enumerate(previous_calls, 1):
+        lines.append(
+            f"{index}. {item.get('date') or 'дата не указана'} · {item.get('call_type') or 'тип не указан'}\n"
+            f"   Резюме: {item.get('summary') or 'нет'}\n"
+            f"   Возражения: {item.get('objections') or 'не выделены'}\n"
+            f"   Договорённости: {item.get('agreements') or 'не выделены'}\n"
+            f"   Следующий шаг: {item.get('next_step') or 'не указан'}"
+        )
+    return "\n".join(lines)
+
+
+def build_deal_context(
+    calls: List[Dict[str, Any]],
+    analyses: Dict[str, Any],
+    call_meta: Dict[str, Any],
+    corrections: Optional[Dict[str, Any]] = None,
+    *,
+    limit: int = 8,
+) -> Dict[str, Any]:
+    """Build a compact history of earlier calls from the same CRM deal."""
+    crm = call_meta.get("crm") or {}
+    owner_id = str(crm.get("owner_id") or "")
+    owner_type = str(crm.get("owner_type") or "")
+    current_id = str(call_meta.get("activity_id") or "")
+    current_created = str(call_meta.get("created") or "")
+    context = {
+        "crm": {
+            "stage": crm.get("stage_name") or crm.get("stage_id"),
+            "responsible": (call_meta.get("manager") or {}).get("name"),
+            "next_activity_date": crm.get("next_activity_date"),
+        },
+        "previous_calls": [],
+    }
+    if owner_type != "deal" or not owner_id:
+        return context
+
+    previous = []
+    for candidate in calls:
+        candidate_crm = candidate.get("crm") or {}
+        candidate_id = str(candidate.get("activity_id") or "")
+        candidate_created = str(candidate.get("created") or "")
+        if candidate_id == current_id or candidate_crm.get("owner_type") != "deal":
+            continue
+        if str(candidate_crm.get("owner_id") or "") != owner_id:
+            continue
+        if (candidate_created, candidate_id) >= (current_created, current_id):
+            continue
+        stored = analyses.get(candidate_id) or {}
+        analysis = stored.get("analysis") if isinstance(stored, dict) else {}
+        if not isinstance(analysis, dict) or not analysis:
+            continue
+        if corrections:
+            analysis = apply_manual_corrections(candidate_id, dict(analysis), corrections)
+        call_type = analysis.get("call_type") or {}
+        objection_texts = [
+            str(item.get("text") or item.get("detail") or "")
+            for item in (analysis.get("key_moments") or [])
+            if isinstance(item, dict) and str(item.get("type") or "") == "negative"
+        ]
+        next_contact = analysis.get("next_contact") or {}
+        previous.append({
+            "activity_id": candidate_id,
+            "date": candidate_created,
+            "call_type": call_type.get("label") or "Тип не указан",
+            "summary": analysis.get("summary") or "Нет резюме",
+            "objections": "; ".join(objection_texts[:2]) or "не выделены",
+            "agreements": analysis.get("outcome") or "не выделены",
+            "next_step": analysis.get("recommended_action") or analysis.get("recommendation") or next_contact.get("context") or "не указан",
+        })
+    previous.sort(key=lambda item: (str(item["date"]), str(item["activity_id"])))
+    context["previous_calls"] = previous[-limit:]
+    return context
+
+
+def detect_call_type(transcript: str, call_meta: Dict, deal_context: Optional[Dict[str, Any]] = None) -> str:
     """
     Определяет тип звонка из 11 возможных через Claude.
     Возвращает ключ из CALL_TYPES.
@@ -771,6 +894,7 @@ def detect_call_type(transcript: str, call_meta: Dict) -> str:
 ИНФОРМАЦИЯ О ЗВОНКЕ:
 - Направление: {direction}
 - CRM-контекст: {crm_context}
+{_context_prompt_block(deal_context)}
 
 ТРАНСКРИПТ (первые 2000 символов):
 ---
@@ -806,6 +930,7 @@ def build_analysis_prompt(
     call_meta: Dict,
     scripts: List[Tuple[str, str]],
     call_type_key: str,
+    deal_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     call_type = CALL_TYPES.get(call_type_key, CALL_TYPES["unknown"])
 
@@ -849,6 +974,7 @@ def build_analysis_prompt(
 
 ИНФОРМАЦИЯ О ЗВОНКЕ:
 {call_info}
+{_context_prompt_block(deal_context)}
 {scripts_block}
 ТИП ЗВОНКА: {call_type["label"]}
 Типичные стадии для этого типа (ориентир):
@@ -1150,18 +1276,26 @@ def analyze_transcript(
     transcription: Dict,
     call_meta: Dict,
     scripts_db: Dict,
+    deal_context: Optional[Dict[str, Any]] = None,
+    forced_call_type_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     transcript_text = transcription["text"]
     transcript_tc = transcription.get("text_with_timecodes") or transcript_text
     if detect_service_contact_routing(transcript_text):
         logger.info("   Тип: Служебное уточнение контакта")
-        return _service_contact_analysis(transcription, call_meta)
+        result = _service_contact_analysis(transcription, call_meta)
+        result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
+        return result
     if detect_service_document_delivery(transcript_text):
         logger.info("   Тип: Служебная проверка доставки документов")
-        return _service_document_delivery_analysis(transcription, call_meta)
+        result = _service_document_delivery_analysis(transcription, call_meta)
+        result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
+        return result
     if detect_service_administrative_followup(transcript_text):
         logger.info("   Тип: Служебный контроль исполнения")
-        return _service_administrative_followup_analysis(transcription, call_meta)
+        result = _service_administrative_followup_analysis(transcription, call_meta)
+        result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
+        return result
     relevant_scripts = select_relevant_scripts(transcript_text, scripts_db)
 
     if relevant_scripts:
@@ -1169,11 +1303,11 @@ def analyze_transcript(
 
     # Шаг 1: определяем тип звонка
     logger.info("   Определяем тип звонка...")
-    call_type_key = detect_call_type(transcript_text, call_meta)
+    call_type_key = forced_call_type_key if forced_call_type_key in CALL_TYPES else detect_call_type(transcript_text, call_meta, deal_context)
     logger.info(f"   Тип: {CALL_TYPES[call_type_key]['label']}")
 
     # Шаг 2: полный анализ с учётом типа
-    prompt = build_analysis_prompt(transcript_tc, call_meta, relevant_scripts, call_type_key)
+    prompt = build_analysis_prompt(transcript_tc, call_meta, relevant_scripts, call_type_key, deal_context)
     result = None
     meta: Dict[str, Any] = {}
     expected_codes = ", ".join(applicable_criteria(call_type_key))
@@ -1229,6 +1363,7 @@ def analyze_transcript(
                 "_meta": meta,
             }
         )
+        result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
         return result
 
     # The model's broad assessment stays as context. The stored score is
@@ -1317,6 +1452,7 @@ def analyze_transcript(
         result["critical_reason"] = reason
         result["critical_rule_id"] = rule_id
 
+    result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
     result["_meta"] = meta
     return result
 
@@ -1404,6 +1540,27 @@ def main():
         analyses = json.loads(analyses_path.read_text(encoding="utf-8"))
     else:
         analyses = {}
+    # A Render filesystem is ephemeral, while conversation history must survive
+    # between worker runs.  Merge the private snapshot only as read context;
+    # current input files still define which audio files this run processes.
+    history_calls = list(calls)
+    database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
+    if database_url:
+        try:
+            from jarvis_store import JarvisRepository
+
+            repository = JarvisRepository.connect(database_url)
+            try:
+                stored_calls, stored_analyses = repository.load_snapshot()
+            finally:
+                repository.close()
+            history_by_id = {str(call.get("activity_id") or ""): call for call in stored_calls}
+            history_by_id.update({str(call.get("activity_id") or ""): call for call in calls})
+            history_calls = list(history_by_id.values())
+            for stored_id, stored_analysis in stored_analyses.items():
+                analyses.setdefault(str(stored_id), stored_analysis)
+        except Exception as exc:
+            logger.warning("Не удалось загрузить историю разговоров из Jarvis DB: %s", type(exc).__name__)
 
     requested_ids, requested_date = reanalysis_scope(os.environ)
     targeted_reanalysis = bool(requested_ids or requested_date)
@@ -1475,7 +1632,15 @@ def main():
                 failed += 1
                 continue
 
-            analysis = analyze_transcript(transcription, call_meta, scripts_db)
+            manual_correction = corrections.get(activity_id) or {}
+            deal_context = build_deal_context(history_calls, analyses, call_meta, corrections)
+            analysis = analyze_transcript(
+                transcription,
+                call_meta,
+                scripts_db,
+                deal_context=deal_context,
+                forced_call_type_key=manual_correction.get("call_type_key"),
+            )
             analysis = apply_manual_corrections(activity_id, analysis, corrections)
 
             cost = analysis["_meta"]["approx_cost_usd"]

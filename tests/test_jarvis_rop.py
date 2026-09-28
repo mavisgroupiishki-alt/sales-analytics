@@ -95,6 +95,7 @@ class RopModelTests(unittest.TestCase):
             "overall_score": 2.5,
             "overall_score_method": "applicable_rubric_v1",
             "flags": {},
+            "call_type": {"confirmed": True},
         }}}
 
         model = rop_model([self.calls[0]], analyses)

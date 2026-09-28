@@ -21,6 +21,7 @@ class DashboardModelTests(unittest.TestCase):
             "overall_score": 2.5,
             "overall_score_method": "applicable_rubric_v1",
             "flags": {},
+            "call_type": {"confirmed": True},
         }}}
 
         model = dashboard_model(calls, analyses)
@@ -42,6 +43,25 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("Без разбора", overview)
         self.assertIn("нет пригодной записи или анализ ещё идёт", overview)
         self.assertIn("Нет разбора", journal)
+
+    def test_missing_or_unconfirmed_analysis_appears_in_rop_decision_queue(self):
+        calls = [
+            {"activity_id": "missing", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}},
+            {"activity_id": "type", "created": "2026-09-08T13:00:00+03:00", "manager": {"name": "Анна"}},
+        ]
+        analyses = {"type": {"analysis": {
+            "overall_score": 7,
+            "overall_score_method": "applicable_rubric_v1",
+            "flags": {},
+            "call_type": {"key": "unknown", "confirmed": False},
+        }}}
+
+        model = dashboard_model(calls, analyses)
+        overview = render_dashboard(calls, analyses, {"role": "rop", "name": "РОП"})
+
+        self.assertEqual(len(model["review"]), 2)
+        self.assertIn("Нужно решение РОПа", overview)
+        self.assertIn("Неподтверждённый тип", overview)
 
     def test_empty_bitrix_recording_is_not_presented_as_pending_or_playable(self):
         call = {
@@ -175,6 +195,20 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("Транскрипт разговора", html)
         self.assertIn('data-timecode="00:05"', html)
         self.assertIn("Соблюдение скрипта", html)
+
+    def test_call_card_shows_manual_type_review_and_history_indicator(self):
+        call = {"activity_id": "42", "manager": {"name": "Роман"}}
+        stored = {"analysis": {
+            "call_type": {"key": "unknown", "label": "Неизвестно", "confirmed": False},
+            "context_snapshot": {"previous_calls": [{"date": "2026-09-01", "call_type": "Дожим", "summary": "Обсудили срок"}]},
+        }}
+
+        html = render_call_detail(call, stored, {"role": "rop", "name": "РОП"})
+
+        self.assertIn("Проверка типа звонка", html)
+        self.assertIn("Почему ИИ ошибся", html)
+        self.assertIn("использовано 1 из 8 предыдущих звонков", html)
+        self.assertIn("Обсудили срок", html)
 
     def test_funnel_renders_operational_metrics_and_real_stage_names(self):
         snapshot = {

@@ -8,6 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from claude_analyzer import (  # noqa: E402
     analyze_transcript,
+    apply_manual_corrections,
+    build_analysis_prompt,
+    build_deal_context,
     complete_missing_criteria_neutrally,
     decode_json_response,
     detect_call_type,
@@ -18,6 +21,56 @@ from claude_analyzer import (  # noqa: E402
 
 
 class ClaudeAnalyzerPromptTests(unittest.TestCase):
+    def test_deal_context_uses_only_eight_earlier_calls_from_same_deal(self):
+        calls = []
+        analyses = {}
+        for number in range(10):
+            activity_id = str(number)
+            calls.append({
+                "activity_id": activity_id,
+                "created": f"2026-09-{number + 1:02d}T10:00:00+03:00",
+                "crm": {"owner_type": "deal", "owner_id": "42"},
+            })
+            analyses[activity_id] = {"analysis": {
+                "summary": f"Итог {number}",
+                "outcome": "Договорённость",
+                "recommendation": "Перезвонить",
+                "call_type": {"label": "Дожим"},
+            }}
+        current = {
+            "activity_id": "current",
+            "created": "2026-09-20T10:00:00+03:00",
+            "manager": {"name": "Роман"},
+            "crm": {"owner_type": "deal", "owner_id": "42", "stage_name": "КП"},
+        }
+        calls.append({
+            "activity_id": "foreign",
+            "created": "2026-09-19T10:00:00+03:00",
+            "crm": {"owner_type": "deal", "owner_id": "not-42"},
+        })
+        analyses["foreign"] = {"analysis": {"summary": "Чужая сделка", "call_type": {"label": "Дожим"}}}
+
+        context = build_deal_context(calls, analyses, current)
+        prompt = build_analysis_prompt("[00:00] разговор", current, [], "unknown", context)
+
+        self.assertEqual(len(context["previous_calls"]), 8)
+        self.assertEqual(context["previous_calls"][0]["activity_id"], "2")
+        self.assertNotIn("Итог 0", prompt)
+        self.assertIn("Итог 9", prompt)
+        self.assertNotIn("Чужая сделка", prompt)
+        self.assertIn("Использовано предыдущих разговоров: 8 из 8", prompt)
+
+    def test_manual_type_is_preserved_over_new_ai_result(self):
+        analysis = apply_manual_corrections(
+            "42",
+            {"call_type": {"key": "cold_new", "label": "Первичный холодный"}},
+            {"42": {"call_type_key": "payment_push", "reason": "Дожим оплаты", "reviewer_name": "РОП"}},
+        )
+
+        self.assertEqual(analysis["ai_call_type"]["key"], "cold_new")
+        self.assertEqual(analysis["call_type"]["key"], "payment_push")
+        self.assertTrue(analysis["call_type"]["confirmed"])
+
     def test_missing_criteria_are_neutral_and_visible(self):
         criteria, missing = complete_missing_criteria_neutrally(
             "unknown",

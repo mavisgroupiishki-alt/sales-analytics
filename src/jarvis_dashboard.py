@@ -207,6 +207,13 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
                 unavailable_audio += 1
             else:
                 pending_analysis += 1
+                review.append({
+                    "call": call,
+                    "analysis": {},
+                    "reason": "Нужна проверка РОПом: разбор звонка отсутствует",
+                    "rule_id": "analysis_missing",
+                })
+                entry["review"] += 1
             continue
         analyzed.append(call)
         entry["analyzed"] += 1
@@ -376,7 +383,7 @@ def render_dashboard(
 <section class="jd-panel jd-team"><div class="jd-panel-head"><div><h2>Команда</h2><p>Кого открыть первым</p></div><a href="{managers_href}">Все менеджеры →</a></div><div class="jd-manager-list">{managers}</div></section>
 <section class="jd-panel jd-feed-panel"><div class="jd-panel-head"><div><h2>Последние звонки</h2><p>Первичные записи в хронологическом порядке</p></div><a href="{calls_href}">Открыть журнал →</a></div>{feed}</section></section>
 <section class="jd-panel jd-funnel"><div class="jd-panel-head"><div><h2>Воронка по связанным сделкам</h2><p>Текущие стадии сделок, которые Bitrix связал со звонками выборки</p></div><a href="{funnel_href}">Вся воронка →</a></div><div class="jd-funnel-list">{funnel_links}</div></section>
-<section class="jd-panel jd-review-panel"><div class="jd-panel-head"><div><h2>Нужна проверка РОПом</h2><p>Только новый разбор с неполными основаниями</p></div><span>{len(model['review'])} звонков</span></div>{reviews}</section>
+<section class="jd-panel jd-review-panel"><div class="jd-panel-head"><div><h2>Нужно решение РОПа</h2><p>Неподтверждённый тип, низкая уверенность или отсутствующий разбор</p></div><span>{len(model['review'])} звонков</span></div>{reviews}</section>
 <section class="jd-limits"><b>Граница данных</b><span>Воронка отражает только связанные со звонками сделки и их текущую стадию в Bitrix24. План, деньги и конверсию Джарвис не выдумывает.</span></section></main></body></html>'''
 
 
@@ -389,7 +396,7 @@ def _console_page(
         for key, label in pages
     )
     home_href = _period_url("/", period, date_from=date_from, date_to=date_to)
-    return f'''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Джарвис — {_text(title)}</title><style>{_CSS}{_AQUA_CSS}{_CONSOLE_CSS}{_CALL_DETAIL_CSS}{_INTERACTION_CSS}</style></head><body><header class="jd-top"><a class="jd-brand" href="{home_href}"><span class="jd-mark">J</span><span><strong>ДЖАРВИС</strong><small>ЦЕНТР УПРАВЛЕНИЯ ПРОДАЖАМИ</small></span></a><nav>{links}</nav><div class="jd-user"><span>РОП · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header><main class="jd-shell jc-shell">{body}</main></body></html>'''
+    return f'''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Джарвис — {_text(title)}</title><style>{_CSS}{_AQUA_CSS}{_CONSOLE_CSS}{_CALL_DETAIL_CSS}{_CALL_FILTER_CSS}{_INTERACTION_CSS}</style></head><body><header class="jd-top"><a class="jd-brand" href="{home_href}"><span class="jd-mark">J</span><span><strong>ДЖАРВИС</strong><small>ЦЕНТР УПРАВЛЕНИЯ ПРОДАЖАМИ</small></span></a><nav>{links}</nav><div class="jd-user"><span>РОП · {_text(user.get('name'))}</span><a href="/logout">Выйти</a></div></header><main class="jd-shell jc-shell">{body}</main></body></html>'''
 
 
 def _status_label(status: str, analysis: Dict[str, Any] | None = None) -> str:
@@ -410,7 +417,31 @@ def _status_label(status: str, analysis: Dict[str, Any] | None = None) -> str:
 def render_calls(
     calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any],
     *, title: str = "Журнал звонков", description: str | None = None, period: str = "today", date_from: str = "", date_to: str = "",
+    filters: Dict[str, str] | None = None, available_calls: List[Dict[str, Any]] | None = None,
 ) -> str:
+    from claude_analyzer import CALL_TYPES
+
+    filters = filters or {}
+    available_calls = available_calls or calls
+    managers = sorted(
+        {(str((call.get("manager") or {}).get("id") or ""), str((call.get("manager") or {}).get("name") or "")) for call in available_calls if (call.get("manager") or {}).get("id")},
+        key=lambda item: item[1],
+    )
+    stages = sorted({_stage_name(call.get("crm") or {}) for call in available_calls if (call.get("crm") or {}).get("owner_id")})
+    selected = lambda key, value: ' selected' if str(filters.get(key) or "") == str(value) else ""
+    options = lambda values, key, placeholder: f'<option value="">{_text(placeholder)}</option>' + "".join(
+        f'<option value="{_text(value)}"{selected(key, value)}>{_text(label)}</option>' for value, label in values
+    )
+    filter_panel = f'''<form class="jc-call-filters" method="get" action="/calls" aria-label="Фильтры звонков">
+      <input type="hidden" name="period" value="{_text(period)}"><input type="hidden" name="date_from" value="{_text(date_from)}"><input type="hidden" name="date_to" value="{_text(date_to)}">
+      <label>Ответственный<select name="manager">{options(managers, "manager", "Все менеджеры")}</select></label>
+      <label>Тип звонка<select name="call_type">{options([(key, item["label"]) for key, item in CALL_TYPES.items()], "call_type", "Все типы")}</select></label>
+      <label>Стадия сделки<select name="stage">{options([(stage, stage) for stage in stages], "stage", "Все стадии")}</select></label>
+      <label>Баллы<div class="jc-score-filter"><input type="number" name="score_min" min="0" max="10" step="0.1" value="{_text(filters.get("score_min") or "")}" placeholder="от"><span>—</span><input type="number" name="score_max" min="0" max="10" step="0.1" value="{_text(filters.get("score_max") or "")}" placeholder="до"></div></label>
+      <label>Разбор<select name="analysis">{options([("with", "С анализом"), ("without", "Без анализа")], "analysis", "Все звонки")}</select></label>
+      <label>Статус<select name="status">{options([("needs_review", "Нужно решение РОПа"), ("pending", "Ожидает анализа"), ("critical", "Срочно"), ("low_score", "Низкий балл"), ("normal", "Без риска"), ("audio_unavailable", "Пустая запись"), ("requires_reanalysis", "Нужен новый разбор")], "status", "Все статусы")}</select></label>
+      <div class="jc-filter-actions"><button type="submit">Применить</button><a href="{_period_url('/calls', period, date_from=date_from, date_to=date_to)}">Сбросить</a></div>
+    </form>'''
     rows = ""
     for call in sorted(calls, key=lambda item: str(item.get("created") or ""), reverse=True):
         analysis = _analysis_for(analyses, call)
@@ -423,7 +454,7 @@ def render_calls(
         call_type = (analysis.get("call_type") or {}).get("label") or ("Запись 0 секунд" if recording_is_unavailable(call) else "Тип не подтверждён")
         rows += f'''<a class="jc-row" href="{_call_url(call.get('activity_id'), period, date_from=date_from, date_to=date_to)}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text(call_type)}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
     note = description or "«Пустая запись» — Bitrix передал файл нулевой длительности; такой звонок нельзя прослушать или расшифровать. Пригодная запись без результата ожидает анализа. «Короткий звонок» не оценивается."
-    content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section>{_period_switch(period, '/calls', date_from=date_from, date_to=date_to)}<section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по этому фильтру нет.</b></div>'}</section>'''
+    content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section>{_period_switch(period, '/calls', date_from=date_from, date_to=date_to)}{filter_panel}<section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по выбранным фильтрам нет.</b></div>'}</section>'''
     return _console_page("Звонки", "calls", content, user, period=period, date_from=date_from, date_to=date_to)
 
 
@@ -528,6 +559,30 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
         crm_value = f'<a href="{_text(owner_url)}" target="_blank" rel="noopener noreferrer">{crm_value} · {owner_label} №{_text(owner_id)}</a>'
 
     activity_id = str(call.get("activity_id") or "")
+    from claude_analyzer import CALL_TYPES
+
+    manual_review = analysis.get("manual_review") or {}
+    ai_call_type = analysis.get("ai_call_type") or analysis.get("call_type") or {}
+    selected_type = str((analysis.get("call_type") or {}).get("key") or "unknown")
+    can_review = user.get("role") in {"rop", "director", "dashboard"}
+    type_options = "".join(
+        f'<option value="{_text(key)}"{" selected" if key == selected_type else ""}>{_text(item["label"])}</option>'
+        for key, item in CALL_TYPES.items()
+    )
+    review_saved = ""
+    if manual_review:
+        review_saved = f'<p class="jc-review-saved">Подтвердил(а): <b>{_text(manual_review.get("reviewer_name") or "Руководитель")}</b> · {_text(str(manual_review.get("reviewed_at") or "")[:16].replace("T", " "))}<br><span>{_text(manual_review.get("reason") or "")}</span></p>'
+    review_html = ""
+    if can_review:
+        review_html = f'''<section class="jc-panel-section jc-type-review"><div class="jc-section-head"><div><h2>Проверка типа звонка</h2><p>ИИ: {_text(ai_call_type.get("label") or "Тип не подтверждён")}. Ручное решение имеет приоритет в отчётах и следующих разборах.</p></div><span>{"Подтверждено вручную" if manual_review else "Нужна проверка"}</span></div>{review_saved}<form id="callTypeReview"><label for="reviewCallType">Правильный тип</label><select id="reviewCallType" required>{type_options}</select><label for="reviewReason">Почему ИИ ошибся</label><textarea id="reviewReason" required minlength="3" maxlength="1200" placeholder="Например: это был дожим после обещанной оплаты, а не первичный звонок.">{_text(manual_review.get("reason") or "")}</textarea><div class="jc-review-actions"><button type="submit" data-reanalysis="0">Сохранить тип</button><button type="submit" data-reanalysis="1" class="secondary">Сохранить и переоценить</button><span id="reviewCallResult" role="status"></span></div></form></section>'''
+    context_snapshot = analysis.get("context_snapshot") or {}
+    context_calls = context_snapshot.get("previous_calls") if isinstance(context_snapshot, dict) else []
+    context_calls = context_calls if isinstance(context_calls, list) else []
+    context_rows = "".join(
+        f'<li><b>{_text(item.get("date") or "")}</b><span>{_text(item.get("call_type") or "Тип не указан")}</span><p>{_text(item.get("summary") or "Нет резюме")}</p><p><b>Возражения:</b> {_text(item.get("objections") or "не выделены")}<br><b>Договорённости:</b> {_text(item.get("agreements") or "не выделены")}<br><b>Следующий шаг:</b> {_text(item.get("next_step") or "не указан")}</p></li>'
+        for item in context_calls if isinstance(item, dict)
+    )
+    context_html = f'''<details class="jc-context"><summary>Контекст для анализа: использовано {len(context_calls)} из 8 предыдущих звонков</summary><p>ИИ учитывал только краткие факты предыдущих разговоров этой сделки: тип, резюме, возражения, договорённости и следующий шаг.</p><ol>{context_rows or '<li>Предыдущих связанных звонков в контексте не было.</li>'}</ol></details>'''
     audio = call.get("audio") or {}
     if (audio.get("file_id") or audio.get("url") or audio.get("public_path")) and not unavailable_recording:
         direction_label = {"incoming": "Входящий", "outgoing": "Исходящий"}.get(str(call.get("direction")), "Направление не определено")
@@ -627,11 +682,13 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
         transcript_html = f'''<section class="jc-panel-section jc-transcript"><div class="jc-section-head"><div><h2>Транскрипт разговора</h2><p>Нажмите на таймкод, чтобы перейти к нужному месту записи.</p></div><input type="search" id="transcriptSearch" placeholder="Поиск по разговору" aria-label="Поиск по транскрипту" oninput="filterTranscript(this.value)"></div><div id="transcriptLines">{transcript_rows}</div></section>'''
     content = f'''<a class="jc-back" href="/calls">← Все звонки</a><section class="jc-heading jc-call-heading"><div><p>{_text(_format_timestamp(str(call.get('created') or '')))}</p><h1>{_text(client)} <span>· {_text(score_heading)}</span></h1></div><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span></section>
 <section class="jc-call-facts"><div><span>Ответственный</span><b>{_text(manager)}</b></div><div><span>Компания</span><b>{_text(company)}</b></div><div><span>{owner_label}</span><b>{crm_value}</b></div><div><span>Следующий контакт</span><b>{_text(str(crm.get('next_activity_date') or '')[:16].replace('T', ' ') or 'Не назначен')}</b></div></section>
+{review_html}
+{context_html}
 {audio_html}
 <section class="jc-detail-grid"><article><h2>Вывод Джарвиса</h2><p>{_text(summary)}</p>{quote}<h3>Рекомендованное действие</h3><p>{_text(recommendation)}</p></article><article><h2>Ключевые моменты</h2><ul class="jc-moments">{moment_rows}</ul></article></section>
 {evaluation_html}
 {transcript_html}
-<script>function seekCallAudio(tc){{var audio=document.getElementById('callAudio');if(!audio||!tc)return;var p=tc.split(':');var seconds=p.length===2?Number(p[0])*60+Number(p[1]):Number(tc);if(Number.isFinite(seconds)){{audio.currentTime=seconds;audio.play();}}}}function filterTranscript(value){{var q=(value||'').trim().toLowerCase();document.querySelectorAll('.jc-transcript-line').forEach(function(row){{row.hidden=q&&!row.textContent.toLowerCase().includes(q);}});}}</script>'''
+<script>function seekCallAudio(tc){{var audio=document.getElementById('callAudio');if(!audio||!tc)return;var p=tc.split(':');var seconds=p.length===2?Number(p[0])*60+Number(p[1]):Number(tc);if(Number.isFinite(seconds)){{audio.currentTime=seconds;audio.play();}}}}function filterTranscript(value){{var q=(value||'').trim().toLowerCase();document.querySelectorAll('.jc-transcript-line').forEach(function(row){{row.hidden=q&&!row.textContent.toLowerCase().includes(q);}});}}document.getElementById('callTypeReview')?.addEventListener('submit',async function(event){{event.preventDefault();var button=event.submitter;var result=document.getElementById('reviewCallResult');result.textContent='Сохраняю…';try{{var response=await fetch('/calls/{_text(activity_id)}/review',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{call_type_key:document.getElementById('reviewCallType').value,reason:document.getElementById('reviewReason').value,reanalyze:button?.dataset.reanalysis==='1'}})}});var payload=await response.json();if(!response.ok)throw new Error(payload.error||'Не удалось сохранить');result.textContent=payload.reanalysis==='started'?'Тип сохранён. Повторный анализ запущен.':'Тип сохранён.';setTimeout(function(){{location.reload()}},700)}}catch(error){{result.textContent=error.message||'Не удалось сохранить'}}}});</script>'''
     return _console_page("Карточка звонка", "calls", content, user)
 
 
@@ -716,6 +773,11 @@ _CONSOLE_CSS = r'''
 .jc-status.low_score{background:var(--amber-soft);color:var(--amber)}
 .jc-status.audio_unavailable{background:#edf3f4;color:#617982}
 .jc-shell{max-width:1470px}.jc-heading{margin-bottom:24px}.jc-heading p{margin:0 0 8px;color:#149c99;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}.jc-heading h1{margin:0;color:var(--ink);font-size:32px;letter-spacing:-.04em}.jc-heading h1 span{color:#7a9ca7;font-weight:600}.jc-heading small{display:block;max-width:720px;margin-top:10px;color:var(--muted);font-size:12px}.jc-table,.jc-detail-grid,.jc-scripts{background:#fff;border-radius:11px;box-shadow:0 7px 21px rgba(30,88,98,.1);overflow:hidden}.jc-table-head,.jc-row{display:grid;grid-template-columns:130px minmax(170px,1.25fr) minmax(130px,1fr) minmax(115px,.7fr) 44px 18px;gap:15px;align-items:center}.jc-table-head{padding:11px 18px;background:#effafa;color:#6c8991;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.jc-row{padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-row:hover,.jc-manager-row:hover{background:#f1fffe}.jc-row b,.jc-manager-row b{display:block;font-size:13px}.jc-row small,.jc-manager-row small{display:block;margin-top:4px;color:var(--muted);font-size:11px}.jc-row>span:nth-child(3),.jc-row>span:nth-child(4){color:#5f7d88;font-size:12px}.jc-row strong{font-size:16px;text-align:right}.jc-row i,.jc-manager-row i{font-style:normal;color:#11a4a0}.jc-status{display:inline-block;width:max-content;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:900}.jc-status.critical{background:var(--red-soft);color:var(--red)}.jc-status.needs_review{background:var(--amber-soft);color:var(--amber)}.jc-status.requires_reanalysis{background:#edf3ff;color:#326bcc}.jc-status.normal{background:var(--green-soft);color:var(--green)}.jc-status.pending{background:#edf3f4;color:#617982}.jc-managers .jc-table-head,.jc-manager-row{grid-template-columns:40px minmax(180px,1fr) 70px minmax(150px,.7fr) 130px 18px}.jc-manager-row{display:grid;gap:15px;align-items:center;padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-manager-row>.jd-avatar{width:36px;height:36px}.jc-manager-row strong{font-size:17px;color:#159b98}.jc-manager-row>span:nth-of-type(2){font-size:11px;color:var(--muted)}.jc-manager-row em{font-style:normal;color:#59808a;font-size:11px;font-weight:800}.jc-back{display:inline-block;margin-bottom:20px;color:#159d9a;font-weight:800;text-decoration:none}.jc-call-meta{display:flex;gap:12px;align-items:center;margin-top:14px;color:#65818d;font-size:12px;flex-wrap:wrap}.jc-detail-grid{display:grid;grid-template-columns:1.05fr .95fr}.jc-detail-grid article{padding:24px;border-right:1px solid var(--line)}.jc-detail-grid article:last-child{border:0}.jc-detail-grid h2,.jc-script h2{margin:0 0 11px;color:var(--ink);font-size:18px;letter-spacing:-.02em}.jc-detail-grid h3{margin:21px 0 7px;color:#169b98;font-size:11px;text-transform:uppercase}.jc-detail-grid p{margin:0;color:#567580;font-size:13px;line-height:1.55}.jc-detail-grid blockquote{margin:19px 0;padding:13px 15px;border-left:3px solid #15c8c3;background:#effbfa;color:#315f6e;font-size:13px}.jc-detail-grid blockquote small{display:block;margin-top:7px;color:#169b98;font-weight:800}.jc-moments{display:grid;gap:0;padding:0;margin:0;list-style:none}.jc-moments li{display:grid;grid-template-columns:48px 1fr;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);color:#557783;font-size:12px}.jc-moments b{color:#159b98}.jc-scripts{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1px;background:var(--line)}.jc-script{min-height:250px;padding:21px;background:#fff}.jc-script span{color:#14a09d;font-size:10px;font-weight:900;letter-spacing:.1em}.jc-script p{color:#587681;font-size:12px;line-height:1.55}.jc-script small{display:block;margin-top:15px;color:#758c95;font-size:10px}@media(max-width:900px){.jc-table-head{display:none}.jc-row{grid-template-columns:1fr 25px;gap:8px}.jc-row>span:not(:nth-child(2)),.jc-row strong{display:none}.jc-managers .jc-manager-row{grid-template-columns:36px minmax(0,1fr) 42px 18px}.jc-manager-row>span:nth-of-type(2),.jc-manager-row em{display:none}.jc-detail-grid{grid-template-columns:1fr}.jc-detail-grid article{border-right:0;border-bottom:1px solid var(--line)}.jc-heading h1{font-size:27px}}
+'''
+
+_CALL_FILTER_CSS = r'''
+.jc-call-filters{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:9px;margin:0 0 16px;padding:14px;background:#e9fbfa;border:1px solid #cbe8e6;border-radius:11px}.jc-call-filters label{display:grid;gap:5px;color:#52747d;font-size:9px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.jc-call-filters select,.jc-call-filters input{min-width:0;height:34px;padding:0 9px;border:1px solid #c9dfe1;border-radius:7px;background:#fff;color:var(--ink);font:inherit;font-size:11px;letter-spacing:0;text-transform:none}.jc-score-filter{display:grid;grid-template-columns:1fr 10px 1fr;gap:4px;align-items:center}.jc-score-filter span{text-align:center;color:#89a2a8}.jc-filter-actions{display:flex;align-items:end;gap:8px}.jc-filter-actions button,.jc-filter-actions a{height:34px;padding:0 11px;border-radius:7px;font:inherit;font-size:11px;font-weight:800;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.jc-filter-actions button{border:0;background:#109f9b;color:#fff;cursor:pointer}.jc-filter-actions a{color:#4c747d;background:#fff;border:1px solid #c9dfe1}@media(max-width:1100px){.jc-call-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:700px){.jc-call-filters{grid-template-columns:1fr 1fr}.jc-filter-actions{grid-column:span 2}}
+.jc-type-review{border:1px solid #d5ece9;background:linear-gradient(135deg,#f8fffe,#eefcf9)}.jc-type-review form{display:grid;grid-template-columns:minmax(220px,.55fr) minmax(0,1.45fr);gap:10px 14px;align-items:end}.jc-type-review label{display:grid;gap:5px;color:#537882;font-size:10px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.jc-type-review select,.jc-type-review textarea{width:100%;border:1px solid #c9dfe1;border-radius:7px;background:#fff;color:var(--ink);font:inherit;font-size:12px}.jc-type-review select{height:38px;padding:0 10px}.jc-type-review textarea{min-height:72px;padding:9px 10px;resize:vertical;line-height:1.45}.jc-review-actions{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.jc-review-actions button{height:36px;padding:0 12px;border:0;border-radius:7px;background:#109f9b;color:#fff;font:inherit;font-size:11px;font-weight:800;cursor:pointer}.jc-review-actions .secondary{background:#fff;color:#19726f;border:1px solid #9fcfca}.jc-review-actions span{color:#587983;font-size:11px}.jc-review-saved{margin:0 0 13px;padding:9px 11px;background:#e8f8f4;border-left:3px solid #16a889;color:#527681;font-size:11px;line-height:1.45}.jc-review-saved b{color:#136b67}.jc-context{margin:16px 0;padding:12px 15px;border:1px dashed #b8d9d5;border-radius:10px;background:#fbfefd;color:#567782}.jc-context summary{cursor:pointer;color:#167e7a;font-size:12px;font-weight:850}.jc-context p{margin:9px 0 0;font-size:11px;line-height:1.45}.jc-context ol{display:grid;gap:7px;margin:11px 0 0;padding-left:21px}.jc-context li{padding:7px 0 0;color:#53737c;border-top:1px solid #e4f0ef;font-size:11px}.jc-context li b,.jc-context li span{display:inline-block;margin-right:8px}.jc-context li span{color:#168a85}.jc-context li p{margin:4px 0 0}@media(max-width:700px){.jc-type-review form{grid-template-columns:1fr}}
 '''
 
 

@@ -44,7 +44,10 @@ class OperationsExportsTests(unittest.TestCase):
         with self.client.session_transaction() as session:
             self.assertEqual(session["username"], "operations-dashboard")
             self.assertEqual(session["role"], "dashboard")
-        self.assertEqual(self.client.get("/rop").status_code, 403)
+        # The signed iframe is the ROP workspace inside Operations. It may
+        # access its work tabs, while unsigned callers still cannot mint it.
+        self.assertEqual(self.client.get("/rop").status_code, 200)
+        self.assertEqual(self.client.get("/scripts").status_code, 200)
 
     @patch.object(jarvis_app, "get_data")
     def test_sales_calls_export_returns_source_backed_summary(self, get_data):
@@ -73,6 +76,25 @@ class OperationsExportsTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.get_json()["status"], "not_configured")
+
+    @patch.object(jarvis_app, "_start_call_reanalysis", return_value=True)
+    @patch.object(jarvis_app, "persist_call_review")
+    @patch.object(jarvis_app, "get_data")
+    def test_rop_can_confirm_call_type_with_reason_and_request_reanalysis(self, get_data, persist_review, start_reanalysis):
+        get_data.return_value = ([{"activity_id": "42", "manager": {"name": "Роман"}}], {})
+        persist_review.return_value = {"call_type_key": "payment_push"}
+        with self.client.session_transaction() as session:
+            session.update({"username": "rop", "role": "rop", "name": "РОП"})
+
+        response = self.client.post(
+            "/calls/42/review",
+            json={"call_type_key": "payment_push", "reason": "Это дожим после КП", "reanalyze": True},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["reanalysis"], "started")
+        persist_review.assert_called_once()
+        start_reanalysis.assert_called_once_with("42")
 
     @patch.object(jarvis_app, "build_crm_audit_snapshot")
     def test_audit_export_returns_existing_table_shape(self, build_snapshot):

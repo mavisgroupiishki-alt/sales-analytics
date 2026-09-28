@@ -471,21 +471,24 @@ function addScript() {{
 @rop_required
 def admin_learning():
     """Показывает паттерны из ручных правок для калибровки ИИ."""
-    corrections_path = DATA_DIR / "manual_corrections.json"
-    analyses_path = DATA_DIR / "analyses.json"
-
-    corrections = {}
-    if corrections_path.exists():
-        try: corrections = json.loads(corrections_path.read_text(encoding="utf-8"))
-        except: pass
-
-    analyses = {}
-    if analyses_path.exists():
-        try: analyses = json.loads(analyses_path.read_text(encoding="utf-8"))
-        except: pass
+    _, analyses = get_data()
+    corrections = load_corrections()
+    # Production reviews live in Postgres.  Expose them here too, rather than
+    # making the calibration report depend on an ephemeral JSON volume.
+    for aid, stored in analyses.items():
+        analysis = (stored or {}).get("analysis") or {}
+        review = analysis.get("manual_review") or {}
+        if review.get("call_type_key"):
+            corrections[str(aid)] = {
+                **(corrections.get(str(aid)) or {}),
+                "call_type_key": review.get("call_type_key"),
+                "reason": review.get("reason") or "",
+                "reviewer_name": review.get("reviewer_name") or "",
+                "reviewed_at": review.get("reviewed_at") or "",
+            }
 
     if not corrections:
-        content = '<div class="notice">Пока нет ручных правок оценок. Начните исправлять оценки ИИ — здесь появится анализ паттернов.</div>'
+        content = '<div class="notice">Пока нет ручных решений. Подтвердите тип звонка в его карточке и укажите причину ошибки ИИ — здесь появятся паттерны для калибровки.</div>'
         return html_r(admin_page("Самообучение", content, "learning"))
 
     # Анализируем расхождения ИИ и человека
@@ -551,6 +554,15 @@ def admin_learning():
         f'<td style="font-size:11px;color:#A39686">{d["comment"][:50]}</td></tr>'
         for d in diffs[:20]
     )
+    type_review_rows = "".join(
+        f'<tr><td><a href="/calls/{aid}">{aid}</a></td>'
+        f'<td>{((analyses.get(aid, {}).get("analysis") or {}).get("ai_call_type") or {}).get("label") or "Не определён"}</td>'
+        f'<td>{((analyses.get(aid, {}).get("analysis") or {}).get("call_type") or {}).get("label") or corr.get("call_type_key")}</td>'
+        f'<td style="font-size:11px;color:#A39686">{str(corr.get("reason") or "")[:160]}</td>'
+        f'<td>{corr.get("reviewer_name") or "—"}</td></tr>'
+        for aid, corr in sorted(corrections.items(), key=lambda item: str(item[1].get("reviewed_at") or ""), reverse=True)
+        if corr.get("call_type_key")
+    )
 
     content = f"""
 <div class="stat-grid">
@@ -575,6 +587,12 @@ def admin_learning():
 <div class="card">
   <h2>📊 Расхождения по типам звонков</h2>
   <table><tr><th>Тип звонка</th><th>Правок</th><th>Средний сдвиг</th></tr>{type_rows}</table>
+</div>
+
+<div class="card">
+  <h2>🧭 Расхождения типа звонка: ИИ и РОП</h2>
+  <p style="font-size:12px;color:#A39686">Причина сохраняется как обучающий сигнал для последующей калибровки правил и промпта. Автоматического переобучения модели без вашей проверки нет.</p>
+  <table><tr><th>ID</th><th>Тип ИИ</th><th>Решение РОПа</th><th>Причина</th><th>Кто подтвердил</th></tr>{type_review_rows or '<tr><td colspan="5">Ручных подтверждений типа пока нет.</td></tr>'}</table>
 </div>
 
 <div class="card">
@@ -977,7 +995,9 @@ def rop_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if "username" not in session: return redirect(url_for("login"))
-        if session.get("role") not in ("rop", "director"): abort(403)
+        # This role only comes from the one-minute signed dashboard handoff.
+        # It grants the embedded ROP workspace, not a public unauthenticated path.
+        if session.get("role") not in ("rop", "director", "dashboard"): abort(403)
         return f(*args, **kwargs)
     return decorated
 
@@ -1048,7 +1068,56 @@ def apply_corrections(analyses, corrections):
                         ad["flags"]["critical"] = False
             if "comment" in corr:
                 ad["correction_comment"] = corr["comment"]
+            call_type_key = str(corr.get("call_type_key") or "").strip()
+            if call_type_key:
+                from claude_analyzer import CALL_TYPES
+
+                if call_type_key in CALL_TYPES:
+                    ad["ai_call_type"] = dict(ad.get("call_type") or {})
+                    ad["call_type"] = {
+                        "key": call_type_key,
+                        "label": CALL_TYPES[call_type_key]["label"],
+                        "confirmed": True,
+                        "source": "manual",
+                    }
+                    ad["manual_review"] = {
+                        "call_type_key": call_type_key,
+                        "reason": str(corr.get("reason") or corr.get("comment") or ""),
+                        "reviewer_name": str(corr.get("reviewer_name") or "Руководитель"),
+                        "reviewed_at": str(corr.get("reviewed_at") or ""),
+                    }
     return analyses
+
+
+def persist_call_review(activity_id, call_type_key, reason, reviewer_name, *, reanalysis_requested=False):
+    """Store a manual call-type decision in Postgres, with a JSON fallback for local use."""
+    database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
+    if database_url:
+        from jarvis_store import JarvisRepository
+
+        repository = JarvisRepository.connect(database_url)
+        try:
+            return repository.save_call_review(
+                activity_id, call_type_key, reason, reviewer_name,
+                reanalysis_requested=reanalysis_requested,
+            )
+        finally:
+            repository.close()
+    path = DATA_DIR / "manual_corrections.json"
+    try:
+        corrections = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except (OSError, ValueError):
+        corrections = {}
+    corrections[str(activity_id)] = {
+        **(corrections.get(str(activity_id)) or {}),
+        "call_type_key": call_type_key,
+        "reason": reason,
+        "reviewer_name": reviewer_name,
+        "reviewed_at": datetime.now().astimezone().isoformat(),
+        "reanalysis_requested": bool(reanalysis_requested),
+    }
+    path.write_text(json.dumps(corrections, ensure_ascii=False, indent=2), encoding="utf-8")
+    return corrections[str(activity_id)]
 
 def get_data(user=None):
     calls, analyses = load_snapshot()
@@ -1394,6 +1463,7 @@ def avatar(filename):
 def all_calls():
     user = current_user()
     calls, analyses = get_data(user)
+    available_calls = list(calls)
     from jarvis_rop import filter_calls
     filters = request.args.to_dict(flat=True)
     date_from, date_to = requested_date_range()
@@ -1405,6 +1475,7 @@ def all_calls():
     from jarvis_dashboard import render_calls
     return html_response(render_calls(
         calls, analyses, user, period=filters.get("period", ""), date_from=date_from, date_to=date_to,
+        filters=filters, available_calls=available_calls,
     ))
 
 @app.route("/calls/<activity_id>")
@@ -1742,6 +1813,34 @@ def api_correct():
     corrections[aid] = {"overall_score": float(score), "comment": comment}
     p.write_text(json.dumps(corrections, ensure_ascii=False, indent=2), encoding="utf-8")
     return jsonify({"ok": True})
+
+
+@app.route("/calls/<activity_id>/review", methods=["POST"])
+@rop_required
+def review_call_type(activity_id):
+    """Confirm the intended call type without letting a later AI run erase it."""
+    from claude_analyzer import CALL_TYPES
+
+    data = request.get_json(silent=True) or {}
+    call_type_key = str(data.get("call_type_key") or "").strip()
+    reason = str(data.get("reason") or "").strip()
+    reanalyze = bool(data.get("reanalyze"))
+    if call_type_key not in CALL_TYPES:
+        return jsonify({"error": "Выберите корректный тип звонка"}), 400
+    if len(reason) < 3:
+        return jsonify({"error": "Напишите коротко, почему ИИ ошибся"}), 400
+    calls, _ = get_data()
+    if not any(str(call.get("activity_id") or "") == str(activity_id) for call in calls):
+        return jsonify({"error": "Звонок не найден"}), 404
+    saved = persist_call_review(
+        str(activity_id), call_type_key, reason, current_user().get("name") or "Руководитель",
+        reanalysis_requested=reanalyze,
+    )
+    if reanalyze:
+        started = _start_call_reanalysis(str(activity_id))
+        if not started:
+            return jsonify({"ok": True, "review": saved, "reanalysis": "saved_not_started"})
+    return jsonify({"ok": True, "review": saved, "reanalysis": "started" if reanalyze else "not_requested"})
 
 @app.route("/audio/<activity_id>")
 @login_required
@@ -2148,22 +2247,30 @@ def jarvis_bitrix_audio_proxy():
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
-@app.route("/calls/<activity_id>/reanalyze", methods=["POST"])
-@rop_required
-def reanalyze_call(activity_id):
-    """Повторный анализ звонка."""
+def _start_call_reanalysis(activity_id):
+    """Start one bounded reanalysis without expanding it into a historical run."""
     analyses = load_analyses()
     if activity_id not in analyses:
-        return jsonify({"error": "Звонок не найден"}), 404
-    del analyses[activity_id]
+        return False
+    analyses.pop(activity_id, None)
     p = DATA_DIR / "analyses.json"
-    p.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not os.environ.get("JARVIS_DATABASE_URL"):
+        p.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
     import subprocess, sys
     subprocess.Popen(
         [sys.executable, "src/claude_analyzer.py"],
         env={**os.environ, "REANALYZE_ID": activity_id},
         cwd=str(Path(__file__).parent)
     )
+    return True
+
+
+@app.route("/calls/<activity_id>/reanalyze", methods=["POST"])
+@rop_required
+def reanalyze_call(activity_id):
+    """Повторный анализ звонка."""
+    if not _start_call_reanalysis(activity_id):
+        return jsonify({"error": "Звонок не найден"}), 404
     return jsonify({"ok": True, "message": "Анализ запущен, обновите страницу через минуту"})
 
 @app.route("/director")

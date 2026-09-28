@@ -79,6 +79,10 @@ def filter_calls(
     direction = filters.get("direction", "")
     status = filters.get("status", "")
     stage = filters.get("stage", "")
+    call_type_key = filters.get("call_type", "")
+    analysis_state = filters.get("analysis", "")
+    score_min = _score(filters.get("score_min"))
+    score_max = _score(filters.get("score_max"))
 
     if date_from or date_to:
         def in_date_range(call: Dict[str, Any]) -> bool:
@@ -108,6 +112,21 @@ def filter_calls(
         ]
     if stage:
         result = [call for call in result if _stage_name(call.get("crm") or {}) == stage]
+    if call_type_key:
+        result = [
+            call for call in result
+            if str((_analysis_for(analyses, call).get("call_type") or {}).get("key") or "") == call_type_key
+        ]
+    if analysis_state == "with":
+        result = [call for call in result if bool(_analysis_for(analyses, call))]
+    elif analysis_state == "without":
+        result = [call for call in result if not _analysis_for(analyses, call)]
+    if score_min is not None or score_max is not None:
+        def in_score_range(call: Dict[str, Any]) -> bool:
+            score = _score(_analysis_for(analyses, call).get("overall_score"))
+            return score is not None and (score_min is None or score >= score_min) and (score_max is None or score <= score_max)
+
+        result = [call for call in result if in_score_range(call)]
     return result
 
 

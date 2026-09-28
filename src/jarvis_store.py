@@ -447,6 +447,7 @@ class JarvisRepository:
         outside this server-side request.
         """
         with self.connection.cursor() as cursor:
+            self.ensure_review_schema(cursor)
             cursor.execute(
                 """
                 select status, coalesce(finished_at, started_at) as happened_at
@@ -467,7 +468,11 @@ class JarvisRepository:
                   latest.id as analysis_id, latest.status as analysis_status,
                   latest.result as analysis_result, latest.analyzed_at,
                   transcript.transcript as transcript_text,
-                  transcript.diarization as transcript_segments
+                  transcript.diarization as transcript_segments,
+                  review.call_type_key as review_call_type_key,
+                  review.reason as review_reason,
+                  review.reviewer_name as review_reviewer_name,
+                  review.reviewed_at as review_reviewed_at
                 from jarvis.calls c
                 left join jarvis.raw_events re on re.id = c.raw_event_id
                 left join lateral (
@@ -478,10 +483,18 @@ class JarvisRepository:
                   limit 1
                 ) latest on true
                 left join jarvis.transcripts transcript on transcript.id = latest.transcript_id
+                left join lateral (
+                  select cr.*
+                  from jarvis.call_reviews cr
+                  where cr.call_id = c.id
+                  order by cr.reviewed_at desc, cr.id desc
+                  limit 1
+                ) review on true
                 order by c.occurred_at desc, c.id desc
                 """
             )
             rows = cursor.fetchall()
+        self.connection.commit()
 
         calls: list[Dict[str, Any]] = []
         analyses: Dict[str, Any] = {}
@@ -514,6 +527,24 @@ class JarvisRepository:
             # The persisted status is authoritative and protects a historic
             # analysis from being reinterpreted by a later UI-only change.
             result["review_status"] = row.get("analysis_status") or result.get("review_status")
+            manual_type_key = str(row.get("review_call_type_key") or "").strip()
+            if manual_type_key:
+                from claude_analyzer import CALL_TYPES
+
+                ai_call_type = result.get("call_type") if isinstance(result.get("call_type"), dict) else {}
+                result["ai_call_type"] = dict(ai_call_type)
+                result["call_type"] = {
+                    "key": manual_type_key,
+                    "label": str((CALL_TYPES.get(manual_type_key) or {}).get("label") or manual_type_key),
+                    "confirmed": True,
+                    "source": "manual",
+                }
+                result["manual_review"] = {
+                    "call_type_key": manual_type_key,
+                    "reason": str(row.get("review_reason") or ""),
+                    "reviewer_name": str(row.get("review_reviewer_name") or "Руководитель"),
+                    "reviewed_at": self._timestamp(row.get("review_reviewed_at")),
+                }
             analyses[activity_id] = {
                 "call_meta": call,
                 "transcription": {
@@ -524,6 +555,91 @@ class JarvisRepository:
                 "analyzed_at": self._timestamp(row.get("analyzed_at")),
             }
         return calls, analyses
+
+    @staticmethod
+    def ensure_review_schema(cursor: Any) -> None:
+        """Keep human call decisions durable in the private Jarvis database."""
+        cursor.execute(
+            """
+            create table if not exists jarvis.call_reviews (
+              id bigserial primary key,
+              call_id bigint not null references jarvis.calls(id) on delete cascade,
+              call_type_key text not null,
+              reason text not null,
+              reviewer_name text not null,
+              reviewed_at timestamptz not null default now(),
+              reanalysis_requested boolean not null default false,
+              unique (call_id)
+            )
+            """
+        )
+
+    def save_call_review(
+        self,
+        activity_id: str,
+        call_type_key: str,
+        reason: str,
+        reviewer_name: str,
+        *,
+        reanalysis_requested: bool = False,
+    ) -> Dict[str, Any]:
+        with self.connection.cursor() as cursor:
+            self.ensure_review_schema(cursor)
+            cursor.execute(
+                """
+                select id from jarvis.calls
+                where source = 'bitrix24' and source_call_id = %s
+                """,
+                (activity_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError("Звонок не найден в хранилище Jarvis")
+            call_id = row["id"] if isinstance(row, dict) else row[0]
+            cursor.execute(
+                """
+                insert into jarvis.call_reviews
+                    (call_id, call_type_key, reason, reviewer_name, reviewed_at, reanalysis_requested)
+                values (%s, %s, %s, %s, now(), %s)
+                on conflict (call_id) do update set
+                  call_type_key = excluded.call_type_key,
+                  reason = excluded.reason,
+                  reviewer_name = excluded.reviewer_name,
+                  reviewed_at = excluded.reviewed_at,
+                  reanalysis_requested = excluded.reanalysis_requested
+                returning call_type_key, reason, reviewer_name, reviewed_at, reanalysis_requested
+                """,
+                (call_id, call_type_key, reason, reviewer_name, reanalysis_requested),
+            )
+            saved = cursor.fetchone()
+        self.connection.commit()
+        return dict(saved) if isinstance(saved, dict) else {
+            "call_type_key": saved[0], "reason": saved[1], "reviewer_name": saved[2],
+            "reviewed_at": self._timestamp(saved[3]), "reanalysis_requested": bool(saved[4]),
+        }
+
+    def review_corrections(self) -> Dict[str, Any]:
+        """Expose current manual type decisions to the isolated analysis worker."""
+        with self.connection.cursor() as cursor:
+            self.ensure_review_schema(cursor)
+            cursor.execute(
+                """
+                select c.source_call_id, cr.call_type_key, cr.reason, cr.reviewer_name, cr.reviewed_at
+                from jarvis.call_reviews cr
+                join jarvis.calls c on c.id = cr.call_id
+                """
+            )
+            rows = cursor.fetchall()
+        self.connection.commit()
+        return {
+            str(row["source_call_id"] if isinstance(row, dict) else row[0]): {
+                "call_type_key": str(row["call_type_key"] if isinstance(row, dict) else row[1]),
+                "reason": str(row["reason"] if isinstance(row, dict) else row[2]),
+                "reviewer_name": str(row["reviewer_name"] if isinstance(row, dict) else row[3]),
+                "reviewed_at": self._timestamp(row["reviewed_at"] if isinstance(row, dict) else row[4]),
+            }
+            for row in rows
+        }
 
     @staticmethod
     def _timestamp(value: Any) -> str:
