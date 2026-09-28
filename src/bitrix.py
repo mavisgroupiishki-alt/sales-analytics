@@ -186,6 +186,117 @@ def fetch_calls(client: Bitrix24Client, date_from: datetime, date_to: datetime) 
     return filtered
 
 
+def select_previous_deal_recordings(
+    targets: List[Dict[str, Any]],
+    candidates: List[Dict[str, Any]],
+    *,
+    limit: int = 8,
+) -> List[Dict[str, Any]]:
+    """Return the latest playable calls preceding each target in its deal.
+
+    This deliberately works on Bitrix activities, not completed AI analyses:
+    context backfill must discover and prepare the prior conversations before
+    the current call is evaluated.  Calls without a usable recording cannot be
+    transcribed and therefore are not counted as usable context.
+    """
+    selected: Dict[str, Dict[str, Any]] = {}
+    for target in targets:
+        target_crm = target.get("crm") or {}
+        if target_crm.get("owner_type") != "deal":
+            continue
+        owner_id = str(target_crm.get("owner_id") or "")
+        target_id = str(target.get("activity_id") or "")
+        target_created = str(target.get("created") or "")
+        if not owner_id or not target_id or not target_created:
+            continue
+
+        previous = []
+        for candidate in candidates:
+            candidate_crm = candidate.get("crm") or {}
+            candidate_id = str(candidate.get("activity_id") or "")
+            candidate_created = str(candidate.get("created") or "")
+            audio = candidate.get("audio") or {}
+            duration = candidate.get("duration_sec")
+            if candidate_crm.get("owner_type") != "deal":
+                continue
+            if str(candidate_crm.get("owner_id") or "") != owner_id:
+                continue
+            if not candidate_id or (candidate_created, candidate_id) >= (target_created, target_id):
+                continue
+            if not audio.get("file_id") or should_skip_audio_download(candidate, audio.get("file_id")):
+                continue
+            if duration is not None:
+                try:
+                    if int(duration) <= HARD_FLOOR_SEC:
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            previous.append(candidate)
+
+        previous.sort(key=lambda call: (str(call.get("created") or ""), str(call.get("activity_id") or "")))
+        for candidate in previous[-limit:]:
+            selected[str(candidate["activity_id"])] = candidate
+
+    return sorted(
+        selected.values(),
+        key=lambda call: (str(call.get("created") or ""), str(call.get("activity_id") or "")),
+    )
+
+
+def fetch_previous_deal_recordings(
+    client: Bitrix24Client,
+    targets: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Fetch and normalize the previous recording candidates from Bitrix.
+
+    Bitrix remains the source of truth for history: the worker queries each
+    referenced deal directly, then selects at most eight recordings before
+    each current target.  The caller performs audio download/transcription.
+    """
+    deal_ids = sorted({
+        str((target.get("crm") or {}).get("owner_id") or "")
+        for target in targets
+        if (target.get("crm") or {}).get("owner_type") == "deal"
+        and (target.get("crm") or {}).get("owner_id")
+    })
+    if not deal_ids:
+        return []
+
+    raw_activities: Dict[str, Dict[str, Any]] = {}
+    for deal_id in deal_ids:
+        activities = client.call_all(
+            "crm.activity.list",
+            {
+                "filter": {
+                    "TYPE_ID": ACTIVITY_TYPE_CALL,
+                    "COMPLETED": "Y",
+                    "OWNER_TYPE_ID": 2,
+                    "OWNER_ID": deal_id,
+                },
+                "select": ["*", "COMMUNICATIONS"],
+                "order": {"CREATED": "ASC"},
+            },
+        )
+        for activity in activities:
+            if activity.get("FILES") and activity.get("ID"):
+                raw_activities[str(activity["ID"])] = activity
+
+    if not raw_activities:
+        return []
+
+    manager_ids = set()
+    for activity in raw_activities.values():
+        for field in ("AUTHOR_ID", "CREATED_BY_ID", "CREATED_BY", "RESPONSIBLE_ID"):
+            try:
+                if activity.get(field):
+                    manager_ids.add(int(activity[field]))
+            except (TypeError, ValueError):
+                continue
+    users = fetch_users(client, list(manager_ids))
+    normalized = [normalize_call(activity, users) for activity in raw_activities.values()]
+    return select_previous_deal_recordings(targets, normalized)
+
+
 def fetch_users(client: Bitrix24Client, user_ids: List[int]) -> Dict[int, Dict]:
     if not user_ids:
         return {}

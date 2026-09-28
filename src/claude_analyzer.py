@@ -1510,6 +1510,108 @@ def mirror_analyses_to_jarvis(calls: list[Dict[str, Any]], analyses: Dict[str, A
     finally:
         store.close()
 
+
+def prepare_deal_context_history(
+    targets: List[Dict[str, Any]],
+    history_calls: List[Dict[str, Any]],
+    analyses: Dict[str, Any],
+    scripts_db: Dict[str, Any],
+    corrections: Dict[str, Any],
+    audio_dir: Path,
+    *,
+    force_reanalysis: bool = False,
+) -> Tuple[List[Dict[str, Any]], set[str]]:
+    """Actively fetch, transcribe and analyse the prior calls used as context.
+
+    Context cannot depend solely on the local Jarvis cache: each target deal is
+    queried in Bitrix first.  Up to eight prior playable recordings are then
+    downloaded and analysed before the current calls are scored.  Prior calls
+    are deliberately analysed without recursively fetching their own history;
+    that keeps one target bounded to eight additional conversations.
+    """
+    if not targets:
+        return history_calls, set()
+
+    from bitrix import (
+        Bitrix24Client,
+        NonAudioFileError,
+        download_audio,
+        fetch_previous_deal_recordings,
+        mirror_snapshot_to_jarvis,
+    )
+
+    try:
+        context_calls = fetch_previous_deal_recordings(Bitrix24Client(), targets)
+    except Exception as exc:
+        logger.warning("Не удалось получить предыдущие звонки сделок из Bitrix: %s", type(exc).__name__)
+        return history_calls, set()
+
+    if not context_calls:
+        return history_calls, set()
+
+    # Raw CRM records must exist before the immutable transcript/analysis is
+    # written to Jarvis Postgres.  This also lets the dashboard expose the
+    # newly discovered history on subsequent runs.
+    mirror_snapshot_to_jarvis(context_calls)
+    history_by_id = {
+        str(call.get("activity_id") or ""): call
+        for call in history_calls
+        if str(call.get("activity_id") or "")
+    }
+    history_by_id.update({str(call["activity_id"]): call for call in context_calls})
+    history_calls = list(history_by_id.values())
+
+    prepared_activity_ids: set[str] = set()
+    for index, context_call in enumerate(context_calls, 1):
+        activity_id = str(context_call.get("activity_id") or "")
+        if not activity_id:
+            continue
+        if activity_id in analyses and not force_reanalysis:
+            continue
+
+        audio = context_call.get("audio") or {}
+        file_id = audio.get("file_id")
+        if not file_id:
+            continue
+        try:
+            logger.info("Контекст %s/%s: подготавливаю звонок %s", index, len(context_calls), activity_id)
+            path = download_audio(
+                Bitrix24Client(),
+                file_id,
+                audio_dir,
+                audio.get("url"),
+                activity_id,
+            )
+            context_call.setdefault("audio", {})["status"] = "available"
+            context_call["audio"]["local_path"] = str(path)
+            transcription = transcribe_audio(path)
+            if len(transcription.get("text") or "") < 50:
+                logger.warning("Контекстный звонок %s: слишком короткая расшифровка", activity_id)
+                continue
+            correction = corrections.get(activity_id) or {}
+            analysis = analyze_transcript(
+                transcription,
+                context_call,
+                scripts_db,
+                deal_context={"crm": {}, "previous_calls": []},
+                forced_call_type_key=correction.get("call_type_key"),
+            )
+            analyses[activity_id] = {
+                "call_meta": context_call,
+                "transcription": transcription,
+                "analysis": apply_manual_corrections(activity_id, analysis, corrections),
+                "analyzed_at": datetime.now().isoformat(),
+            }
+            prepared_activity_ids.add(activity_id)
+        except NonAudioFileError:
+            context_call.setdefault("audio", {})["status"] = "invalid"
+            context_call["audio"]["error"] = "non_audio_file"
+            logger.warning("Контекстный звонок %s: Bitrix вернул не-аудиофайл", activity_id)
+        except Exception as exc:
+            logger.warning("Контекстный звонок %s не подготовлен: %s", activity_id, type(exc).__name__)
+
+    return history_calls, prepared_activity_ids
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     print("=" * 60)
@@ -1568,27 +1670,47 @@ def main():
         target_description = requested_date or ", ".join(sorted(requested_ids))
         print(f"♻️  Повторный разбор только для: {target_description}")
 
-    total_cost = 0.0
-    success = 0
-    failed = 0
-    critical_count = 0
-    type_stats = {}
-    completed_activity_ids: set[str] = set()
-
-    for i, audio_path in enumerate(audio_files, 1):
-        print(f"\n{'='*60}")
-        print(f"[{i}/{len(audio_files)}] {audio_path.name}")
-        print(f"{'='*60}")
-
+    # Resolve audio metadata once and process targets chronologically.  This
+    # makes an earlier call from the same day available to a later call as
+    # context after it has been re-analysed.
+    audio_entries = []
+    for audio_path in audio_files:
         file_id_str = audio_path.name.split("_")[0]
         call_meta = next(
             (c for c in calls if c.get("audio") and str(c["audio"].get("file_id")) == file_id_str),
             None,
         )
-        if not call_meta:
-            print(f"   ⚠ Метаданные не найдены")
-            failed += 1
-            continue
+        if call_meta:
+            audio_entries.append((audio_path, call_meta))
+    audio_entries.sort(key=lambda entry: (str(entry[1].get("created") or ""), str(entry[1].get("activity_id") or "")))
+
+    context_targets = [
+        call_meta
+        for _, call_meta in audio_entries
+        if (not targeted_reanalysis or is_reanalysis_target(call_meta, requested_ids, requested_date))
+        and (call_meta.get("duration_sec") or 0) >= MIN_DURATION_FOR_ANALYSIS
+    ]
+    history_calls, prepared_context_ids = prepare_deal_context_history(
+        context_targets,
+        history_calls,
+        analyses,
+        scripts_db,
+        corrections,
+        audio_dir,
+        force_reanalysis=targeted_reanalysis,
+    )
+
+    total_cost = 0.0
+    success = 0
+    failed = 0
+    critical_count = 0
+    type_stats = {}
+    completed_activity_ids: set[str] = set(prepared_context_ids)
+
+    for i, (audio_path, call_meta) in enumerate(audio_entries, 1):
+        print(f"\n{'='*60}")
+        print(f"[{i}/{len(audio_files)}] {audio_path.name}")
+        print(f"{'='*60}")
 
         activity_id = call_meta["activity_id"]
         if targeted_reanalysis and not is_reanalysis_target(call_meta, requested_ids, requested_date):
@@ -1697,7 +1819,7 @@ def main():
             for activity_id in completed_activity_ids
             if activity_id in analyses
         }
-        mirrored = mirror_analyses_to_jarvis(calls, completed_analyses)
+        mirrored = mirror_analyses_to_jarvis(history_calls, completed_analyses)
         if os.environ.get("JARVIS_DATABASE_URL"):
             print(f"   🔒 В закрытую базу сохранено анализов: {mirrored}")
     except Exception as exc:

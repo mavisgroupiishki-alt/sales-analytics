@@ -18,9 +18,76 @@ from claude_analyzer import (  # noqa: E402
     detect_service_contact_routing,
     detect_service_document_delivery,
 )
+from bitrix import fetch_previous_deal_recordings, select_previous_deal_recordings  # noqa: E402
 
 
 class ClaudeAnalyzerPromptTests(unittest.TestCase):
+    def test_context_backfill_reads_previous_calls_from_bitrix(self):
+        class BitrixFixture:
+            def __init__(self):
+                self.requests = []
+
+            def call_all(self, method, params):
+                self.requests.append((method, params))
+                return [
+                    {
+                        "ID": str(number),
+                        "CREATED": f"2026-09-{number + 1:02d}T10:00:00+03:00",
+                        "FILES": [{"id": number + 100}],
+                        "COMMUNICATIONS": [{}],
+                        "DIRECTION": 2,
+                        "OWNER_TYPE_ID": 2,
+                        "OWNER_ID": "42",
+                        "AUTHOR_ID": 1286,
+                    }
+                    for number in range(10)
+                ]
+
+            def call(self, method, params):
+                self.requests.append((method, params))
+                self.assertEqual(method, "user.get")
+                return {"result": [{"NAME": "Роман", "LAST_NAME": "Авсеенко"}]}
+
+            def assertEqual(self, actual, expected):
+                if actual != expected:
+                    raise AssertionError(f"{actual!r} != {expected!r}")
+
+        client = BitrixFixture()
+        selected = fetch_previous_deal_recordings(
+            client,
+            [{
+                "activity_id": "current",
+                "created": "2026-09-20T10:00:00+03:00",
+                "crm": {"owner_type": "deal", "owner_id": "42"},
+            }],
+        )
+
+        self.assertEqual([call["activity_id"] for call in selected], [str(number) for number in range(2, 10)])
+        method, payload = client.requests[0]
+        self.assertEqual(method, "crm.activity.list")
+        self.assertEqual(payload["filter"]["OWNER_ID"], "42")
+
+    def test_context_backfill_selects_eight_prior_recordings_even_without_analysis(self):
+        target = {
+            "activity_id": "current",
+            "created": "2026-09-20T10:00:00+03:00",
+            "crm": {"owner_type": "deal", "owner_id": "42"},
+        }
+        candidates = [
+            {
+                "activity_id": str(number),
+                "created": f"2026-09-{number + 1:02d}T10:00:00+03:00",
+                "crm": {"owner_type": "deal", "owner_id": "42"},
+                "audio": {"file_id": number + 100},
+                "duration_sec": 60,
+            }
+            for number in range(10)
+        ]
+
+        selected = select_previous_deal_recordings([target], candidates)
+
+        self.assertEqual([call["activity_id"] for call in selected], [str(number) for number in range(2, 10)])
+
     def test_deal_context_uses_only_eight_earlier_calls_from_same_deal(self):
         calls = []
         analyses = {}
