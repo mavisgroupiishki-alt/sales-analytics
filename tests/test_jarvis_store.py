@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from claude_analyzer import compute_applicable_score, evaluate_triage, is_reanalysis_target, reanalysis_scope  # noqa: E402
-from jarvis_store import JarvisRepository, JarvisStore, normalize_bitrix_call, payload_sha256  # noqa: E402
+from jarvis_store import JarvisRepository, JarvisStore, NormalizedCall, normalize_bitrix_call, payload_sha256  # noqa: E402
 
 
 class JarvisStoreTests(unittest.TestCase):
@@ -58,6 +58,35 @@ class JarvisStoreTests(unittest.TestCase):
 
         self.assertIsNone(normalized.crm_owner_type)
         self.assertIsNone(normalized.crm_owner_id)
+
+    def test_crm_link_keeps_only_one_primary_link_per_call_and_entity_type(self):
+        class Cursor:
+            def __init__(self):
+                self.statement = ""
+                self.params = ()
+
+            def execute(self, statement, params):
+                self.statement = statement
+                self.params = params
+
+        cursor = Cursor()
+        call = NormalizedCall(
+            source_call_id="1",
+            occurred_at="2026-09-08T10:00:00+03:00",
+            direction="outgoing",
+            duration_seconds=30,
+            manager_external_id="1286",
+            recording_available=True,
+            audio_status="available",
+            crm_owner_type="deal",
+            crm_owner_id="42",
+        )
+
+        JarvisStore._upsert_crm_link(None, cursor, call_id=7, call=call)
+
+        self.assertIn("not exists", cursor.statement.lower())
+        self.assertIn("jarvis.call_links.is_primary or not exists", cursor.statement.lower())
+        self.assertEqual(cursor.params, (7, "deal", "42", 7, "deal"))
 
     def test_empty_recording_is_not_marked_available(self):
         normalized = normalize_bitrix_call(

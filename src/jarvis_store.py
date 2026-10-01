@@ -408,12 +408,28 @@ class JarvisStore:
             """
             insert into jarvis.call_links
                 (call_id, entity_type, external_id, link_method, confidence, is_primary)
-            values (%s, %s, %s, 'crm_owner', 1, true)
+            select %s, %s, %s, 'crm_owner', 1,
+                   not exists (
+                     select 1
+                     from jarvis.call_links existing
+                     where existing.call_id = %s
+                       and existing.entity_type = %s
+                       and existing.is_primary
+                   )
             on conflict (call_id, entity_type, external_id) do update set
               confidence = excluded.confidence,
-              is_primary = excluded.is_primary
+              -- A call can have one primary link per CRM entity type.  Keep
+              -- the already selected primary link instead of promoting every
+              -- later Bitrix relation to primary.
+              is_primary = jarvis.call_links.is_primary or not exists (
+                select 1
+                from jarvis.call_links existing
+                where existing.call_id = excluded.call_id
+                  and existing.entity_type = excluded.entity_type
+                  and existing.is_primary
+              )
             """,
-            (call_id, call.crm_owner_type, call.crm_owner_id),
+            (call_id, call.crm_owner_type, call.crm_owner_id, call_id, call.crm_owner_type),
         )
 
     def close(self) -> None:
