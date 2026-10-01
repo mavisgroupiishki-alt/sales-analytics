@@ -18,6 +18,8 @@ class SalesScopeTests(unittest.TestCase):
             [
                 {"activity_id": "roman", "manager": {"id": 1286, "name": "Роман Авсеенко"}},
                 {"activity_id": "irina", "manager": {"id": 2100, "name": "Ирина Богомольцева"}},
+                {"activity_id": "alena", "manager": {"id": 2272, "name": "Алена Хурсик"}},
+                {"activity_id": "irina_new", "manager": {"id": 2274, "name": "Ирина Базылева"}},
                 {"activity_id": "olga", "manager": {"id": 2198, "name": "Ольга Панькова"}},
                 {"activity_id": "expert", "manager": {"id": 2192, "name": "Екатерина Николаева"}},
             ],
@@ -26,7 +28,16 @@ class SalesScopeTests(unittest.TestCase):
 
         calls, _ = jarvis_app.get_data()
 
-        self.assertEqual([call["activity_id"] for call in calls], ["roman", "irina"])
+        self.assertEqual([call["activity_id"] for call in calls], ["roman", "irina", "alena", "irina_new"])
+
+    def test_team_settings_are_available_to_rop(self):
+        response = self.client.get("/team")
+
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Настройка прослушки", html)
+        self.assertIn("Алена Хурсик", html)
+        self.assertIn("Ирина Базылева", html)
 
     @patch.object(jarvis_app, "get_data")
     def test_overview_period_changes_the_complete_dashboard_sample(self, get_data):

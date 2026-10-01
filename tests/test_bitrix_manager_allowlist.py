@@ -9,8 +9,11 @@ from bitrix import ALLOWED_MANAGER_IDS, ALLOWED_MANAGERS, determine_real_manager
 
 class BitrixManagerAllowlistTests(unittest.TestCase):
     def test_only_sales_managers_are_included(self):
-        self.assertEqual(ALLOWED_MANAGER_IDS, [1286, 2100])
-        self.assertEqual(ALLOWED_MANAGERS, ["Роман Авсеенко", "Ирина Богомольцева"])
+        self.assertEqual(ALLOWED_MANAGER_IDS, [1286, 2100, 2272, 2274])
+        self.assertEqual(
+            ALLOWED_MANAGERS,
+            ["Роман Авсеенко", "Ирина Богомольцева", "Алена Хурсик", "Ирина Базылева"],
+        )
 
     def test_real_manager_is_selected_when_responsible_is_different(self):
         activity = {

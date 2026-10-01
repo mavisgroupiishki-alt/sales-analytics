@@ -148,6 +148,18 @@ def rop_required(f):
     return decorated
 
 
+def team_settings_required(f):
+    """Allow management and the signed operational-dashboard handoff to edit monitoring."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "username" not in session:
+            return redirect(url_for("login"))
+        if session.get("role") not in ("rop", "director", "dashboard"):
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated
+
+
 def html_r(html):
     return Response(html, mimetype="text/html; charset=utf-8")
 
@@ -1034,11 +1046,12 @@ def load_snapshot():
 
 
 def sales_manager_calls(calls):
-    """Keep Jarvis scoped to the two sales managers, including legacy rows."""
-    from bitrix import ALLOWED_MANAGER_IDS, ALLOWED_MANAGERS
+    """Keep Jarvis scoped to the team configured for call monitoring."""
+    from sales_team import active_sales_team, ids as sales_team_ids, names as sales_team_names
 
-    allowed_ids = {str(manager_id) for manager_id in ALLOWED_MANAGER_IDS}
-    allowed_names = {name.strip().casefold() for name in ALLOWED_MANAGERS}
+    team = active_sales_team()
+    allowed_ids = {str(manager_id) for manager_id in sales_team_ids(team)}
+    allowed_names = sales_team_names(team)
     return [
         call for call in calls
         if str((call.get("manager") or {}).get("id") or "") in allowed_ids
@@ -1526,6 +1539,114 @@ def daily_reports():
     from jarvis_dashboard import render_daily_reports
     calls = filter_calls(calls, analyses, filters)
     return html_response(render_daily_reports(calls, analyses, user, **filters))
+
+
+def monitored_team_settings(*, bootstrap: bool = False):
+    """Read the monitored-team list used by the web app and live worker."""
+    from sales_team import DEFAULT_SALES_TEAM, SalesTeamRepository
+
+    database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
+    if not database_url:
+        return list(DEFAULT_SALES_TEAM)
+    repository = SalesTeamRepository.connect(database_url)
+    try:
+        if bootstrap:
+            repository.ensure_schema()
+        return repository.members()
+    finally:
+        repository.close()
+
+
+def active_bitrix_employees():
+    """Return selectable active Bitrix24 users without exposing the webhook."""
+    from bitrix import Bitrix24Client
+
+    client = Bitrix24Client()
+    rows = client.call_all("user.get", {"FILTER": {"ACTIVE": "Y"}})
+    employees = []
+    for row in rows:
+        try:
+            user_id = int(row.get("ID") or 0)
+        except (TypeError, ValueError):
+            continue
+        name = f"{row.get('NAME', '')} {row.get('LAST_NAME', '')}".strip()
+        if user_id and name:
+            employees.append({"id": user_id, "name": name})
+    return sorted(employees, key=lambda employee: employee["name"].casefold())
+
+
+def bitrix_employee(employee_id: int):
+    """Resolve the submitted ID afresh so the browser cannot invent a person."""
+    from bitrix import Bitrix24Client, fetch_users
+
+    employee = fetch_users(Bitrix24Client(), [employee_id]).get(employee_id)
+    if not employee or not employee.get("name"):
+        raise ValueError("Сотрудник не найден в Bitrix24")
+    return employee
+
+
+@app.route("/team", methods=["GET", "POST"])
+@team_settings_required
+def team_settings():
+    """Manage who is included in the sales-call collection and analysis."""
+    notice = str(request.args.get("notice") or "")
+    error = str(request.args.get("error") or "")
+    database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
+
+    if request.method == "POST":
+        action = str(request.form.get("action") or "")
+        try:
+            employee_id = int(request.form.get("manager_id") or 0)
+            if employee_id <= 0:
+                raise ValueError("Выберите сотрудника Bitrix24")
+            if not database_url:
+                raise RuntimeError("Хранилище настроек Jarvis пока не подключено")
+
+            from sales_team import SalesTeamMember, SalesTeamRepository
+
+            repository = SalesTeamRepository.connect(database_url)
+            try:
+                repository.ensure_schema()
+                if action == "add":
+                    employee = bitrix_employee(employee_id)
+                    repository.activate(SalesTeamMember(employee_id, str(employee["name"])))
+                    notice = f"{employee['name']} добавлен(а) в прослушку звонков."
+                elif action == "remove":
+                    repository.deactivate(employee_id)
+                    notice = "Сотрудник убран из новых заборов звонков."
+                else:
+                    raise ValueError("Неизвестное действие")
+            finally:
+                repository.close()
+        except (RuntimeError, ValueError) as exc:
+            error = str(exc)
+        except Exception as exc:
+            app.logger.exception("Could not update the Jarvis monitored team")
+            error = f"Не удалось сохранить настройку ({type(exc).__name__})"
+        return redirect(url_for("team_settings", notice=notice, error=error))
+
+    try:
+        team = monitored_team_settings(bootstrap=bool(database_url))
+    except Exception as exc:
+        app.logger.exception("Could not load the Jarvis monitored team")
+        team = []
+        error = error or f"Не удалось загрузить команду ({type(exc).__name__})"
+    try:
+        candidates = active_bitrix_employees() if database_url else []
+    except Exception as exc:
+        app.logger.warning("Could not load Bitrix employees for Jarvis team settings: %s", type(exc).__name__)
+        candidates = []
+        error = error or "Список сотрудников Bitrix24 временно недоступен."
+
+    from jarvis_dashboard import render_team_settings
+
+    return html_response(render_team_settings(
+        [{"id": member.bitrix_user_id, "name": member.name} for member in team],
+        candidates,
+        current_user(),
+        notice=notice,
+        error=error,
+    ))
 
 @app.route("/managers/<int:manager_id>")
 @app.route("/managers/<int:manager_id>.html")

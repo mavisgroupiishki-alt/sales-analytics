@@ -357,10 +357,10 @@ def render_dashboard(
     daily_reports_href = _period_url("/daily-reports", period, date_from=date_from, date_to=date_to)
     rop_href = _period_url("/rop", period, date_from=date_from, date_to=date_to)
     privileged_nav = ""
-    if user.get("role") in {"rop", "director"}:
+    if user.get("role") in {"rop", "director", "dashboard"}:
         privileged_nav = (
             f'<a href="{funnel_href}">Воронка</a><a href="{managers_href}">Команда</a><a href="{daily_reports_href}">Отчёты менеджеров</a>'
-            f'<a href="{rop_href}">Отчёт РОПа</a><a href="/scripts">Скрипты</a>'
+            f'<a href="{rop_href}">Отчёт РОПа</a><a href="/scripts">Скрипты</a><a href="/team">Настроить команду</a>'
         )
     funnel_links = "".join(
         f'<a href="{_period_url("/calls", period, date_from=date_from, date_to=date_to, stage=item["name"] or "Стадия не определена")}">'
@@ -390,9 +390,9 @@ def render_dashboard(
 def _console_page(
     title: str, active: str, body: str, user: Dict[str, Any], *, period: str = "", date_from: str = "", date_to: str = "",
 ) -> str:
-    pages = (("", "Обзор"), ("calls", "Звонки"), ("funnel", "Воронка"), ("managers", "Команда"), ("daily-reports", "Отчёты менеджеров"), ("rop", "Отчёт РОПа"), ("scripts", "Скрипты"))
+    pages = (("", "Обзор"), ("calls", "Звонки"), ("funnel", "Воронка"), ("managers", "Команда"), ("daily-reports", "Отчёты менеджеров"), ("rop", "Отчёт РОПа"), ("scripts", "Скрипты"), ("team", "Настроить команду"))
     links = "".join(
-        f'<a {"class=\"active\" " if key == active else ""}href="{_period_url(f"/{key}" if key else "/", period, date_from=date_from, date_to=date_to) if key != "scripts" else "/scripts"}">{label}</a>'
+        f'<a {"class=\"active\" " if key == active else ""}href="{_period_url(f"/{key}" if key else "/", period, date_from=date_from, date_to=date_to) if key not in {"scripts", "team"} else f"/{key}"}">{label}</a>'
         for key, label in pages
     )
     home_href = _period_url("/", period, date_from=date_from, date_to=date_to)
@@ -769,8 +769,39 @@ def render_scripts(scripts: Dict[str, Any], user: Dict[str, Any]) -> str:
     return _console_page("Скрипты", "scripts", content, user)
 
 
+def render_team_settings(
+    team: List[Dict[str, Any]], candidates: List[Dict[str, Any]], user: Dict[str, Any], *,
+    notice: str = "", error: str = "",
+) -> str:
+    """Render the shared monitored-sales-team settings page.
+
+    An entry here is not merely cosmetic: the live worker reads this same
+    team before fetching recordings from Bitrix24.
+    """
+    candidate_options = "".join(
+        f'<option value="{_text(candidate.get("id"))}">{_text(candidate.get("name"))}</option>'
+        for candidate in candidates
+    )
+    team_rows = "".join(
+        f'''<article class="jt-member"><div><b>{_text(member.get("name"))}</b><small>Bitrix ID {int(member.get("id") or 0)}</small></div>
+          <form method="post" action="/team"><input type="hidden" name="action" value="remove"><input type="hidden" name="manager_id" value="{int(member.get("id") or 0)}"><button type="submit">Убрать</button></form></article>'''
+        for member in team
+    ) or '<div class="jc-section-empty">В прослушке пока нет сотрудников.</div>'
+    notice_html = f'<p class="jt-notice">{_text(notice)}</p>' if notice else ""
+    error_html = f'<p class="jt-error">{_text(error)}</p>' if error else ""
+    disabled = "" if candidate_options else " disabled"
+    content = f'''<section class="jc-heading"><p>Настройка прослушки</p><h1>Команда <span>в анализе звонков.</span></h1><small>Добавленный сотрудник сразу входит в очередь сбора записей, транскрибации и анализа. В списке — активные сотрудники Bitrix24.</small></section>
+{notice_html}{error_html}
+<section class="jt-grid"><section class="jc-panel-section"><div class="jc-section-head"><div><h2>Кого прослушиваем</h2><p>{len(team)} сотрудников. Удаление останавливает новые заборы; уже сохранённые звонки останутся в истории.</p></div></div><div class="jt-members">{team_rows}</div></section>
+<section class="jc-panel-section"><div class="jc-section-head"><div><h2>Добавить сотрудника</h2><p>Выберите человека из Bitrix24 — ID и имя подтянутся автоматически.</p></div></div>
+<form class="jt-add" method="post" action="/team"><input type="hidden" name="action" value="add"><label>Сотрудник Bitrix24<select name="manager_id" required{disabled}><option value="">Выберите сотрудника</option>{candidate_options}</select></label><button type="submit"{disabled}>Добавить в прослушку</button></form></section></section>
+<section class="jd-limits"><b>Как это работает</b><span>Состав команды хранится в общей базе Jarvis. Поэтому изменение действует одновременно для интерфейса и фонового сборщика звонков, без правки кода и без ручного перезапуска списка.</span></section>'''
+    return _console_page("Настроить команду", "team", content, user)
+
+
 _CONSOLE_CSS = r'''
 .jc-status.low_score{background:var(--amber-soft);color:var(--amber)}
+.jt-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.jt-members{display:grid;gap:8px}.jt-member{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:13px 0;border-top:1px solid var(--line)}.jt-member:first-child{border-top:0}.jt-member b,.jt-member small{display:block}.jt-member b{font-size:13px}.jt-member small{margin-top:3px;color:var(--muted);font-size:11px}.jt-member button,.jt-add button{height:34px;padding:0 12px;border:1px solid #b7d8d7;border-radius:7px;background:#fff;color:#137f7b;font:inherit;font-size:11px;font-weight:800;cursor:pointer}.jt-member button:hover{border-color:#d26370;color:#a43b49;background:#fff4f5}.jt-add{display:grid;gap:13px}.jt-add label{display:grid;gap:6px;color:#52747d;font-size:10px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.jt-add select{height:38px;padding:0 10px;border:1px solid #c9dfe1;border-radius:7px;background:#fff;color:var(--ink);font:inherit;font-size:12px}.jt-add button{justify-self:start;border:0;background:#109f9b;color:#fff}.jt-add button:disabled{cursor:not-allowed;opacity:.55}.jt-notice,.jt-error{margin:0 0 16px;padding:12px 15px;border-radius:8px;font-size:12px}.jt-notice{background:#e6faf4;color:#137c68}.jt-error{background:var(--red-soft);color:#ad4250}@media(max-width:900px){.jt-grid{grid-template-columns:1fr}}
 .jc-status.audio_unavailable{background:#edf3f4;color:#617982}
 .jc-shell{max-width:1470px}.jc-heading{margin-bottom:24px}.jc-heading p{margin:0 0 8px;color:#149c99;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}.jc-heading h1{margin:0;color:var(--ink);font-size:32px;letter-spacing:-.04em}.jc-heading h1 span{color:#7a9ca7;font-weight:600}.jc-heading small{display:block;max-width:720px;margin-top:10px;color:var(--muted);font-size:12px}.jc-table,.jc-detail-grid,.jc-scripts{background:#fff;border-radius:11px;box-shadow:0 7px 21px rgba(30,88,98,.1);overflow:hidden}.jc-table-head,.jc-row{display:grid;grid-template-columns:130px minmax(170px,1.25fr) minmax(130px,1fr) minmax(115px,.7fr) 44px 18px;gap:15px;align-items:center}.jc-table-head{padding:11px 18px;background:#effafa;color:#6c8991;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.jc-row{padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-row:hover,.jc-manager-row:hover{background:#f1fffe}.jc-row b,.jc-manager-row b{display:block;font-size:13px}.jc-row small,.jc-manager-row small{display:block;margin-top:4px;color:var(--muted);font-size:11px}.jc-row>span:nth-child(3),.jc-row>span:nth-child(4){color:#5f7d88;font-size:12px}.jc-row strong{font-size:16px;text-align:right}.jc-row i,.jc-manager-row i{font-style:normal;color:#11a4a0}.jc-status{display:inline-block;width:max-content;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:900}.jc-status.critical{background:var(--red-soft);color:var(--red)}.jc-status.needs_review{background:var(--amber-soft);color:var(--amber)}.jc-status.requires_reanalysis{background:#edf3ff;color:#326bcc}.jc-status.normal{background:var(--green-soft);color:var(--green)}.jc-status.pending{background:#edf3f4;color:#617982}.jc-managers .jc-table-head,.jc-manager-row{grid-template-columns:40px minmax(180px,1fr) 70px minmax(150px,.7fr) 130px 18px}.jc-manager-row{display:grid;gap:15px;align-items:center;padding:15px 18px;color:var(--ink);text-decoration:none;border-top:1px solid var(--line)}.jc-manager-row>.jd-avatar{width:36px;height:36px}.jc-manager-row strong{font-size:17px;color:#159b98}.jc-manager-row>span:nth-of-type(2){font-size:11px;color:var(--muted)}.jc-manager-row em{font-style:normal;color:#59808a;font-size:11px;font-weight:800}.jc-back{display:inline-block;margin-bottom:20px;color:#159d9a;font-weight:800;text-decoration:none}.jc-call-meta{display:flex;gap:12px;align-items:center;margin-top:14px;color:#65818d;font-size:12px;flex-wrap:wrap}.jc-detail-grid{display:grid;grid-template-columns:1.05fr .95fr}.jc-detail-grid article{padding:24px;border-right:1px solid var(--line)}.jc-detail-grid article:last-child{border:0}.jc-detail-grid h2,.jc-script h2{margin:0 0 11px;color:var(--ink);font-size:18px;letter-spacing:-.02em}.jc-detail-grid h3{margin:21px 0 7px;color:#169b98;font-size:11px;text-transform:uppercase}.jc-detail-grid p{margin:0;color:#567580;font-size:13px;line-height:1.55}.jc-detail-grid blockquote{margin:19px 0;padding:13px 15px;border-left:3px solid #15c8c3;background:#effbfa;color:#315f6e;font-size:13px}.jc-detail-grid blockquote small{display:block;margin-top:7px;color:#169b98;font-weight:800}.jc-moments{display:grid;gap:0;padding:0;margin:0;list-style:none}.jc-moments li{display:grid;grid-template-columns:48px 1fr;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);color:#557783;font-size:12px}.jc-moments b{color:#159b98}.jc-scripts{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1px;background:var(--line)}.jc-script{min-height:250px;padding:21px;background:#fff}.jc-script span{color:#14a09d;font-size:10px;font-weight:900;letter-spacing:.1em}.jc-script p{color:#587681;font-size:12px;line-height:1.55}.jc-script small{display:block;margin-top:15px;color:#758c95;font-size:10px}@media(max-width:900px){.jc-table-head{display:none}.jc-row{grid-template-columns:1fr 25px;gap:8px}.jc-row>span:not(:nth-child(2)),.jc-row strong{display:none}.jc-managers .jc-manager-row{grid-template-columns:36px minmax(0,1fr) 42px 18px}.jc-manager-row>span:nth-of-type(2),.jc-manager-row em{display:none}.jc-detail-grid{grid-template-columns:1fr}.jc-detail-grid article{border-right:0;border-bottom:1px solid var(--line)}.jc-heading h1{font-size:27px}}
 '''

@@ -23,6 +23,7 @@ from bitrix_url import (
     normalize_bitrix_webhook_url,
     validate_bitrix_file_url,
 )
+from sales_team import DEFAULT_SALES_TEAM, active_sales_team, ids as sales_team_ids, names as sales_team_names
 
 logger = logging.getLogger(__name__)
 
@@ -103,15 +104,12 @@ def _validate_downloaded_audio(path: Path) -> None:
     path.unlink(missing_ok=True)
     raise NonAudioFileError("Bitrix returned a non-audio file")
 
-# Имена менеджеров для фильтрации (приведём к lower при сравнении)
-ALLOWED_MANAGERS = [
-    "Роман Авсеенко",
-    "Ирина Богомольцева",
-]
-
-# ID менеджеров для надёжной фильтрации (если имя в Bitrix отличается)
-# По данным Bitrix: Роман Авсеенко=1286, Ирина Богомольцева=2100.
-ALLOWED_MANAGER_IDS = [1286, 2100]
+# Fallback team for local runs and for the first deploy before the settings
+# table is initialized.  During a live sync ``active_sales_team`` reads the
+# shared database configuration, so additions in Jarvis immediately affect
+# recording collection as well as the interface.
+ALLOWED_MANAGERS = [member.name for member in DEFAULT_SALES_TEAM]
+ALLOWED_MANAGER_IDS = [member.bitrix_user_id for member in DEFAULT_SALES_TEAM]
 
 
 class Bitrix24Client:
@@ -463,7 +461,7 @@ def compute_duration_sec(activity: Dict[str, Any]) -> Optional[int]:
     return None
 
 
-def determine_real_manager_id(activity: Dict[str, Any]) -> int:
+def determine_real_manager_id(activity: Dict[str, Any], allowed_manager_ids: set[int] | None = None) -> int:
     """
     Определяет ID реального менеджера, который вёл звонок.
     
@@ -489,11 +487,13 @@ def determine_real_manager_id(activity: Dict[str, Any]) -> int:
     created_by_id = to_int(created_by_id)
     responsible_id = to_int(responsible_id)
 
+    allowed_manager_ids = allowed_manager_ids or set(ALLOWED_MANAGER_IDS)
+
     # Приоритет 1: AUTHOR_ID, если он в списке наших менеджеров
-    if author_id and author_id in ALLOWED_MANAGER_IDS:
+    if author_id and author_id in allowed_manager_ids:
         return author_id
     # Приоритет 2: CREATED_BY_ID
-    if created_by_id and created_by_id in ALLOWED_MANAGER_IDS:
+    if created_by_id and created_by_id in allowed_manager_ids:
         return created_by_id
     # Приоритет 3: AUTHOR_ID даже если не в списке (для логирования)
     if author_id:
@@ -502,7 +502,9 @@ def determine_real_manager_id(activity: Dict[str, Any]) -> int:
     return responsible_id
 
 
-def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str, Any]:
+def normalize_call(
+    activity: Dict[str, Any], users: Dict[int, Dict], *, allowed_manager_ids: set[int] | None = None,
+) -> Dict[str, Any]:
     files = activity.get("FILES") or []
     file_info = files[0] if files else None
 
@@ -515,7 +517,7 @@ def normalize_call(activity: Dict[str, Any], users: Dict[int, Dict]) -> Dict[str
     company = settings.get("COMPANY_TITLE", "")
 
     # ⭐ ФИКС: определяем реального менеджера через AUTHOR_ID
-    manager_id = determine_real_manager_id(activity)
+    manager_id = determine_real_manager_id(activity, allowed_manager_ids)
     manager_data = users.get(manager_id, {"id": manager_id, "name": f"User {manager_id}"})
     manager = {
         "id": manager_data["id"],
@@ -791,7 +793,10 @@ def main():
     download_user_avatars(users, Path("static") / "avatars")
 
     print(f"\nНормализуем...")
-    all_results = [normalize_call(raw, users) for raw in raw_calls]
+    team = active_sales_team()
+    allowed_manager_ids = sales_team_ids(team)
+    allowed_manager_names = sales_team_names(team)
+    all_results = [normalize_call(raw, users, allowed_manager_ids=allowed_manager_ids) for raw in raw_calls]
 
     # ====== ЖЁСТКИЙ ОТСЕВ: звонки ≤ 15 сек не попадают в систему вообще ======
     before_floor = len(all_results)
@@ -814,12 +819,11 @@ def main():
         print(f"   Теперь берём AUTHOR_ID (реального звонящего).")
 
     # ====== ФИЛЬТР: по ID + по имени (двойная защита) ======
-    allowed_lower = [name.lower().strip() for name in ALLOWED_MANAGERS]
     before = len(all_results)
     results = [
         r for r in all_results
-        if r["manager"]["id"] in ALLOWED_MANAGER_IDS
-        or r["manager"]["name"].lower().strip() in allowed_lower
+        if r["manager"]["id"] in allowed_manager_ids
+        or r["manager"]["name"].casefold().strip() in allowed_manager_names
     ]
     print(f"\n   Фильтр по менеджерам: {before} → {len(results)} звонков")
 
