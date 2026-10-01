@@ -98,14 +98,32 @@ class LivePipeline:
             self.lock.release()
 
     def _validate_environment(self) -> None:
-        required = ("VIBE_API_KEY", "JARVIS_DATABASE_URL", "JARVIS_RUBRIC_ID")
+        required = ("VIBE_API_KEY", "JARVIS_DATABASE_URL")
         missing = [name for name in required if not os.environ.get(name)]
         if not (os.environ.get("BITRIX_WEBHOOK_URL") or os.environ.get("BITRIX_PROXY_URL")):
             missing.append("BITRIX_WEBHOOK_URL or BITRIX_PROXY_URL")
         if missing:
             raise RuntimeError("Missing required live worker configuration")
+        rubric_id = os.environ.get("JARVIS_RUBRIC_ID")
+        if not rubric_id:
+            import psycopg
+
+            with psycopg.connect(os.environ["JARVIS_DATABASE_URL"]) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        select id
+                        from jarvis.rubrics
+                        where code = 'jarvis_rop' and version = 1 and status = 'active'
+                        """
+                    )
+                    row = cursor.fetchone()
+            if not row:
+                raise RuntimeError("Active Jarvis rubric is not configured")
+            rubric_id = str(row[0])
+            os.environ["JARVIS_RUBRIC_ID"] = rubric_id
         try:
-            if int(os.environ["JARVIS_RUBRIC_ID"]) <= 0:
+            if int(rubric_id) <= 0:
                 raise ValueError
         except ValueError as exc:
             raise RuntimeError("Invalid Jarvis rubric configuration") from exc
