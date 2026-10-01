@@ -3,7 +3,7 @@ services:
     name: mavis-sales-analytics
     runtime: python
     buildCommand: pip install -r requirements-web.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120
+    startCommand: sh deploy/render-start.sh
     healthCheckPath: /health
     envVars:
       - key: SECRET_KEY
@@ -22,6 +22,16 @@ services:
         sync: false
       - key: JARVIS_SYNC_SECRET
         sync: false
+      - key: VIBE_API_KEY
+        sync: false
+      - key: JARVIS_RUBRIC_ID
+        sync: false
+      - key: JARVIS_LIVE_WORKER_ENABLED
+        value: "0"
+      - key: JARVIS_AUTOSYNC_SECONDS
+        value: "300"
+      - key: JARVIS_WORKER_PORT
+        value: "8080"
       - key: OPERATIONS_DASHBOARD_TOKEN
         sync: false
       - key: USE_AUDIO_PROXY

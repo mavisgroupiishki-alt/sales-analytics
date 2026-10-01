@@ -1,9 +1,4 @@
-"""Private HTTP worker for the Jarvis live call-quality pipeline.
-
-The worker is intended for the existing DigitalOcean Docker network only:
-n8n calls it every five minutes and it never exposes Bitrix, Vibe or database
-credentials to the browser.  It does not notify managers.
-"""
+"""Private HTTP worker for the Jarvis live call-quality pipeline."""
 
 from __future__ import annotations
 
@@ -23,6 +18,19 @@ from flask import Flask, jsonify, request
 logger = logging.getLogger(__name__)
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_RUNTIME_DIR = Path("/var/lib/jarvis")
+
+
+def worker_port() -> int:
+    """Use a distinct port when the worker shares a Render web service."""
+    return int(os.environ.get("JARVIS_WORKER_PORT") or os.environ.get("PORT", "8080"))
+
+
+def autosync_interval_seconds() -> int:
+    """Return zero when periodic processing is deliberately disabled."""
+    try:
+        return max(0, int(os.environ.get("JARVIS_AUTOSYNC_SECONDS", "0")))
+    except ValueError:
+        return 0
 
 
 class LivePipeline:
@@ -145,6 +153,15 @@ class LivePipeline:
 def create_app(pipeline: LivePipeline | None = None) -> Flask:
     app = Flask(__name__)
     live_pipeline = pipeline or LivePipeline(Path(os.environ.get("JARVIS_RUNTIME_DIR", DEFAULT_RUNTIME_DIR)))
+    interval = autosync_interval_seconds()
+    if interval:
+        def run_periodically() -> None:
+            live_pipeline.start()
+            while True:
+                threading.Event().wait(interval)
+                live_pipeline.start()
+
+        threading.Thread(target=run_periodically, daemon=True, name="jarvis-live-scheduler").start()
 
     def authorized() -> bool:
         configured = os.environ.get("JARVIS_SYNC_SECRET", "")
@@ -177,4 +194,4 @@ def create_app(pipeline: LivePipeline | None = None) -> Flask:
 
 if __name__ == "__main__":
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
-    create_app().run(host="0.0.0.0", port=int(os.environ.get("PORT", "8080")))
+    create_app().run(host="0.0.0.0", port=worker_port())
