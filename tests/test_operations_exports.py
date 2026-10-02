@@ -22,6 +22,32 @@ class OperationsExportsTests(unittest.TestCase):
     def test_exports_reject_missing_token(self):
         self.assertEqual(self.client.get("/api/integrations/operations/sales-calls").status_code, 401)
         self.assertEqual(self.client.get("/api/integrations/operations/crm-audit").status_code, 401)
+        self.assertEqual(self.client.get("/api/integrations/operations/reactivation-recommendations").status_code, 401)
+
+    @patch.object(jarvis_app, "_operations_reactivation_payload")
+    def test_reactivation_export_keeps_explainable_queue_behind_token(self, payload):
+        payload.return_value = {"ok": True, "summary": {"recommended": 1}, "recommendations": [{"dealId": "42"}]}
+
+        response = self.client.get(
+            "/api/integrations/operations/reactivation-recommendations",
+            headers={"Authorization": "Bearer shared-secret"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["recommendations"][0]["dealId"], "42")
+
+    @patch.object(jarvis_app, "_reactivate_recommendation")
+    def test_reactivation_action_requires_token_and_passes_explicit_actor(self, action):
+        action.return_value = {"ok": True, "dealId": "42", "targetStage": "Новая"}
+
+        response = self.client.post(
+            "/api/integrations/operations/reactivation-recommendations/42/reactivate",
+            headers={"Authorization": "Bearer shared-secret"},
+            json={"actor": "dashboard-full-access"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        action.assert_called_once_with("42", actor="dashboard-full-access")
 
     def test_dashboard_embed_rejects_unsigned_or_expired_requests(self):
         self.assertEqual(self.client.get("/dashboard-embed").status_code, 403)

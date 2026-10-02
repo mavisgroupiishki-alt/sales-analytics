@@ -432,6 +432,46 @@ class JarvisStore:
             (call_id, call.crm_owner_type, call.crm_owner_id, call_id, call.crm_owner_type),
         )
 
+    def write_reactivation_action(self, payload: Dict[str, Any], *, status: str, error: str = "") -> None:
+        """Persist the narrow CRM write audit before its result is returned."""
+        if status not in {"succeeded", "rejected"}:
+            raise ValueError("Unknown reactivation action status")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                create table if not exists jarvis.reactivation_actions (
+                    id bigserial primary key,
+                    deal_id text not null,
+                    source_category_id text,
+                    target_category_id text,
+                    target_stage_id text,
+                    actor text not null,
+                    status text not null,
+                    error text not null default '',
+                    happened_at timestamptz not null,
+                    created_at timestamptz not null default now()
+                )
+                """
+            )
+            cursor.execute(
+                """
+                insert into jarvis.reactivation_actions
+                    (deal_id, source_category_id, target_category_id, target_stage_id, actor, status, error, happened_at)
+                values (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    str(payload.get("dealId") or ""),
+                    str(payload.get("sourceCategoryId") or ""),
+                    str(payload.get("targetCategoryId") or ""),
+                    str(payload.get("targetStageId") or ""),
+                    str(payload.get("actor") or "dashboard-full-access"),
+                    status,
+                    error,
+                    str(payload.get("happenedAt") or ""),
+                ),
+            )
+        self.connection.commit()
+
     def close(self) -> None:
         self.connection.close()
 

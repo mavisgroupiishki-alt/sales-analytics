@@ -21,6 +21,8 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
 _SALES_SNAPSHOT_CACHE = {"at": None, "value": None}
+_REACTIVATION_QUEUE_CACHE = {"at": 0.0, "value": None}
+REACTIVATION_QUEUE_REFRESH_SECONDS = 60 * 60
 
 
 def load_operational_sales_snapshot():
@@ -1259,6 +1261,45 @@ def build_marketing_snapshot(month: str):
 
     return build_snapshot(month)
 
+
+def _operations_reactivation_payload(*, force: bool = False):
+    """Build a bounded, explainable queue without changing Bitrix entities."""
+    cached = _REACTIVATION_QUEUE_CACHE.get("value")
+    if not force and cached and time.monotonic() - float(_REACTIVATION_QUEUE_CACHE["at"]) < REACTIVATION_QUEUE_REFRESH_SECONDS:
+        return cached
+    from bitrix import Bitrix24Client
+    from reactivation import build_reactivation_queue
+
+    calls, analyses = get_data()
+    payload = build_reactivation_queue(Bitrix24Client(), calls, analyses)
+    _REACTIVATION_QUEUE_CACHE.update({"at": time.monotonic(), "value": payload})
+    return payload
+
+
+def _record_reactivation_action(payload, *, status: str, error: str = ""):
+    database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeError("Журнал действий реанимации не настроен; перенос отменён.")
+    from jarvis_store import JarvisStore
+
+    store = JarvisStore.connect(database_url)
+    try:
+        store.write_reactivation_action(payload, status=status, error=error)
+    finally:
+        store.close()
+
+
+def _reactivate_recommendation(deal_id: str, *, actor: str):
+    from bitrix import Bitrix24Client
+    from reactivation import reactivate_to_new
+
+    if not os.environ.get("JARVIS_DATABASE_URL", "").strip():
+        raise RuntimeError("Журнал действий реанимации не настроен; перенос отменён.")
+    result = reactivate_to_new(Bitrix24Client(), deal_id, actor=actor)
+    _record_reactivation_action(result, status="succeeded")
+    _REACTIVATION_QUEUE_CACHE.update({"at": 0.0, "value": None})
+    return result
+
 # ============================================================
 # ИНЪЕКЦИЯ НАВИГАЦИИ В HTML
 # ============================================================
@@ -1833,6 +1874,49 @@ def operations_marketing():
     except Exception as exc:
         app.logger.warning("Operations marketing export failed: %s", str(exc))
         return jsonify({"ok": False, "status": "unavailable"}), 502
+
+
+@app.route("/api/integrations/operations/reactivation-recommendations")
+def operations_reactivation_recommendations():
+    try:
+        _require_operations_dashboard_token()
+        return jsonify(_operations_reactivation_payload())
+    except PermissionError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 401
+    except RuntimeError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 503
+    except Exception as exc:
+        app.logger.warning("Reactivation recommendations export failed: %s", type(exc).__name__)
+        return jsonify({"ok": False, "error": "Очередь реанимации временно недоступна."}), 502
+
+
+@app.route("/api/integrations/operations/reactivation-recommendations/<deal_id>/reactivate", methods=["POST"])
+def operations_reactivate_deal(deal_id):
+    """The only CRM write route: an explicit dashboard confirmation."""
+    actor = "dashboard-full-access"
+    try:
+        _require_operations_dashboard_token()
+        payload = request.get_json(silent=True) or {}
+        if isinstance(payload, dict) and payload.get("actor") == "dashboard-full-access":
+            actor = payload["actor"]
+        return jsonify(_reactivate_recommendation(str(deal_id), actor=actor))
+    except PermissionError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 401
+    except RuntimeError as exc:
+        if str(deal_id).isdigit() and os.environ.get("JARVIS_DATABASE_URL", "").strip():
+            try:
+                _record_reactivation_action(
+                    {"dealId": str(deal_id), "actor": actor, "happenedAt": datetime.now().astimezone().isoformat()},
+                    status="rejected",
+                    error=str(exc),
+                )
+            except Exception:
+                app.logger.warning("Could not write rejected reactivation action for deal %s", deal_id)
+        app.logger.warning("Reactivation action rejected for deal %s: %s", deal_id, type(exc).__name__)
+        return jsonify({"ok": False, "error": str(exc)}), 409
+    except Exception as exc:
+        app.logger.warning("Reactivation action rejected for deal %s: %s", deal_id, type(exc).__name__)
+        return jsonify({"ok": False, "error": "Не удалось безопасно перенести сделку."}), 409
 
 
 @app.route("/critical")
