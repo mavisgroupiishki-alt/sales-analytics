@@ -1855,32 +1855,9 @@ def main():
             audio_entries.append((audio_path, call_meta))
     audio_entries.sort(key=lambda entry: (str(entry[1].get("created") or ""), str(entry[1].get("activity_id") or "")))
 
-    context_targets = [
-        call_meta
-        for _, call_meta in audio_entries
-        if (not targeted_reanalysis or is_reanalysis_target(call_meta, requested_ids, requested_date))
-        and (call_meta.get("duration_sec") or 0) >= MIN_DURATION_FOR_ANALYSIS
-    ]
-    # Discover the complete eligible history once, but do not transcribe all
-    # of it before the first current call.  A large client history previously
-    # starved today's queue for many minutes during forced reanalysis.
-    context_candidates: List[Dict[str, Any]] = []
-    if context_targets:
-        try:
-            from bitrix import Bitrix24Client, fetch_previous_deal_recordings, mirror_snapshot_to_jarvis
-
-            context_candidates = fetch_previous_deal_recordings(Bitrix24Client(), context_targets)
-            if context_candidates:
-                mirror_snapshot_to_jarvis(context_candidates)
-                history_by_id = {
-                    str(call.get("activity_id") or ""): call
-                    for call in history_calls
-                    if str(call.get("activity_id") or "")
-                }
-                history_by_id.update({str(call["activity_id"]): call for call in context_candidates})
-                history_calls = list(history_by_id.values())
-        except Exception as exc:
-            logger.warning("Не удалось получить предыдущие звонки сделок из Bitrix: %s", type(exc).__name__)
+    # Fetch context just in time for each target.  Querying all deals,
+    # contacts and companies in one initial pass could take many minutes and
+    # left every current call in the visible queue without a review.
 
     total_cost = 0.0
     success = 0
@@ -1913,19 +1890,31 @@ def main():
         # Context is prepared just in time for this call.  Do not force a
         # historical reanalysis here: the forced request concerns today's
         # target calls, while completed history is valid context as-is.
-        if context_candidates and call_duration >= MIN_DURATION_FOR_ANALYSIS:
-            from bitrix import select_related_context_recordings
+        if call_duration >= MIN_DURATION_FOR_ANALYSIS:
+            try:
+                from bitrix import Bitrix24Client, fetch_previous_deal_recordings, mirror_snapshot_to_jarvis
 
-            call_context = select_related_context_recordings([call_meta], context_candidates)
-            history_calls, prepared_context_ids = prepare_context_calls(
-                call_context,
-                history_calls,
-                analyses,
-                scripts_db,
-                corrections,
-                audio_dir,
-            )
-            completed_activity_ids.update(prepared_context_ids)
+                call_context = fetch_previous_deal_recordings(Bitrix24Client(), [call_meta])
+                if call_context:
+                    mirror_snapshot_to_jarvis(call_context)
+                    history_by_id = {
+                        str(call.get("activity_id") or ""): call
+                        for call in history_calls
+                        if str(call.get("activity_id") or "")
+                    }
+                    history_by_id.update({str(call["activity_id"]): call for call in call_context})
+                    history_calls = list(history_by_id.values())
+                    history_calls, prepared_context_ids = prepare_context_calls(
+                        call_context,
+                        history_calls,
+                        analyses,
+                        scripts_db,
+                        corrections,
+                        audio_dir,
+                    )
+                    completed_activity_ids.update(prepared_context_ids)
+            except Exception as exc:
+                logger.warning("Не удалось подготовить контекст звонка %s: %s", activity_id, type(exc).__name__)
 
         try:
             transcription = transcribe_audio(audio_path)
