@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from functools import wraps
 from urllib.parse import urlparse
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from flask import Flask, request, redirect, url_for, session, abort, Response, jsonify, Blueprint, send_from_directory
 
 # Admin module (встроен напрямую)
@@ -1232,6 +1234,48 @@ def requested_calls_return_to():
     return "/calls" + (f"?{parsed.query}" if parsed.query else "")
 
 
+def requested_reanalysis_return_to():
+    """Permit the reanalysis form to return only to the filtered call journal."""
+    candidate = str(request.form.get("return_to") or "")
+    parsed = urlparse(candidate)
+    if parsed.scheme or parsed.netloc or parsed.path != "/calls":
+        return "/calls?period=today"
+    return "/calls" + (f"?{parsed.query}" if parsed.query else "")
+
+
+def _append_query_status(url: str, key: str, value: str) -> str:
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}{key}={value}"
+
+
+def request_today_reanalysis() -> str:
+    """Ask the private live worker for a single forced pass for today's calls."""
+    secret = str(os.environ.get("JARVIS_SYNC_SECRET") or "").strip()
+    if not secret:
+        raise RuntimeError("Live reanalysis is not configured")
+    port = int(os.environ.get("JARVIS_WORKER_PORT") or "8080")
+    payload = json.dumps({"mode": "reanalyze_today"}).encode("utf-8")
+    worker_request = Request(
+        f"http://127.0.0.1:{port}/internal/sync",
+        data=payload,
+        headers={"Content-Type": "application/json", "x-jarvis-sync-secret": secret},
+        method="POST",
+    )
+    try:
+        with urlopen(worker_request, timeout=8) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code == 409:
+            return "queued"
+        raise RuntimeError("Live reanalysis request was rejected") from exc
+    except (URLError, TimeoutError) as exc:
+        raise RuntimeError("Live reanalysis worker is unavailable") from exc
+    status = str(body.get("status") or "")
+    if status not in {"accepted", "queued"}:
+        raise RuntimeError("Live reanalysis was not accepted")
+    return status
+
+
 def requested_jarvis_filters(default="today"):
     """A selected range takes precedence over one of the quick period buttons."""
     date_from, date_to = requested_date_range()
@@ -1588,6 +1632,18 @@ def all_calls():
         calls, analyses, user, period=filters.get("period", ""), date_from=date_from, date_to=date_to,
         filters=filters, available_calls=available_calls,
     ))
+
+
+@app.post("/calls/reanalyze-today")
+@rop_required
+def reanalyze_today_calls():
+    """Queue one forced current-day pass without exposing the worker secret."""
+    return_to = requested_reanalysis_return_to()
+    try:
+        status = request_today_reanalysis()
+    except RuntimeError:
+        return redirect(_append_query_status(return_to, "reanalyze", "error"))
+    return redirect(_append_query_status(return_to, "reanalyze", status))
 
 @app.route("/calls/<activity_id>")
 @app.route("/calls/<activity_id>.html")

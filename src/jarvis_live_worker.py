@@ -47,6 +47,8 @@ class LivePipeline:
     def __init__(self, runtime_dir: Path):
         self.runtime_dir = runtime_dir
         self.lock = threading.Lock()
+        self._pending_lock = threading.Lock()
+        self._pending_reanalysis: Dict[str, Any] | None = None
         self.state: Dict[str, Any] = {
             "status": "idle",
             "started_at": None,
@@ -72,6 +74,19 @@ class LivePipeline:
         )
         thread.start()
         return True
+
+    def request_today_reanalysis(self) -> str:
+        """Start a forced today pass, or run it immediately after the current pass.
+
+        A normal Bitrix synchronization can be running when a ROP asks to use
+        a new rubric. Retaining one pending request avoids concurrent access
+        to the shared runtime directory without creating duplicate runs.
+        """
+        if self.start(reanalyze_today=True):
+            return "accepted"
+        with self._pending_lock:
+            self._pending_reanalysis = {"reanalyze_today": True}
+        return "queued"
 
     def _run(self, *, reanalyze_today: bool, reanalysis_date: str | None = None, reactivation: bool = False) -> None:
         self.state.update(
@@ -116,6 +131,11 @@ class LivePipeline:
         finally:
             self.state["finished_at"] = datetime.now().astimezone().isoformat()
             self.lock.release()
+            with self._pending_lock:
+                pending = self._pending_reanalysis
+                self._pending_reanalysis = None
+            if pending:
+                self.start(**pending)
 
     def _validate_environment(self) -> None:
         required = ("VIBE_API_KEY", "JARVIS_DATABASE_URL")
@@ -238,6 +258,9 @@ def create_app(pipeline: LivePipeline | None = None) -> Flask:
                 reanalysis_date = datetime.fromisoformat(str(body.get("date") or "")).date().isoformat()
             except ValueError:
                 return jsonify({"error": "invalid reanalysis date"}), 400
+        if mode == "reanalyze_today":
+            status = live_pipeline.request_today_reanalysis()
+            return jsonify({"status": status, "mode": "reanalyze_today"}), 202
         if not live_pipeline.start(reanalyze_today=reanalyze_today, reanalysis_date=reanalysis_date, reactivation=reactivation):
             return jsonify({"status": "already_running"}), 409
         accepted_mode = "reactivation" if reactivation else (f"reanalyze_day:{reanalysis_date}" if reanalysis_date else ("reanalyze_today" if reanalyze_today else "sync_today"))
