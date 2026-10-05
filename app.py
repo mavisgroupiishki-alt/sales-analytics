@@ -1568,8 +1568,8 @@ def avatar(filename):
 def all_calls():
     user = current_user()
     calls, analyses = get_data(user)
-    available_calls = list(calls)
     from jarvis_rop import filter_calls
+    from jarvis_dashboard import is_operationally_excluded
     filters = request.args.to_dict(flat=True)
     date_from, date_to = requested_date_range()
     filters["date_from"] = date_from
@@ -1577,6 +1577,12 @@ def all_calls():
     if not filters.get("date") and not date_from and not date_to:
         filters.setdefault("period", requested_period())
     calls = filter_calls(calls, analyses, filters)
+    show_excluded = filters.get("tab") == "excluded"
+    calls = [
+        call for call in calls
+        if is_operationally_excluded(call, (analyses.get(str(call.get("activity_id") or "")) or {}).get("analysis")) == show_excluded
+    ]
+    available_calls = list(calls)
     from jarvis_dashboard import render_calls
     return html_response(render_calls(
         calls, analyses, user, period=filters.get("period", ""), date_from=date_from, date_to=date_to,

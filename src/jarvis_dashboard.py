@@ -446,6 +446,27 @@ def _status_label(status: str, analysis: Dict[str, Any] | None = None) -> str:
     return {"critical": "Срочно к РОПу", "low_score": "Низкая оценка", "needs_review": "Нужна проверка", "requires_reanalysis": "Требует обновления", "normal": "Без риска", "excluded": "Исключён", "audio_unavailable": "Пустая запись", "pending": "Нет разбора"}.get(status, "Нет разбора")
 
 
+def is_operationally_excluded(call: Dict[str, Any], analysis: Dict[str, Any] | None) -> bool:
+    """Keep non-actionable calls out of the operational review queue."""
+    if recording_is_unavailable(call):
+        return True
+    duration = call.get("duration_sec")
+    try:
+        if duration not in (None, "") and int(duration) < 30:
+            return True
+    except (TypeError, ValueError):
+        pass
+    if not analysis:
+        return False
+    return bool(
+        analysis.get("exclude_from_stats")
+        or analysis.get("service_call")
+        or analysis.get("not_sales")
+        or analysis.get("poor_audio")
+        or triage_for(analysis)[0] == "excluded"
+    )
+
+
 def render_calls(
     calls: List[Dict[str, Any]], analyses: Dict[str, Any], user: Dict[str, Any],
     *, title: str = "Журнал звонков", description: str | None = None, period: str = "today", date_from: str = "", date_to: str = "",
@@ -454,6 +475,7 @@ def render_calls(
     from claude_analyzer import CALL_TYPES
 
     filters = filters or {}
+    excluded_tab = str(filters.get("tab") or "") == "excluded"
     available_calls = available_calls or calls
     managers = sorted(
         {(str((call.get("manager") or {}).get("id") or ""), str((call.get("manager") or {}).get("name") or "")) for call in available_calls if (call.get("manager") or {}).get("id")},
@@ -464,15 +486,16 @@ def render_calls(
     options = lambda values, key, placeholder: f'<option value="">{_text(placeholder)}</option>' + "".join(
         f'<option value="{_text(value)}"{selected(key, value)}>{_text(label)}</option>' for value, label in values
     )
+    tab_value = "excluded" if excluded_tab else ""
     filter_panel = f'''<form class="jc-call-filters" method="get" action="/calls" aria-label="Фильтры звонков">
-      <input type="hidden" name="period" value="{_text(period)}"><input type="hidden" name="date_from" value="{_text(date_from)}"><input type="hidden" name="date_to" value="{_text(date_to)}">
+      <input type="hidden" name="tab" value="{tab_value}"><input type="hidden" name="period" value="{_text(period)}"><input type="hidden" name="date_from" value="{_text(date_from)}"><input type="hidden" name="date_to" value="{_text(date_to)}">
       <label>Ответственный<select name="manager">{options(managers, "manager", "Все менеджеры")}</select></label>
       <label>Тип звонка<select name="call_type">{options([(key, item["label"]) for key, item in CALL_TYPES.items()], "call_type", "Все типы")}</select></label>
       <label>Стадия сделки<select name="stage">{options([(stage, stage) for stage in stages], "stage", "Все стадии")}</select></label>
       <label>Баллы<div class="jc-score-filter"><input type="number" name="score_min" min="0" max="10" step="0.1" value="{_text(filters.get("score_min") or "")}" placeholder="от"><span>—</span><input type="number" name="score_max" min="0" max="10" step="0.1" value="{_text(filters.get("score_max") or "")}" placeholder="до"></div></label>
       <label>Разбор<select name="analysis">{options([("with", "С анализом"), ("without", "Без анализа")], "analysis", "Все звонки")}</select></label>
       <label>Статус<select name="status">{options([("needs_review", "Нужно решение РОПа"), ("pending", "Ожидает анализа"), ("critical", "Срочно"), ("low_score", "Низкий балл"), ("normal", "Без риска"), ("audio_unavailable", "Пустая запись"), ("requires_reanalysis", "Нужен новый разбор")], "status", "Все статусы")}</select></label>
-      <div class="jc-filter-actions"><button type="submit">Применить</button><a href="{_period_url('/calls', period, date_from=date_from, date_to=date_to)}">Сбросить</a></div>
+      <div class="jc-filter-actions"><button type="submit">Применить</button><a href="{_period_url('/calls', period, date_from=date_from, date_to=date_to, tab=tab_value)}">Сбросить</a></div>
     </form>'''
     rows = ""
     for call in sorted(calls, key=lambda item: str(item.get("created") or ""), reverse=True):
@@ -489,8 +512,9 @@ def render_calls(
         reviewed_label = '<small class="jc-manual-label">✓ Проверено вручную</small>' if reviewed else ""
         row_class = "jc-row is-manual-reviewed" if reviewed else "jc-row"
         rows += f'''<a class="{row_class}" href="{_call_url(call.get('activity_id'), period, date_from=date_from, date_to=date_to, filters=filters)}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small>{reviewed_label}</span><span>{_text(call_type)}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
-    note = description or "«Пустая запись» — Bitrix передал файл нулевой длительности; такой звонок нельзя прослушать или расшифровать. Пригодная запись без результата ожидает анализа. «Короткий звонок» не оценивается."
-    content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section>{_period_switch(period, '/calls', date_from=date_from, date_to=date_to)}{filter_panel}<section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по выбранным фильтрам нет.</b></div>'}</section>'''
+    note = description or ("В этой вкладке — только технические, пустые, короткие и непродажные звонки. Они не влияют на оценку менеджеров и не попадают в очередь РОПа." if excluded_tab else "В рабочей очереди остаются только звонки, по которым можно принять управленческое решение. Технические, пустые, короткие и непродажные записи вынесены отдельно.")
+    tabs = f'''<nav class="jc-call-tabs" aria-label="Состав журнала"><a href="{_period_url('/calls', period, date_from=date_from, date_to=date_to)}"{' aria-current="page"' if not excluded_tab else ''}>Рабочие звонки</a><a href="{_period_url('/calls', period, date_from=date_from, date_to=date_to, tab='excluded')}"{' aria-current="page"' if excluded_tab else ''}>Исключённые</a></nav>'''
+    content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>{'Исключённые' if excluded_tab else 'Рабочие'} <span>звонки.</span></h1><small>{_text(note)}</small></section>{tabs}{_period_switch(period, '/calls', date_from=date_from, date_to=date_to)}{filter_panel}<section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по выбранным фильтрам нет.</b></div>'}</section>'''
     return _console_page("Звонки", "calls", content, user, period=period, date_from=date_from, date_to=date_to)
 
 
@@ -865,6 +889,7 @@ _CONSOLE_CSS = r'''
 '''
 
 _CALL_FILTER_CSS = r'''
+.jc-call-tabs{display:flex;gap:7px;margin:0 0 12px}.jc-call-tabs a{padding:8px 12px;border:1px solid #c9dfe1;border-radius:8px;background:#fff;color:#557783;font-size:11px;font-weight:850;text-decoration:none}.jc-call-tabs a[aria-current="page"]{border-color:#109f9b;background:#109f9b;color:#fff}
 .jc-call-filters{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:9px;margin:0 0 16px;padding:14px;background:#e9fbfa;border:1px solid #cbe8e6;border-radius:11px}.jc-call-filters label{display:grid;gap:5px;color:#52747d;font-size:9px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.jc-call-filters select,.jc-call-filters input{min-width:0;height:34px;padding:0 9px;border:1px solid #c9dfe1;border-radius:7px;background:#fff;color:var(--ink);font:inherit;font-size:11px;letter-spacing:0;text-transform:none}.jc-score-filter{display:grid;grid-template-columns:1fr 10px 1fr;gap:4px;align-items:center}.jc-score-filter span{text-align:center;color:#89a2a8}.jc-filter-actions{display:flex;align-items:end;gap:8px}.jc-filter-actions button,.jc-filter-actions a{height:34px;padding:0 11px;border-radius:7px;font:inherit;font-size:11px;font-weight:800;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.jc-filter-actions button{border:0;background:#109f9b;color:#fff;cursor:pointer}.jc-filter-actions a{color:#4c747d;background:#fff;border:1px solid #c9dfe1}@media(max-width:1100px){.jc-call-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:700px){.jc-call-filters{grid-template-columns:1fr 1fr}.jc-filter-actions{grid-column:span 2}}
 .jc-type-review{border:1px solid #d5ece9;background:linear-gradient(135deg,#f8fffe,#eefcf9)}.jc-type-review form{display:grid;grid-template-columns:minmax(220px,.55fr) minmax(0,1.45fr);gap:10px 14px;align-items:end}.jc-type-review label{display:grid;gap:5px;color:#537882;font-size:10px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}.jc-type-review select,.jc-type-review textarea{width:100%;border:1px solid #c9dfe1;border-radius:7px;background:#fff;color:var(--ink);font:inherit;font-size:12px}.jc-type-review select{height:38px;padding:0 10px}.jc-type-review textarea{min-height:72px;padding:9px 10px;resize:vertical;line-height:1.45}.jc-review-actions{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.jc-review-actions button{height:36px;padding:0 12px;border:0;border-radius:7px;background:#109f9b;color:#fff;font:inherit;font-size:11px;font-weight:800;cursor:pointer}.jc-review-actions .secondary{background:#fff;color:#19726f;border:1px solid #9fcfca}.jc-review-actions span{color:#587983;font-size:11px}.jc-review-saved{margin:0 0 13px;padding:9px 11px;background:#e8f8f4;border-left:3px solid #16a889;color:#527681;font-size:11px;line-height:1.45}.jc-review-saved b{color:#136b67}.jc-context{margin:16px 0;padding:12px 15px;border:1px dashed #b8d9d5;border-radius:10px;background:#fbfefd;color:#567782}.jc-context summary{cursor:pointer;color:#167e7a;font-size:12px;font-weight:850}.jc-context p{margin:9px 0 0;font-size:11px;line-height:1.45}.jc-context ol{display:grid;gap:7px;margin:11px 0 0;padding-left:21px}.jc-context li{padding:7px 0 0;color:#53737c;border-top:1px solid #e4f0ef;font-size:11px}.jc-context li b,.jc-context li span{display:inline-block;margin-right:8px}.jc-context li span{color:#168a85}.jc-context li p{margin:4px 0 0}@media(max-width:700px){.jc-type-review form{grid-template-columns:1fr}}
 '''

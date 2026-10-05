@@ -503,7 +503,6 @@ class JarvisRepository:
         outside this server-side request.
         """
         with self.connection.cursor() as cursor:
-            self._ensure_manual_view_schema(cursor)
             cursor.execute(
                 """
                 select status, coalesce(finished_at, started_at) as happened_at
@@ -621,26 +620,10 @@ class JarvisRepository:
             }
         return calls, analyses
 
-    @staticmethod
-    def _ensure_manual_view_schema(cursor: Any) -> None:
-        """Keep the dashboard writable while a fresh database awaits migrations."""
-        cursor.execute(
-            """
-            create table if not exists jarvis.call_manual_views (
-              call_id bigint primary key references jarvis.calls(id) on delete cascade,
-              reviewed boolean not null default false,
-              reviewer_name text not null default '',
-              reviewed_at timestamptz,
-              updated_at timestamptz not null default now()
-            )
-            """
-        )
-
     def save_call_manual_review(
         self, activity_id: str, reviewed: bool, reviewer_name: str,
     ) -> Dict[str, Any]:
         with self.connection.cursor() as cursor:
-            self._ensure_manual_view_schema(cursor)
             cursor.execute(
                 """
                 select id from jarvis.calls

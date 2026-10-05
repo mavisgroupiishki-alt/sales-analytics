@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from jarvis_dashboard import (  # noqa: E402
     dashboard_model,
+    is_operationally_excluded,
     render_call_detail,
     render_calls,
     render_daily_reports,
@@ -15,6 +16,12 @@ from jarvis_dashboard import (  # noqa: E402
 
 
 class DashboardModelTests(unittest.TestCase):
+    def test_operational_exclusion_covers_empty_short_and_non_sales_calls(self):
+        self.assertTrue(is_operationally_excluded({"audio": {"status": "empty"}}, None))
+        self.assertTrue(is_operationally_excluded({"duration_sec": 20}, None))
+        self.assertTrue(is_operationally_excluded({}, {"not_sales": True}))
+        self.assertFalse(is_operationally_excluded({"duration_sec": 90}, {"overall_score": 7, "flags": {}}))
+
     def test_low_score_is_visible_to_rop_without_faking_a_critical_incident(self):
         calls = [{"activity_id": "1", "created": "2026-09-08T12:00:00+03:00", "manager": {"id": 1, "name": "Анна"}}]
         analyses = {"1": {"analysis": {
@@ -88,7 +95,7 @@ class DashboardModelTests(unittest.TestCase):
         self.assertNotIn("Транскрипт формируется", detail)
         self.assertNotIn('src="/audio/1"', detail)
 
-    def test_excluded_short_call_has_a_specific_status(self):
+    def test_excluded_short_call_is_only_visible_on_the_excluded_tab(self):
         calls = [{"activity_id": "1", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}}]
         analyses = {"1": {"analysis": {
             "review_status": "excluded",
@@ -96,10 +103,13 @@ class DashboardModelTests(unittest.TestCase):
             "exclusion_reason": "Звонок короче 30 секунд",
         }}}
 
-        journal = render_calls(calls, analyses, {"role": "rop", "name": "РОП"})
+        journal = render_calls([], analyses, {"role": "rop", "name": "РОП"})
+        excluded = render_calls(calls, analyses, {"role": "rop", "name": "РОП"}, filters={"tab": "excluded"})
 
-        self.assertIn("Короткий звонок", journal)
-        self.assertNotIn(">Исключён<", journal)
+        self.assertNotIn("Короткий звонок", journal)
+        self.assertIn("Рабочие звонки", journal)
+        self.assertIn("Короткий звонок", excluded)
+        self.assertIn("Исключённые", excluded)
 
     def test_service_contact_call_is_shown_as_analyzed_and_not_scored(self):
         call = {
