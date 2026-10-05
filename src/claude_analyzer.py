@@ -1677,13 +1677,7 @@ def prepare_deal_context_history(
     if not targets:
         return history_calls, set()
 
-    from bitrix import (
-        Bitrix24Client,
-        NonAudioFileError,
-        download_audio,
-        fetch_previous_deal_recordings,
-        mirror_snapshot_to_jarvis,
-    )
+    from bitrix import Bitrix24Client, fetch_previous_deal_recordings, mirror_snapshot_to_jarvis
 
     try:
         context_calls = fetch_previous_deal_recordings(Bitrix24Client(), targets)
@@ -1705,6 +1699,38 @@ def prepare_deal_context_history(
     }
     history_by_id.update({str(call["activity_id"]): call for call in context_calls})
     history_calls = list(history_by_id.values())
+
+    return prepare_context_calls(
+        context_calls,
+        history_calls,
+        analyses,
+        scripts_db,
+        corrections,
+        audio_dir,
+        force_reanalysis=force_reanalysis,
+    )
+
+
+def prepare_context_calls(
+    context_calls: List[Dict[str, Any]],
+    history_calls: List[Dict[str, Any]],
+    analyses: Dict[str, Any],
+    scripts_db: Dict[str, Any],
+    corrections: Dict[str, Any],
+    audio_dir: Path,
+    *,
+    force_reanalysis: bool = False,
+) -> Tuple[List[Dict[str, Any]], set[str]]:
+    """Prepare only the context needed for the current target call.
+
+    The caller has already fetched and mirrored the CRM records.  Keeping this
+    step per target prevents a large historical backfill from delaying every
+    current call in the sales queue.
+    """
+    if not context_calls:
+        return history_calls, set()
+
+    from bitrix import Bitrix24Client, NonAudioFileError, download_audio
 
     prepared_activity_ids: set[str] = set()
     for index, context_call in enumerate(context_calls, 1):
@@ -1835,22 +1861,33 @@ def main():
         if (not targeted_reanalysis or is_reanalysis_target(call_meta, requested_ids, requested_date))
         and (call_meta.get("duration_sec") or 0) >= MIN_DURATION_FOR_ANALYSIS
     ]
-    history_calls, prepared_context_ids = prepare_deal_context_history(
-        context_targets,
-        history_calls,
-        analyses,
-        scripts_db,
-        corrections,
-        audio_dir,
-        force_reanalysis=targeted_reanalysis,
-    )
+    # Discover the complete eligible history once, but do not transcribe all
+    # of it before the first current call.  A large client history previously
+    # starved today's queue for many minutes during forced reanalysis.
+    context_candidates: List[Dict[str, Any]] = []
+    if context_targets:
+        try:
+            from bitrix import Bitrix24Client, fetch_previous_deal_recordings, mirror_snapshot_to_jarvis
+
+            context_candidates = fetch_previous_deal_recordings(Bitrix24Client(), context_targets)
+            if context_candidates:
+                mirror_snapshot_to_jarvis(context_candidates)
+                history_by_id = {
+                    str(call.get("activity_id") or ""): call
+                    for call in history_calls
+                    if str(call.get("activity_id") or "")
+                }
+                history_by_id.update({str(call["activity_id"]): call for call in context_candidates})
+                history_calls = list(history_by_id.values())
+        except Exception as exc:
+            logger.warning("Не удалось получить предыдущие звонки сделок из Bitrix: %s", type(exc).__name__)
 
     total_cost = 0.0
     success = 0
     failed = 0
     critical_count = 0
     type_stats = {}
-    completed_activity_ids: set[str] = set(prepared_context_ids)
+    completed_activity_ids: set[str] = set()
 
     for i, (audio_path, call_meta) in enumerate(audio_entries, 1):
         print(f"\n{'='*60}")
@@ -1872,6 +1909,23 @@ def main():
 
         call_duration = call_meta.get("duration_sec") or 0
         transcribe_only_mode = call_duration and call_duration < MIN_DURATION_FOR_ANALYSIS
+
+        # Context is prepared just in time for this call.  Do not force a
+        # historical reanalysis here: the forced request concerns today's
+        # target calls, while completed history is valid context as-is.
+        if context_candidates and call_duration >= MIN_DURATION_FOR_ANALYSIS:
+            from bitrix import select_related_context_recordings
+
+            call_context = select_related_context_recordings([call_meta], context_candidates)
+            history_calls, prepared_context_ids = prepare_context_calls(
+                call_context,
+                history_calls,
+                analyses,
+                scripts_db,
+                corrections,
+                audio_dir,
+            )
+            completed_activity_ids.update(prepared_context_ids)
 
         try:
             transcription = transcribe_audio(audio_path)
