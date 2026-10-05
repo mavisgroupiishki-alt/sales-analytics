@@ -210,6 +210,60 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("использовано 1 из 8 предыдущих звонков", html)
         self.assertIn("Обсудили срок", html)
 
+    def test_call_list_keeps_all_filters_in_the_back_link_and_marks_manual_review(self):
+        call = {
+            "activity_id": "42",
+            "created": "2026-10-05T10:00:00+03:00",
+            "manager": {"id": "7", "name": "Роман"},
+            "crm": {"owner_type": "deal", "owner_id": "11", "stage_name": "КП"},
+            "_manual_review": {"reviewed": True, "reviewer_name": "РОП"},
+        }
+        filters = {
+            "period": "month", "manager": "7", "call_type": "payment_push",
+            "stage": "КП", "score_min": "6", "score_max": "9", "analysis": "with", "status": "normal",
+        }
+
+        html = render_calls([call], {"42": {"analysis": {"overall_score": 8, "review_status": "normal"}}}, {"role": "rop", "name": "РОП"}, period="month", filters=filters)
+
+        self.assertIn("jc-row is-manual-reviewed", html)
+        self.assertIn("Проверено вручную", html)
+        self.assertIn("return_to=%2Fcalls%3Fperiod%3Dmonth%26manager%3D7", html)
+        self.assertIn("score_max%3D9%26analysis%3Dwith%26status%3Dnormal", html)
+
+    def test_call_card_shows_manual_review_toggle_and_explicit_manager_errors(self):
+        call = {
+            "activity_id": "42",
+            "manager": {"name": "Роман"},
+            "_manual_review": {"reviewed": True, "reviewer_name": "РОП", "reviewed_at": "2026-10-05T12:00:00+03:00"},
+        }
+        stored = {"analysis": {
+            "overall_score": 7.8,
+            "manager_errors": [{"criterion": "next_step", "text": "Не зафиксировал дату следующего контакта", "time": "01:20", "quote": "Созвонимся потом"}],
+        }}
+
+        html = render_call_detail(call, stored, {"role": "rop", "name": "РОП"}, return_to="/calls?manager=7&status=normal")
+
+        self.assertIn('id="manualReviewed"', html)
+        self.assertIn("checked", html)
+        self.assertIn("Ошибки менеджера и снижение оценки", html)
+        self.assertIn("Не зафиксировал дату следующего контакта", html)
+        self.assertIn('href="/calls?manager=7&amp;status=normal"', html)
+
+    def test_context_card_names_sources_instead_of_calling_everything_current_deal(self):
+        call = {"activity_id": "42", "manager": {"name": "Роман"}}
+        stored = {"analysis": {"context_snapshot": {
+            "previous_calls": [
+                {"date": "2026-10-01", "call_type": "Дожим", "summary": "Договорились", "source": "previous_sales_deal", "source_deal_id": "38"},
+                {"date": "2026-10-02", "call_type": "КП", "summary": "Есть вопрос", "source": "contact"},
+            ],
+            "sources": {"previous_sales_deal": {"deal_id": "38"}, "contact": {"count": 1}},
+        }}}
+
+        html = render_call_detail(call, stored, {"role": "rop", "name": "РОП"})
+
+        self.assertIn("Контекст из предыдущей сделки продаж №38", html)
+        self.assertIn("Контекст через контакт", html)
+
     def test_funnel_renders_operational_metrics_and_real_stage_names(self):
         snapshot = {
             "sales": {

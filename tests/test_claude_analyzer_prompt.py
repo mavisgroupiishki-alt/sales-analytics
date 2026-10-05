@@ -18,7 +18,11 @@ from claude_analyzer import (  # noqa: E402
     detect_service_contact_routing,
     detect_service_document_delivery,
 )
-from bitrix import fetch_previous_deal_recordings, select_previous_deal_recordings  # noqa: E402
+from bitrix import (  # noqa: E402
+    fetch_previous_deal_recordings,
+    select_previous_deal_recordings,
+    select_related_context_recordings,
+)
 
 
 class ClaudeAnalyzerPromptTests(unittest.TestCase):
@@ -88,6 +92,24 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
 
         self.assertEqual([call["activity_id"] for call in selected], [str(number) for number in range(2, 10)])
 
+    def test_related_context_backfill_adds_contact_and_company_and_uses_prior_deal_only_as_fallback(self):
+        target = {
+            "activity_id": "current", "created": "2026-10-05T10:00:00+03:00",
+            "crm": {"owner_type": "deal", "owner_id": "42", "contact_ids": ["9"], "company_id": "5", "category_id": "0"},
+        }
+        candidates = [
+            {"activity_id": "contact", "created": "2026-10-01T10:00:00+03:00", "crm": {"owner_type": "contact", "owner_id": "9"}, "audio": {"file_id": 1}},
+            {"activity_id": "company", "created": "2026-10-02T10:00:00+03:00", "crm": {"owner_type": "company", "owner_id": "5"}, "audio": {"file_id": 2}},
+            {"activity_id": "previous", "created": "2026-10-03T10:00:00+03:00", "crm": {"owner_type": "deal", "owner_id": "38", "contact_ids": ["9"], "company_id": "5", "category_id": "0"}, "audio": {"file_id": 3}},
+        ]
+
+        selected = select_related_context_recordings([target], candidates)
+
+        self.assertEqual([call["activity_id"] for call in selected], ["contact", "company", "previous"])
+        candidates.append({"activity_id": "current-deal", "created": "2026-10-04T10:00:00+03:00", "crm": {"owner_type": "deal", "owner_id": "42"}, "audio": {"file_id": 4}})
+        selected = select_related_context_recordings([target], candidates)
+        self.assertEqual([call["activity_id"] for call in selected], ["contact", "company", "current-deal"])
+
     def test_deal_context_uses_only_eight_earlier_calls_from_same_deal(self):
         calls = []
         analyses = {}
@@ -126,6 +148,59 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertIn("Итог 9", prompt)
         self.assertNotIn("Чужая сделка", prompt)
         self.assertIn("Использовано предыдущих разговоров: 8 из 8", prompt)
+
+    def test_context_uses_contact_and_company_and_falls_back_to_previous_sales_deal_only_without_current_deal_calls(self):
+        calls = [
+            {
+                "activity_id": "previous-deal", "created": "2026-09-01T10:00:00+03:00",
+                "crm": {"owner_type": "deal", "owner_id": "38", "category_id": "0", "contact_ids": ["9"], "company_id": "5"},
+            },
+            {
+                "activity_id": "contact", "created": "2026-09-02T10:00:00+03:00",
+                "crm": {"owner_type": "contact", "owner_id": "9"},
+            },
+            {
+                "activity_id": "company", "created": "2026-09-03T10:00:00+03:00",
+                "crm": {"owner_type": "company", "owner_id": "5"},
+            },
+        ]
+        analyses = {
+            item["activity_id"]: {"analysis": {"summary": item["activity_id"], "outcome": "Есть контакт", "recommendation": "Продолжить", "call_type": {"label": "Дожим"}}}
+            for item in calls
+        }
+        current = {
+            "activity_id": "current", "created": "2026-10-05T10:00:00+03:00", "manager": {"name": "Роман"},
+            "crm": {"owner_type": "deal", "owner_id": "42", "category_id": "0", "contact_ids": ["9"], "company_id": "5"},
+        }
+
+        context = build_deal_context(calls, analyses, current)
+
+        self.assertEqual([item["activity_id"] for item in context["previous_calls"]], ["previous-deal", "contact", "company"])
+        self.assertEqual(context["previous_calls"][0]["source"], "previous_sales_deal")
+        self.assertEqual(context["previous_calls"][1]["source"], "contact")
+        self.assertEqual(context["previous_calls"][2]["source"], "company")
+        self.assertEqual(context["sources"]["previous_sales_deal"]["deal_id"], "38")
+
+    def test_current_deal_calls_prevent_previous_deal_fallback_but_keep_contact_and_company_context(self):
+        calls = [
+            {"activity_id": "same", "created": "2026-10-01T10:00:00+03:00", "crm": {"owner_type": "deal", "owner_id": "42", "contact_ids": ["9"], "company_id": "5"}},
+            {"activity_id": "previous", "created": "2026-09-01T10:00:00+03:00", "crm": {"owner_type": "deal", "owner_id": "38", "contact_ids": ["9"], "company_id": "5"}},
+            {"activity_id": "contact", "created": "2026-10-02T10:00:00+03:00", "crm": {"owner_type": "contact", "owner_id": "9"}},
+        ]
+        analyses = {item["activity_id"]: {"analysis": {"summary": item["activity_id"], "call_type": {"label": "Дожим"}}} for item in calls}
+        current = {"activity_id": "current", "created": "2026-10-05T10:00:00+03:00", "crm": {"owner_type": "deal", "owner_id": "42", "contact_ids": ["9"], "company_id": "5"}}
+
+        context = build_deal_context(calls, analyses, current)
+
+        self.assertEqual({item["activity_id"] for item in context["previous_calls"]}, {"same", "contact"})
+        self.assertNotIn("previous_sales_deal", context["sources"])
+
+    def test_analysis_prompt_contains_calibration_rules_from_manual_reviews(self):
+        prompt = build_analysis_prompt("[00:00] тест", {"crm": {}}, [], "unknown")
+
+        self.assertIn("переадресовал к ЛПР", prompt)
+        self.assertIn("не больше чем на 1–2 балла", prompt)
+        self.assertIn("вежливый отказ", prompt)
 
     def test_manual_type_is_preserved_over_new_ai_result(self):
         analysis = apply_manual_corrections(

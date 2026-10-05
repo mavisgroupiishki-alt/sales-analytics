@@ -463,6 +463,49 @@ def compute_applicable_score(call_type_key: str, observations: Any) -> Optional[
     return max(1.0, min(10.0, weighted))
 
 
+def manager_errors_from_analysis(analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return concrete, evidenced deductions for the call detail card."""
+    supplied = analysis.get("manager_errors")
+    if isinstance(supplied, list):
+        errors = []
+        for item in supplied:
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if text:
+                errors.append({
+                    "criterion": str(item.get("criterion") or ""),
+                    "text": text,
+                    "time": str(item.get("time") or ""),
+                    "quote": str(item.get("quote") or ""),
+                })
+        if errors:
+            return errors[:3]
+
+    errors = []
+    for item in analysis.get("criteria") or []:
+        if not isinstance(item, dict) or item.get("applicable") is not True:
+            continue
+        try:
+            score = float(item.get("score"))
+        except (TypeError, ValueError):
+            continue
+        if score >= 10:
+            continue
+        finding = str(item.get("finding") or "").strip()
+        if not finding or finding.startswith("Недостаточно надёжных данных"):
+            continue
+        code = str(item.get("code") or "")
+        errors.append({
+            "criterion": code,
+            "title": RUBRIC_CRITERIA.get(code, (code or "Критерий", 0))[0],
+            "text": finding,
+            "time": str(item.get("time") or ""),
+            "quote": str(item.get("quote") or ""),
+        })
+    return errors[:3]
+
+
 def complete_missing_criteria_neutrally(call_type_key: str, observations: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Fill unsupported rubric observations with a visible neutral value.
 
@@ -798,13 +841,27 @@ def _context_prompt_block(deal_context: Optional[Dict[str, Any]]) -> str:
         f"- Ответственный: {crm.get('responsible') or 'не указан'}",
         f"- Следующая активность CRM: {crm.get('next_activity_date') or 'не назначена'}",
     ]
+    sources = deal_context.get("sources") or {}
     if not previous_calls:
-        lines.append("- Предыдущих разобранных разговоров по этой сделке нет.")
+        lines.append("- Связанных разобранных разговоров не найдено.")
         return "\n".join(lines)
     lines.append(f"- Использовано предыдущих разговоров: {len(previous_calls)} из 8.")
+    if "previous_sales_deal" in sources:
+        lines.append(f"- Часть контекста взята из предыдущей сделки продаж №{(sources.get('previous_sales_deal') or {}).get('deal_id') or ''}.")
+    if "contact" in sources:
+        lines.append("- Учтены связанные звонки через контакт.")
+    if "company" in sources:
+        lines.append("- Учтены связанные звонки через компанию.")
     for index, item in enumerate(previous_calls, 1):
+        source = str(item.get("source") or "current_deal")
+        source_label = {
+            "current_deal": "текущая сделка",
+            "previous_sales_deal": f"предыдущая сделка продаж №{item.get('source_deal_id') or ''}".strip(),
+            "contact": "контакт",
+            "company": "компания",
+        }.get(source, source)
         lines.append(
-            f"{index}. {item.get('date') or 'дата не указана'} · {item.get('call_type') or 'тип не указан'}\n"
+            f"{index}. {item.get('date') or 'дата не указана'} · {item.get('call_type') or 'тип не указан'} · источник: {source_label}\n"
             f"   Резюме: {item.get('summary') or 'нет'}\n"
             f"   Возражения: {item.get('objections') or 'не выделены'}\n"
             f"   Договорённости: {item.get('agreements') or 'не выделены'}\n"
@@ -821,7 +878,7 @@ def build_deal_context(
     *,
     limit: int = 8,
 ) -> Dict[str, Any]:
-    """Build a compact history of earlier calls from the same CRM deal."""
+    """Build a bounded, labelled history for the same commercial client."""
     crm = call_meta.get("crm") or {}
     owner_id = str(crm.get("owner_id") or "")
     owner_type = str(crm.get("owner_type") or "")
@@ -834,25 +891,93 @@ def build_deal_context(
             "next_activity_date": crm.get("next_activity_date"),
         },
         "previous_calls": [],
+        "sources": {},
     }
     if owner_type != "deal" or not owner_id:
         return context
 
-    previous = []
-    for candidate in calls:
-        candidate_crm = candidate.get("crm") or {}
+    def linked_ids(value: Any) -> set[str]:
+        if isinstance(value, (list, tuple, set)):
+            values = value
+        elif value in (None, ""):
+            values = []
+        else:
+            values = [value]
+        return {str(item).strip() for item in values if str(item).strip()}
+
+    target_contact_ids = linked_ids(crm.get("contact_ids"))
+    target_contact_ids.update(linked_ids((call_meta.get("client") or {}).get("contact_id")))
+    target_company_id = str(crm.get("company_id") or (call_meta.get("client") or {}).get("company_id") or "").strip()
+    target_category_id = str(crm.get("category_id") or "").strip()
+
+    def is_earlier(candidate: Dict[str, Any]) -> bool:
         candidate_id = str(candidate.get("activity_id") or "")
         candidate_created = str(candidate.get("created") or "")
-        if candidate_id == current_id or candidate_crm.get("owner_type") != "deal":
-            continue
-        if str(candidate_crm.get("owner_id") or "") != owner_id:
-            continue
-        if (candidate_created, candidate_id) >= (current_created, current_id):
+        return bool(candidate_id and candidate_id != current_id and candidate_created and (candidate_created, candidate_id) < (current_created, current_id))
+
+    def same_client(candidate_crm: Dict[str, Any]) -> bool:
+        contacts = linked_ids(candidate_crm.get("contact_ids"))
+        return bool(
+            (target_contact_ids and contacts.intersection(target_contact_ids))
+            or (target_company_id and str(candidate_crm.get("company_id") or "") == target_company_id)
+        )
+
+    candidates = [candidate for candidate in calls if isinstance(candidate, dict) and is_earlier(candidate)]
+    same_deal = [
+        candidate for candidate in candidates
+        if str((candidate.get("crm") or {}).get("owner_type") or "") == "deal"
+        and str((candidate.get("crm") or {}).get("owner_id") or "") == owner_id
+    ]
+    contact_calls = [
+        candidate for candidate in candidates
+        if str((candidate.get("crm") or {}).get("owner_type") or "") == "contact"
+        and str((candidate.get("crm") or {}).get("owner_id") or "") in target_contact_ids
+    ]
+    company_calls = [
+        candidate for candidate in candidates
+        if target_company_id
+        and str((candidate.get("crm") or {}).get("owner_type") or "") == "company"
+        and str((candidate.get("crm") or {}).get("owner_id") or "") == target_company_id
+    ]
+    source_calls: List[Tuple[str, Dict[str, Any], str]] = []
+    source_calls.extend(("current_deal", candidate, owner_id) for candidate in same_deal)
+    source_calls.extend(("contact", candidate, "") for candidate in contact_calls)
+    source_calls.extend(("company", candidate, "") for candidate in company_calls)
+
+    if not same_deal:
+        prior_deals: Dict[str, List[Dict[str, Any]]] = {}
+        for candidate in candidates:
+            candidate_crm = candidate.get("crm") or {}
+            candidate_deal_id = str(candidate_crm.get("owner_id") or "")
+            candidate_category_id = str(candidate_crm.get("category_id") or "").strip()
+            if str(candidate_crm.get("owner_type") or "") != "deal" or not candidate_deal_id or candidate_deal_id == owner_id:
+                continue
+            if target_category_id and candidate_category_id and candidate_category_id != target_category_id:
+                continue
+            if same_client(candidate_crm):
+                prior_deals.setdefault(candidate_deal_id, []).append(candidate)
+        if prior_deals:
+            previous_deal_id, previous_deal_calls = max(
+                prior_deals.items(),
+                key=lambda item: max((str(call.get("created") or ""), str(call.get("activity_id") or "")) for call in item[1]),
+            )
+            source_calls.extend(("previous_sales_deal", candidate, previous_deal_id) for candidate in previous_deal_calls)
+
+    source_order = {"current_deal": 0, "contact": 1, "company": 2, "previous_sales_deal": 3}
+    previous = []
+    seen_ids: set[str] = set()
+    for source, candidate, source_deal_id in sorted(
+        source_calls,
+        key=lambda item: (str(item[1].get("created") or ""), str(item[1].get("activity_id") or ""), source_order[item[0]]),
+    ):
+        candidate_id = str(candidate.get("activity_id") or "")
+        if candidate_id in seen_ids:
             continue
         stored = analyses.get(candidate_id) or {}
         analysis = stored.get("analysis") if isinstance(stored, dict) else {}
         if not isinstance(analysis, dict) or not analysis:
             continue
+        seen_ids.add(candidate_id)
         if corrections:
             analysis = apply_manual_corrections(candidate_id, dict(analysis), corrections)
         call_type = analysis.get("call_type") or {}
@@ -864,15 +989,25 @@ def build_deal_context(
         next_contact = analysis.get("next_contact") or {}
         previous.append({
             "activity_id": candidate_id,
-            "date": candidate_created,
+            "date": str(candidate.get("created") or ""),
             "call_type": call_type.get("label") or "Тип не указан",
             "summary": analysis.get("summary") or "Нет резюме",
             "objections": "; ".join(objection_texts[:2]) or "не выделены",
             "agreements": analysis.get("outcome") or "не выделены",
             "next_step": analysis.get("recommended_action") or analysis.get("recommendation") or next_contact.get("context") or "не указан",
+            "source": source,
+            "source_deal_id": source_deal_id if source == "previous_sales_deal" else "",
         })
     previous.sort(key=lambda item: (str(item["date"]), str(item["activity_id"])))
     context["previous_calls"] = previous[-limit:]
+    for item in context["previous_calls"]:
+        source = item["source"]
+        source_meta = context["sources"].setdefault(source, {"count": 0})
+        source_meta["count"] += 1
+        if source == "current_deal":
+            source_meta["deal_id"] = owner_id
+        elif source == "previous_sales_deal":
+            source_meta["deal_id"] = item["source_deal_id"]
     return context
 
 
@@ -971,6 +1106,9 @@ def build_analysis_prompt(
 - Оценка 7+ = менеджер реально продвинул сделку. 5-6 = топтание на месте. Ниже 5 = потенциальный клиент потерян или сделка зависла
 - НЕ снижай за отсутствие этапов скрипта если цель звонка была узкой (уточнение, перенос)
 - СНИЖАЙ за: нет конкретного следующего шага, не отработано возражение когда клиент был готов, звонок завершился в никуда
+- Если собеседник не ЛПР, только переадресовал к ЛПР или дал другой контакт, это не продажный разговор: поставь `not_sales: true`, объясни «переадресовал к ЛПР» и не учитывай его в оценке менеджера.
+- Один пропущенный следующий шаг или неиспользованная допродажа при вежливом отказе клиента — умеренное снижение, не больше чем на 1–2 балла. Сам по себе вежливый отказ («справимся сами», «я сам позвоню») не превращай в ошибку менеджера и не требуй следующую дату.
+- Любое снижение балла объясняй отдельной конкретной ошибкой менеджера с цитатой и таймкодом. Если ошибки нет, не выдумывай её ради низкой оценки.
 
 ИНФОРМАЦИЯ О ЗВОНКЕ:
 {call_info}
@@ -1011,6 +1149,8 @@ def build_analysis_prompt(
 
 6a. ФАКТЫ ДЛЯ РАСЧЁТА БАЛЛА. Оцени ТОЛЬКО перечисленные критерии. Для каждого дай score 0–10, конкретный факт и цитату/таймкод. Не добавляй неприменимые критерии и не ставь им ноль:
 {criteria_contract}
+
+6b. ОШИБКИ МЕНЕДЖЕРА И СНИЖЕНИЕ ОЦЕНКИ. Верни только реальные ошибки, которые действительно снизили оценку. Для каждой укажи критерий, коротко что не сделал менеджер, точную цитату и таймкод. Если таких ошибок нет, верни пустой массив.
 
 7. Что сделано хорошо (1-3 момента) — ТОЛЬКО реальные продажные действия с таймкодом и цитатой.
    НЕ хвали за "представился", "был вежлив", "уточнил контакт" — это базовый минимум.
@@ -1066,6 +1206,9 @@ def build_analysis_prompt(
   "score_explanation": "...",
   "criteria": [
     {{"code": "one_of_the_listed_codes", "applicable": true, "score": 0.0, "finding": "конкретный факт", "time": "MM:SS", "quote": "..."}}
+  ],
+  "manager_errors": [
+    {{"criterion": "one_of_the_listed_codes", "text": "Конкретная ошибка, которая снизила оценку", "time": "MM:SS", "quote": "..."}}
   ],
   "strengths": [
     {{"text": "...", "time": "MM:SS"}}
@@ -1360,6 +1503,7 @@ def analyze_transcript(
                 "critical_rule_id": "",
                 "poor_audio": False,
                 "poor_audio_reason": "",
+                "manager_errors": [],
                 "_meta": meta,
             }
         )
@@ -1453,6 +1597,7 @@ def analyze_transcript(
         result["critical_rule_id"] = rule_id
 
     result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
+    result["manager_errors"] = manager_errors_from_analysis(result)
     result["_meta"] = meta
     return result
 

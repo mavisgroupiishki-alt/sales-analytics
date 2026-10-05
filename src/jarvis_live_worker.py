@@ -33,6 +33,14 @@ def autosync_interval_seconds() -> int:
         return 0
 
 
+def reactivation_sync_interval_seconds() -> int:
+    """Run the expensive historical reactivation pass at a calmer cadence."""
+    try:
+        return max(0, int(os.environ.get("JARVIS_REACTIVATION_SYNC_SECONDS", "3600")))
+    except ValueError:
+        return 0
+
+
 class LivePipeline:
     """Runs one non-overlapping private sync at a time."""
 
@@ -47,26 +55,32 @@ class LivePipeline:
             "mode": None,
         }
 
-    def start(self, *, reanalyze_today: bool = False, reanalysis_date: str | None = None) -> bool:
+    def start(
+        self,
+        *,
+        reanalyze_today: bool = False,
+        reanalysis_date: str | None = None,
+        reactivation: bool = False,
+    ) -> bool:
         if not self.lock.acquire(blocking=False):
             return False
         thread = threading.Thread(
             target=self._run,
-            kwargs={"reanalyze_today": reanalyze_today, "reanalysis_date": reanalysis_date},
+            kwargs={"reanalyze_today": reanalyze_today, "reanalysis_date": reanalysis_date, "reactivation": reactivation},
             daemon=True,
             name="jarvis-live-sync",
         )
         thread.start()
         return True
 
-    def _run(self, *, reanalyze_today: bool, reanalysis_date: str | None = None) -> None:
+    def _run(self, *, reanalyze_today: bool, reanalysis_date: str | None = None, reactivation: bool = False) -> None:
         self.state.update(
             {
                 "status": "running",
                 "started_at": datetime.now().astimezone().isoformat(),
                 "finished_at": None,
                 "last_error": None,
-                "mode": f"reanalyze_day:{reanalysis_date}" if reanalysis_date else ("reanalyze_today" if reanalyze_today else "sync_today"),
+                "mode": "reactivation" if reactivation else (f"reanalyze_day:{reanalysis_date}" if reanalysis_date else ("reanalyze_today" if reanalyze_today else "sync_today")),
             }
         )
         try:
@@ -75,11 +89,17 @@ class LivePipeline:
             with self._runtime_environment(reanalyze_today, reanalysis_date):
                 # Import here so these modules receive the controlled runtime
                 # directory instead of the container source directory.
-                from bitrix import main as bitrix_main
-                from claude_analyzer import main as analyzer_main
+                if reactivation:
+                    from bitrix import Bitrix24Client
+                    from reactivation import analyse_reactivation_calls
 
-                bitrix_main()
-                analyzer_main()
+                    analyse_reactivation_calls(Bitrix24Client(), self.runtime_dir)
+                else:
+                    from bitrix import main as bitrix_main
+                    from claude_analyzer import main as analyzer_main
+
+                    bitrix_main()
+                    analyzer_main()
             self.state["status"] = "succeeded"
         except Exception as exc:  # logged without request headers or env values
             self.state["status"] = "failed"
@@ -181,6 +201,20 @@ def create_app(pipeline: LivePipeline | None = None) -> Flask:
 
         threading.Thread(target=run_periodically, daemon=True, name="jarvis-live-scheduler").start()
 
+    reactivation_interval = reactivation_sync_interval_seconds()
+    if reactivation_interval:
+        def run_reactivation_periodically() -> None:
+            # Do not drop a full-history scan merely because the five-minute
+            # sales sync owns the worker lock at that exact moment.
+            while not live_pipeline.start(reactivation=True):
+                threading.Event().wait(30)
+            while True:
+                threading.Event().wait(reactivation_interval)
+                while not live_pipeline.start(reactivation=True):
+                    threading.Event().wait(30)
+
+        threading.Thread(target=run_reactivation_periodically, daemon=True, name="jarvis-reactivation-scheduler").start()
+
     def authorized() -> bool:
         configured = os.environ.get("JARVIS_SYNC_SECRET", "")
         supplied = request.headers.get("x-jarvis-sync-secret", "")
@@ -195,17 +229,19 @@ def create_app(pipeline: LivePipeline | None = None) -> Flask:
         if not authorized():
             return jsonify({"error": "unauthorized"}), 401
         body = request.get_json(silent=True) or {}
-        reanalyze_today = body.get("mode") in {"reanalyze_today", "reanalyze_day"}
+        mode = str(body.get("mode") or "")
+        reactivation = mode == "reactivation"
+        reanalyze_today = mode in {"reanalyze_today", "reanalyze_day"}
         reanalysis_date = None
-        if body.get("mode") == "reanalyze_day":
+        if mode == "reanalyze_day":
             try:
                 reanalysis_date = datetime.fromisoformat(str(body.get("date") or "")).date().isoformat()
             except ValueError:
                 return jsonify({"error": "invalid reanalysis date"}), 400
-        if not live_pipeline.start(reanalyze_today=reanalyze_today, reanalysis_date=reanalysis_date):
+        if not live_pipeline.start(reanalyze_today=reanalyze_today, reanalysis_date=reanalysis_date, reactivation=reactivation):
             return jsonify({"status": "already_running"}), 409
-        mode = f"reanalyze_day:{reanalysis_date}" if reanalysis_date else ("reanalyze_today" if reanalyze_today else "sync_today")
-        return jsonify({"status": "accepted", "mode": mode}), 202
+        accepted_mode = "reactivation" if reactivation else (f"reanalyze_day:{reanalysis_date}" if reanalysis_date else ("reanalyze_today" if reanalyze_today else "sync_today"))
+        return jsonify({"status": "accepted", "mode": accepted_mode}), 202
 
     return app
 

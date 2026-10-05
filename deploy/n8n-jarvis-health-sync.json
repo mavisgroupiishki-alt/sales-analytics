@@ -1,0 +1,31 @@
+{
+  "name": "Jarvis — CRM Health every 4 hours (shadow)",
+  "nodes": [
+    {
+      "parameters": {"rule": {"interval": [{"field": "hours", "hoursInterval": 4}]}},
+      "id": "19d975c4-bd30-421f-8683-d19ea7722506",
+      "name": "Every 4 hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://jarvis-worker:8080/internal/health-sync",
+        "sendHeaders": true,
+        "headerParameters": {"parameters": [{"name": "x-jarvis-sync-secret", "value": "={{ $env.JARVIS_SYNC_SECRET }}"}]},
+        "options": {"timeout": 10000}
+      },
+      "id": "f4c7cbfd-0611-4bc0-9035-9d5205c9cff0",
+      "name": "Start private CRM Health sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [560, 300]
+    }
+  ],
+  "connections": {"Every 4 hours": {"main": [[{"node": "Start private CRM Health sync", "type": "main", "index": 0}]]}},
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "versionId": "405cb0f3-d942-4656-a081-5e6d65f4724e"
+}

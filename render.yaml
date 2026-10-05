@@ -27,9 +27,11 @@ services:
       - key: JARVIS_RUBRIC_ID
         sync: false
       - key: JARVIS_LIVE_WORKER_ENABLED
-        value: "0"
+        value: "1"
       - key: JARVIS_AUTOSYNC_SECONDS
         value: "300"
+      - key: JARVIS_REACTIVATION_SYNC_SECONDS
+        value: "3600"
       - key: JARVIS_WORKER_PORT
         value: "8080"
       - key: OPERATIONS_DASHBOARD_TOKEN

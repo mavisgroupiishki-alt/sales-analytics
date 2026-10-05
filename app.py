@@ -14,6 +14,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 from functools import wraps
+from urllib.parse import urlparse
 from flask import Flask, request, redirect, url_for, session, abort, Response, jsonify, Blueprint, send_from_directory
 
 # Admin module (встроен напрямую)
@@ -1134,11 +1135,49 @@ def persist_call_review(activity_id, call_type_key, reason, reviewer_name, *, re
     path.write_text(json.dumps(corrections, ensure_ascii=False, indent=2), encoding="utf-8")
     return corrections[str(activity_id)]
 
+
+def load_manual_call_reviews():
+    """Read local review markers only when Postgres is not configured."""
+    path = DATA_DIR / "manual_call_reviews.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def persist_call_manual_review(activity_id, reviewed, reviewer_name):
+    """Persist the independent 'viewed manually' marker without changing AI type."""
+    database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
+    if database_url:
+        from jarvis_store import JarvisRepository
+
+        repository = JarvisRepository.connect(database_url)
+        try:
+            return repository.save_call_manual_review(str(activity_id), bool(reviewed), reviewer_name)
+        finally:
+            repository.close()
+    path = DATA_DIR / "manual_call_reviews.json"
+    markers = load_manual_call_reviews()
+    markers[str(activity_id)] = {
+        "reviewed": bool(reviewed),
+        "reviewer_name": reviewer_name,
+        "reviewed_at": datetime.now().astimezone().isoformat() if reviewed else "",
+    }
+    path.write_text(json.dumps(markers, ensure_ascii=False, indent=2), encoding="utf-8")
+    return markers[str(activity_id)]
+
 def get_data(user=None):
     calls, analyses = load_snapshot()
     calls = sales_manager_calls(calls)
     corrections = load_corrections()
     analyses = apply_corrections(analyses, corrections)
+    if not os.environ.get("JARVIS_DATABASE_URL", "").strip():
+        manual_views = load_manual_call_reviews()
+        for call in calls:
+            call["_manual_review"] = dict(manual_views.get(str(call.get("activity_id") or "")) or {})
     # Legacy records were marked critical by the model alone.  Re-classify every
     # record on read so old JSON cannot recreate false alerts in any Flask page.
     from claude_analyzer import evaluate_triage
@@ -1182,6 +1221,15 @@ def requested_date_range():
     if date_from and date_to and date_from > date_to:
         date_from, date_to = date_to, date_from
     return date_from, date_to
+
+
+def requested_calls_return_to():
+    """Permit only an internal filtered call-list URL in the back link."""
+    candidate = str(request.args.get("return_to") or "")
+    parsed = urlparse(candidate)
+    if parsed.scheme or parsed.netloc or parsed.path != "/calls":
+        return "/calls"
+    return "/calls" + (f"?{parsed.query}" if parsed.query else "")
 
 
 def requested_jarvis_filters(default="today"):
@@ -1270,7 +1318,10 @@ def _operations_reactivation_payload(*, force: bool = False):
     from bitrix import Bitrix24Client
     from reactivation import build_reactivation_queue
 
-    calls, analyses = get_data()
+    # Reactivation must not be limited to the currently monitored sales-team
+    # members: its evidence is the full direct history of the CRM deal.
+    calls, analyses = load_snapshot()
+    analyses = apply_corrections(analyses, load_corrections())
     payload = build_reactivation_queue(Bitrix24Client(), calls, analyses)
     _REACTIVATION_QUEUE_CACHE.update({"at": time.monotonic(), "value": payload})
     return payload
@@ -1543,7 +1594,9 @@ def call_detail(activity_id):
     if user["role"] == "manager" and call.get("manager",{}).get("id") != user["manager_id"]:
         abort(403)
     from jarvis_dashboard import render_call_detail
-    return html_response(render_call_detail(call, analyses.get(activity_id) or {}, user))
+    return html_response(render_call_detail(
+        call, analyses.get(activity_id) or {}, user, return_to=requested_calls_return_to(),
+    ))
 
 @app.route("/rop")
 @rop_required
@@ -2046,6 +2099,23 @@ def review_call_type(activity_id):
         if not started:
             return jsonify({"ok": True, "review": saved, "reanalysis": "saved_not_started"})
     return jsonify({"ok": True, "review": saved, "reanalysis": "started" if reanalyze else "not_requested"})
+
+
+@app.route("/calls/<activity_id>/manual-review", methods=["POST"])
+@rop_required
+def review_call_manually(activity_id):
+    """Mark a card as listened to by a human without modifying its judgement."""
+    data = request.get_json(silent=True) or {}
+    reviewed = data.get("reviewed")
+    if not isinstance(reviewed, bool):
+        return jsonify({"error": "Передайте значение reviewed: true или false"}), 400
+    calls, _ = get_data()
+    if not any(str(call.get("activity_id") or "") == str(activity_id) for call in calls):
+        return jsonify({"error": "Звонок не найден"}), 404
+    saved = persist_call_manual_review(
+        str(activity_id), reviewed, current_user().get("name") or "Руководитель",
+    )
+    return jsonify({"ok": True, "review": saved})
 
 @app.route("/audio/<activity_id>")
 @login_required

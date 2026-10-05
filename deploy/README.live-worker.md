@@ -26,7 +26,11 @@ private Docker hostname `jarvis-worker` and an HMAC-safe shared header.
    `/opt/mavis-pilot/jarvis-worker`.
 5. Import `n8n-jarvis-live-sync.json`, confirm the header expression uses the
    server environment variable, then activate it.
-6. Trigger one private `{"mode":"reanalyze_today"}` request and check the
+6. Before enabling CRM Health, run a schema-diff against the private `jarvis`
+   schema and apply `migrations/003_deal_health.sql`. Import the disabled
+   `n8n-jarvis-health-sync.json`; it calls `/internal/health-sync` with the
+   same private header and must remain a shadow-only workflow until calibration.
+7. Trigger one private `{"mode":"reanalyze_today"}` request and check the
    `jarvis.sync_runs`, `calls`, `transcripts`, `call_analyses`, and
    `critical_cases` counts before turning on the five-minute schedule.
 

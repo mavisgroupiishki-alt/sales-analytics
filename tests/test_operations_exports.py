@@ -122,6 +122,20 @@ class OperationsExportsTests(unittest.TestCase):
         persist_review.assert_called_once()
         start_reanalysis.assert_called_once_with("42")
 
+    @patch.object(jarvis_app, "persist_call_manual_review")
+    @patch.object(jarvis_app, "get_data")
+    def test_rop_can_mark_a_call_as_manually_reviewed_without_changing_its_type(self, get_data, persist_manual_review):
+        get_data.return_value = ([{"activity_id": "42", "manager": {"name": "Роман"}}], {})
+        persist_manual_review.return_value = {"reviewed": True, "reviewer_name": "РОП"}
+        with self.client.session_transaction() as session:
+            session.update({"username": "rop", "role": "rop", "name": "РОП"})
+
+        response = self.client.post("/calls/42/manual-review", json={"reviewed": True})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["review"]["reviewed"])
+        persist_manual_review.assert_called_once_with("42", True, "РОП")
+
     @patch.object(jarvis_app, "build_crm_audit_snapshot")
     def test_audit_export_returns_existing_table_shape(self, build_snapshot):
         build_snapshot.return_value = {

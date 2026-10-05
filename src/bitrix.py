@@ -241,6 +241,58 @@ def select_previous_deal_recordings(
     )
 
 
+def select_related_context_recordings(
+    targets: List[Dict[str, Any]], candidates: List[Dict[str, Any]], *, limit: int = 8,
+) -> List[Dict[str, Any]]:
+    """Select context from explicit CRM relations, with a previous-deal fallback only.
+
+    Contact and company calls supplement direct deal history.  Calls of another
+    sales deal are eligible only when the target has no earlier direct calls.
+    """
+    selected: Dict[str, Dict[str, Any]] = {}
+    for target in targets:
+        crm = target.get("crm") or {}
+        if crm.get("owner_type") != "deal":
+            continue
+        owner_id = str(crm.get("owner_id") or "")
+        target_id = str(target.get("activity_id") or "")
+        target_created = str(target.get("created") or "")
+        contact_ids = {str(item) for item in (crm.get("contact_ids") or []) if str(item)}
+        company_id = str(crm.get("company_id") or "")
+        category_id = str(crm.get("category_id") or "")
+        if not owner_id or not target_id or not target_created:
+            continue
+        possible = []
+        for candidate in candidates:
+            candidate_id = str(candidate.get("activity_id") or "")
+            candidate_created = str(candidate.get("created") or "")
+            audio = candidate.get("audio") or {}
+            if not candidate_id or (candidate_created, candidate_id) >= (target_created, target_id):
+                continue
+            if not audio.get("file_id") or should_skip_audio_download(candidate, audio.get("file_id")):
+                continue
+            possible.append(candidate)
+        direct = [candidate for candidate in possible if str((candidate.get("crm") or {}).get("owner_type") or "") == "deal" and str((candidate.get("crm") or {}).get("owner_id") or "") == owner_id]
+        related = [candidate for candidate in possible if (
+            str((candidate.get("crm") or {}).get("owner_type") or "") == "contact" and str((candidate.get("crm") or {}).get("owner_id") or "") in contact_ids
+        ) or (
+            company_id and str((candidate.get("crm") or {}).get("owner_type") or "") == "company" and str((candidate.get("crm") or {}).get("owner_id") or "") == company_id
+        )]
+        chosen = direct + related
+        if not direct:
+            chosen.extend(
+                candidate for candidate in possible
+                if str((candidate.get("crm") or {}).get("owner_type") or "") == "deal"
+                and str((candidate.get("crm") or {}).get("owner_id") or "") != owner_id
+                and (not category_id or not (candidate.get("crm") or {}).get("category_id") or str((candidate.get("crm") or {}).get("category_id")) == category_id)
+                and ((contact_ids and set(str(item) for item in ((candidate.get("crm") or {}).get("contact_ids") or [])).intersection(contact_ids)) or (company_id and str((candidate.get("crm") or {}).get("company_id") or "") == company_id))
+            )
+        deduped = {str(candidate.get("activity_id")): candidate for candidate in chosen}
+        ordered = sorted(deduped.values(), key=lambda call: (str(call.get("created") or ""), str(call.get("activity_id") or "")))[-limit:]
+        selected.update({str(candidate["activity_id"]): candidate for candidate in ordered})
+    return sorted(selected.values(), key=lambda call: (str(call.get("created") or ""), str(call.get("activity_id") or "")))
+
+
 def fetch_previous_deal_recordings(
     client: Bitrix24Client,
     targets: List[Dict[str, Any]],
@@ -279,6 +331,41 @@ def fetch_previous_deal_recordings(
             if activity.get("FILES") and activity.get("ID"):
                 raw_activities[str(activity["ID"])] = activity
 
+    # Include calls attached to the same contact/company.  These are direct
+    # CRM relations, not a fuzzy lookup by phone number.
+    contact_ids = sorted({
+        str(contact_id) for target in targets for contact_id in ((target.get("crm") or {}).get("contact_ids") or []) if str(contact_id)
+    })
+    company_ids = sorted({
+        str((target.get("crm") or {}).get("company_id") or "") for target in targets if (target.get("crm") or {}).get("company_id")
+    })
+    for owner_type_id, owner_ids in ((3, contact_ids), (4, company_ids)):
+        for owner_id in owner_ids:
+            activities = client.call_all(
+                "crm.activity.list",
+                {"filter": {"TYPE_ID": ACTIVITY_TYPE_CALL, "COMPLETED": "Y", "OWNER_TYPE_ID": owner_type_id, "OWNER_ID": owner_id}, "select": ["*", "COMMUNICATIONS"], "order": {"CREATED": "ASC"}},
+            )
+            for activity in activities:
+                if activity.get("FILES") and activity.get("ID"):
+                    raw_activities[str(activity["ID"])] = activity
+
+    # The fallback deal is resolved through the same explicit contact/company
+    # relation and later used only if the current deal has no prior calls.
+    prior_deal_info: Dict[str, Dict[str, Any]] = {}
+    for contact_id in contact_ids:
+        response = client.call("crm.deal.list", {"filter": {"CONTACT_ID": contact_id}, "select": ["ID", "CONTACT_ID", "COMPANY_ID", "CATEGORY_ID"]})
+        for deal in response.get("result") or []:
+            prior_deal_info[str(deal.get("ID") or "")] = deal
+    for company_id in company_ids:
+        response = client.call("crm.deal.list", {"filter": {"COMPANY_ID": company_id}, "select": ["ID", "CONTACT_ID", "COMPANY_ID", "CATEGORY_ID"]})
+        for deal in response.get("result") or []:
+            prior_deal_info[str(deal.get("ID") or "")] = deal
+    for deal_id in prior_deal_info:
+        activities = client.call_all("crm.activity.list", {"filter": {"TYPE_ID": ACTIVITY_TYPE_CALL, "COMPLETED": "Y", "OWNER_TYPE_ID": 2, "OWNER_ID": deal_id}, "select": ["*", "COMMUNICATIONS"], "order": {"CREATED": "ASC"}})
+        for activity in activities:
+            if activity.get("FILES") and activity.get("ID"):
+                raw_activities[str(activity["ID"])] = activity
+
     if not raw_activities:
         return []
 
@@ -292,7 +379,14 @@ def fetch_previous_deal_recordings(
                 continue
     users = fetch_users(client, list(manager_ids))
     normalized = [normalize_call(activity, users) for activity in raw_activities.values()]
-    return select_previous_deal_recordings(targets, normalized)
+    for call in normalized:
+        call_crm = call.get("crm") or {}
+        info = prior_deal_info.get(str(call_crm.get("owner_id") or ""))
+        if info and call_crm.get("owner_type") == "deal":
+            call_crm["contact_ids"] = [str(info.get("CONTACT_ID") or "")] if info.get("CONTACT_ID") else []
+            call_crm["company_id"] = str(info.get("COMPANY_ID") or "")
+            call_crm["category_id"] = str(info.get("CATEGORY_ID") or "")
+    return select_related_context_recordings(targets, normalized)
 
 
 def fetch_users(client: Bitrix24Client, user_ids: List[int]) -> Dict[int, Dict]:
@@ -508,7 +602,8 @@ def normalize_call(
     files = activity.get("FILES") or []
     file_info = files[0] if files else None
 
-    comm = (activity.get("COMMUNICATIONS") or [{}])[0]
+    communications = activity.get("COMMUNICATIONS") or [{}]
+    comm = communications[0]
     settings = comm.get("ENTITY_SETTINGS") or {}
     client_name = " ".join(
         x for x in [settings.get("HONORIFIC"), settings.get("NAME"),
@@ -543,6 +638,21 @@ def normalize_call(
     direction = {1: "incoming", 2: "outgoing"}.get(direction_code, "unknown")
     owner_type_id = int(activity.get("OWNER_TYPE_ID") or 0)
     owner_type = {1: "lead", 2: "deal", 3: "contact", 4: "company"}.get(owner_type_id, "unknown")
+    contact_ids = {
+        str(item.get("ENTITY_ID") or "").strip()
+        for item in communications
+        if int(item.get("ENTITY_TYPE_ID") or 0) == 3 and str(item.get("ENTITY_ID") or "").strip()
+    }
+    company_ids = {
+        str(item.get("ENTITY_ID") or "").strip()
+        for item in communications
+        if int(item.get("ENTITY_TYPE_ID") or 0) == 4 and str(item.get("ENTITY_ID") or "").strip()
+    }
+    owner_id = str(activity.get("OWNER_ID") or "").strip()
+    if owner_type == "contact" and owner_id:
+        contact_ids.add(owner_id)
+    if owner_type == "company" and owner_id:
+        company_ids.add(owner_id)
 
     duration_sec = compute_duration_sec(activity)
 
@@ -559,6 +669,8 @@ def normalize_call(
             "company": company,
             "phone": comm.get("VALUE", ""),          # полный номер для поиска
             "phone_masked": _mask_phone(comm.get("VALUE", "")),  # маскированный для показа
+            "contact_id": sorted(contact_ids)[0] if contact_ids else "",
+            "company_id": sorted(company_ids)[0] if company_ids else "",
         },
         "crm": {
             "owner_type": owner_type,
@@ -570,6 +682,12 @@ def normalize_call(
         },
         "audio": None,
     }
+    if contact_ids:
+        result["crm"]["contact_ids"] = sorted(contact_ids)
+    if company_ids:
+        result["crm"]["company_id"] = sorted(company_ids)[0]
+    if activity.get("CATEGORY_ID"):
+        result["crm"]["category_id"] = str(activity.get("CATEGORY_ID") or "")
     if file_info:
         result["audio"] = {
             "file_id": file_info["id"],
@@ -626,11 +744,18 @@ def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
         try:
             resp = client.call("crm.deal.list", {
                 "filter": {"ID": deal_ids},
-                "select": ["ID", "STAGE_ID"],
+                "select": ["ID", "STAGE_ID", "CONTACT_ID", "CONTACT_IDS", "COMPANY_ID", "CATEGORY_ID"],
             })
             for d in (resp.get("result") or []):
                 stage = d.get("STAGE_ID", "")
-                deal_stages[str(d["ID"])] = {"stage_id": stage}
+                contact_ids = [str(d.get("CONTACT_ID") or "").strip()]
+                contact_ids.extend(str(value).strip() for value in (d.get("CONTACT_IDS") or []) if str(value).strip())
+                deal_stages[str(d["ID"])] = {
+                    "stage_id": stage,
+                    "contact_ids": [value for value in dict.fromkeys(contact_ids) if value],
+                    "company_id": str(d.get("COMPANY_ID") or "").strip(),
+                    "category_id": str(d.get("CATEGORY_ID") or "").strip(),
+                }
         except Exception as e:
             logger.warning(f"Не удалось получить статусы сделок: {e}")
 
@@ -701,6 +826,12 @@ def enrich_with_deal_info(client: "Bitrix24Client", calls: list) -> list:
         if info:
             c["crm"]["stage_id"] = info["stage_id"]
             c["crm"]["stage_name"] = info["stage_name"]
+            if otype == "deal":
+                c["crm"]["contact_ids"] = info.get("contact_ids") or c["crm"].get("contact_ids") or []
+                c["crm"]["company_id"] = info.get("company_id") or c["crm"].get("company_id") or ""
+                c["crm"]["category_id"] = info.get("category_id") or c["crm"].get("category_id") or ""
+                c.setdefault("client", {})["contact_id"] = (c["crm"].get("contact_ids") or [""])[0]
+                c.setdefault("client", {})["company_id"] = c["crm"].get("company_id") or ""
         key = f"{otype}:{oid}"
         if key in next_activities:
             c["crm"]["has_next_activity"] = True

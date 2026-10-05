@@ -9,16 +9,19 @@ from __future__ import annotations
 
 import os
 import json
+import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Sequence
 from urllib.parse import urlparse
 
 
 RECENT_CONTACT_DAYS = 60
 FAR_FUTURE_DAYS = 30
-MAX_DEALS = 300
 MAX_AI_ASSESSMENTS = 50
 MAX_TEXT = 900
+
+logger = logging.getLogger(__name__)
 
 
 class ReactivationError(RuntimeError):
@@ -111,7 +114,71 @@ def _deal_rows(client: Any, category_id: int) -> list[Dict[str, Any]]:
         )
     except Exception as exc:
         raise ReactivationError("Не удалось получить открытые сделки реанимации.") from exc
-    return [item for item in rows[:MAX_DEALS] if isinstance(item, dict)]
+    # This is the source set for the historical-call worker.  Do not cap it:
+    # an omitted open deal would silently miss its call history and could lead
+    # to an ungrounded recommendation.
+    return [item for item in rows if isinstance(item, dict)]
+
+
+def fetch_reactivation_calls(client: Any, deals: Sequence[Mapping[str, Any]]) -> list[Dict[str, Any]]:
+    """Return every completed call directly linked to an open reactivation deal.
+
+    This intentionally does not infer a deal through the contact or company.
+    The caller asked for the evidence that belongs to this exact deal, and a
+    direct Bitrix activity link is the only unambiguous relationship.
+    """
+    raw_by_id: dict[str, Dict[str, Any]] = {}
+    for deal in deals:
+        deal_id = str(deal.get("ID") or "")
+        if not deal_id:
+            continue
+        try:
+            activities = client.call_all(
+                "crm.activity.list",
+                {
+                    "filter": {
+                        "TYPE_ID": 2,
+                        "COMPLETED": "Y",
+                        "OWNER_TYPE_ID": 2,
+                        "OWNER_ID": deal_id,
+                    },
+                    "select": ["*", "COMMUNICATIONS"],
+                    "order": {"CREATED": "ASC", "ID": "ASC"},
+                },
+            )
+        except Exception as exc:
+            # A partial scan must not masquerade as a complete history.  Keep
+            # the previous persisted snapshot intact and retry the whole run.
+            raise ReactivationError(
+                f"Не удалось получить историю звонков сделки {deal_id}; анализ реанимации не обновлён."
+            ) from exc
+        for activity in activities:
+            if not isinstance(activity, dict) or not activity.get("ID"):
+                continue
+            # Do not trust a broad CRM response over the exact requested link.
+            if str(activity.get("OWNER_ID") or "") != deal_id or int(activity.get("OWNER_TYPE_ID") or 0) != 2:
+                continue
+            raw_by_id[str(activity["ID"])] = activity
+
+    if not raw_by_id:
+        return []
+
+    from bitrix import fetch_users, normalize_call
+
+    manager_ids: set[int] = set()
+    for activity in raw_by_id.values():
+        for field in ("AUTHOR_ID", "CREATED_BY_ID", "CREATED_BY", "RESPONSIBLE_ID"):
+            try:
+                if activity.get(field):
+                    manager_ids.add(int(activity[field]))
+            except (TypeError, ValueError):
+                continue
+    users = fetch_users(client, list(manager_ids))
+    calls = [
+        normalize_call(activity, users, allowed_manager_ids=set())
+        for activity in raw_by_id.values()
+    ]
+    return sorted(calls, key=lambda call: (str(call.get("created") or ""), str(call.get("activity_id") or "")))
 
 
 def _activities_for_deals(client: Any, deal_ids: Sequence[str]) -> tuple[dict[str, list[Dict[str, Any]]], dict[str, list[Dict[str, Any]]]]:
@@ -157,6 +224,73 @@ def _nearest_planned(items: Iterable[Mapping[str, Any]], now: datetime) -> tuple
     return min(future or dated, key=lambda item: item[0])
 
 
+def _has_ai_analysis(record: Any) -> bool:
+    analysis = record.get("analysis") if isinstance(record, dict) else None
+    if not isinstance(analysis, dict):
+        return False
+    # Short calls have a stored technical transcription status but were never
+    # sent to the model. They must not be displayed as an AI assessment.
+    return not str(analysis.get("exclusion_reason") or "").startswith("Звонок короче")
+
+
+def _is_short_call_record(record: Any) -> bool:
+    analysis = record.get("analysis") if isinstance(record, dict) else None
+    return isinstance(analysis, dict) and str(analysis.get("exclusion_reason") or "").startswith("Звонок короче")
+
+
+def _call_stats(calls: Iterable[Mapping[str, Any]], analyses: Mapping[str, Any], deal_id: str) -> Dict[str, Any]:
+    relevant = [
+        call for call in calls
+        if str((call.get("crm") or {}).get("owner_type") or "") == "deal"
+        and str((call.get("crm") or {}).get("owner_id") or "") == deal_id
+    ]
+    analyzed = 0
+    unavailable = 0
+    pending = 0
+    not_scored = 0
+    issues: list[Dict[str, str]] = []
+    for call in relevant:
+        activity_id = str(call.get("activity_id") or "")
+        occurred_at = str(call.get("created") or "")
+        if _has_ai_analysis(analyses.get(activity_id)):
+            analyzed += 1
+            continue
+        if _is_short_call_record(analyses.get(activity_id)):
+            not_scored += 1
+            issues.append({
+                "activityId": activity_id,
+                "occurredAt": occurred_at,
+                "reason": "Короткий звонок: сохранён без оценки качества.",
+            })
+            continue
+        audio = call.get("audio") or {}
+        status = str(audio.get("status") or "").lower()
+        if not audio.get("file_id") or status in {"empty", "unavailable", "invalid", "error"}:
+            unavailable += 1
+            reason = {
+                "empty": "Bitrix передал запись нулевой длительности.",
+                "unavailable": "Запись недоступна в Bitrix.",
+                "invalid": "Файл в Bitrix не является аудиозаписью.",
+                "error": "Не удалось получить запись из Bitrix.",
+            }.get(status, "В Bitrix нет доступной записи.")
+            issues.append({"activityId": activity_id, "occurredAt": occurred_at, "reason": reason})
+        else:
+            pending += 1
+            issues.append({
+                "activityId": activity_id,
+                "occurredAt": occurred_at,
+                "reason": "Запись ожидает фонового анализа.",
+            })
+    return {
+        "total": len(relevant),
+        "analyzed": analyzed,
+        "unavailable": unavailable,
+        "pending": pending,
+        "notScored": not_scored,
+        "issues": issues,
+    }
+
+
 def _call_context(calls: Iterable[Mapping[str, Any]], analyses: Mapping[str, Any], deal_id: str) -> list[Dict[str, Any]]:
     rows = []
     for call in calls:
@@ -165,6 +299,8 @@ def _call_context(calls: Iterable[Mapping[str, Any]], analyses: Mapping[str, Any
             continue
         activity_id = str(call.get("activity_id") or "")
         record = analyses.get(activity_id) or {}
+        if not _has_ai_analysis(record):
+            continue
         analysis = record.get("analysis") if isinstance(record, dict) else {}
         if not isinstance(analysis, dict):
             analysis = {}
@@ -248,6 +384,7 @@ def _recommendation_for(
 ) -> Dict[str, Any]:
     deal_id = str(deal.get("ID") or "")
     call_context = _call_context(calls, analyses, deal_id)
+    call_stats = _call_stats(calls, analyses, deal_id)
     comments = _comment_context(deal)
     fields = _field_context(deal)
     last_contact = max(
@@ -320,7 +457,7 @@ def _recommendation_for(
         "suggestedNextStep": next_step,
         "lastContactAt": _iso(last_contact),
         "nextContactAt": _iso(next_contact),
-        "context": {"calls": call_context, "comments": comments, "fields": fields},
+        "context": {"calls": call_context, "callStats": call_stats, "comments": comments, "fields": fields},
         "analysisMode": "ai" if ai else "rules_with_call_analysis",
         "confidence": ai.get("confidence") if ai else None,
     }
@@ -368,6 +505,140 @@ def build_reactivation_queue(client: Any, calls: Iterable[Mapping[str, Any]], an
         "recommendations": recommendations,
         "excluded": excluded,
     }
+
+
+def analyse_reactivation_calls(client: Any, runtime_dir: Path, *, now: datetime | None = None) -> Dict[str, int]:
+    """Prepare every available direct recording from open reactivation deals.
+
+    The worker owns this expensive operation. The dashboard route stays a fast
+    read and only presents analyses that have been safely persisted. Existing
+    immutable analyses are never sent to the model again.
+    """
+    from bitrix import NonAudioFileError, download_audio, mirror_snapshot_to_jarvis
+    from claude_analyzer import (
+        MIN_DURATION_FOR_ANALYSIS,
+        analyze_transcript,
+        apply_manual_corrections,
+        build_deal_context,
+        load_manual_corrections,
+        load_scripts,
+        mirror_analyses_to_jarvis,
+        transcribe_audio,
+    )
+    from jarvis_store import JarvisRepository
+
+    now = now or datetime.now().astimezone()
+    category_id, _category_name = find_reactivation_category(client)
+    deals = _deal_rows(client, category_id)
+    direct_calls = fetch_reactivation_calls(client, deals)
+
+    database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeError("Для фонового анализа реанимации нужна private Jarvis database.")
+    repository = JarvisRepository.connect(database_url)
+    try:
+        stored_calls, analyses = repository.load_snapshot()
+    finally:
+        repository.close()
+
+    # A fresh Bitrix activity does not retain a prior terminal download status.
+    # Carry that status forward before writing the latest raw snapshot, so a
+    # known non-audio file is not downloaded and billed again each hour.
+    stored_by_id = {
+        str(call.get("activity_id") or ""): call
+        for call in stored_calls
+        if str(call.get("activity_id") or "")
+    }
+    for call in direct_calls:
+        activity_id = str(call.get("activity_id") or "")
+        previous_audio = (stored_by_id.get(activity_id) or {}).get("audio") or {}
+        current_audio = call.get("audio") or {}
+        if (
+            previous_audio.get("status") in {"empty", "unavailable", "invalid"}
+            and str(previous_audio.get("file_id") or "") == str(current_audio.get("file_id") or "")
+        ):
+            call.setdefault("audio", {}).update({
+                "status": previous_audio["status"],
+                "error": previous_audio.get("error"),
+            })
+
+    mirror_snapshot_to_jarvis(direct_calls)
+    history_by_id = {str(call.get("activity_id") or ""): call for call in stored_calls if str(call.get("activity_id") or "")}
+    history_by_id.update({str(call.get("activity_id") or ""): call for call in direct_calls if str(call.get("activity_id") or "")})
+    history_calls = list(history_by_id.values())
+    corrections = load_manual_corrections()
+    scripts = load_scripts()
+    audio_dir = runtime_dir / "reactivation_audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+
+    summary = {"deals": len(deals), "calls": len(direct_calls), "analyzed": 0, "alreadyAnalyzed": 0, "notScored": 0, "unavailable": 0, "failed": 0}
+    completed: dict[str, Dict[str, Any]] = {}
+    for call in direct_calls:
+        activity_id = str(call.get("activity_id") or "")
+        if not activity_id:
+            continue
+        if _has_ai_analysis(analyses.get(activity_id)):
+            summary["alreadyAnalyzed"] += 1
+            continue
+        if _is_short_call_record(analyses.get(activity_id)):
+            summary["notScored"] += 1
+            continue
+        audio = call.get("audio") or {}
+        file_id = audio.get("file_id")
+        if not file_id or str(audio.get("status") or "").lower() in {"empty", "unavailable", "invalid"}:
+            summary["unavailable"] += 1
+            continue
+        path: Path | None = None
+        try:
+            path = download_audio(client, file_id, audio_dir, audio.get("url"), activity_id)
+            call.setdefault("audio", {})["status"] = "available"
+            transcription = transcribe_audio(path)
+            if len(transcription.get("text") or "") < 50:
+                summary["failed"] += 1
+                continue
+            correction = corrections.get(activity_id) or {}
+            duration = int(call.get("duration_sec") or 0)
+            if duration and duration < MIN_DURATION_FOR_ANALYSIS:
+                analysis = {
+                    "review_status": "excluded",
+                    "exclude_from_stats": True,
+                    "exclusion_reason": "Звонок короче 30 секунд: транскрипт сохранён без оценки качества",
+                }
+            else:
+                analysis = analyze_transcript(
+                    transcription,
+                    call,
+                    scripts,
+                    deal_context=build_deal_context(history_calls, analyses, call, corrections),
+                    forced_call_type_key=correction.get("call_type_key"),
+                )
+                analysis = apply_manual_corrections(activity_id, analysis, corrections)
+            record = {"call_meta": call, "transcription": transcription, "analysis": analysis, "analyzed_at": now.isoformat()}
+            analyses[activity_id] = record
+            completed[activity_id] = record
+            if _has_ai_analysis(record):
+                summary["analyzed"] += 1
+        except NonAudioFileError:
+            call.setdefault("audio", {})["status"] = "invalid"
+            call["audio"]["error"] = "non_audio_file"
+            summary["unavailable"] += 1
+        except Exception as exc:
+            logger.warning("Could not analyze reactivation call %s (%s)", activity_id, type(exc).__name__)
+            summary["failed"] += 1
+        finally:
+            # The transcription and structured result are persisted; retaining
+            # the downloaded source recording would grow the worker disk on
+            # every historical scan without adding evidence to the queue.
+            if path:
+                path.unlink(missing_ok=True)
+
+    # Persist terminal audio states (for example, a Bitrix file that is not a
+    # recording) so the next hourly pass reports it honestly instead of trying
+    # the same unusable file forever.
+    mirror_snapshot_to_jarvis(direct_calls)
+    if completed:
+        mirror_analyses_to_jarvis(history_calls, completed)
+    return summary
 
 
 def _main_sales_new_stage(client: Any) -> str:

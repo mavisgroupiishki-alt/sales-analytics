@@ -11,6 +11,7 @@ from claude_analyzer import RUBRIC_CRITERIA, evaluate_triage, format_timecode
 
 
 _AQUA_CSS = r'''
+.jc-row.is-manual-reviewed{background:#e6faf4}.jc-row.is-manual-reviewed:hover{background:#d8f6ec}.jc-manual-label{display:block!important;color:#0c8876!important;font-weight:800}.jc-manual-review{display:flex;align-items:center;justify-content:space-between;gap:16px}.jc-manual-checkbox{display:flex;align-items:center;gap:8px;color:#12576c;font-size:13px;font-weight:800;cursor:pointer}.jc-manual-checkbox input{width:18px;height:18px;accent-color:#119f9a}.jc-manual-review small{color:var(--muted)}.jc-context li em{display:block;margin-top:4px;color:#0a8d89;font-size:10px;font-style:normal;font-weight:800}.jc-manager-errors ul{margin:0;padding:0;list-style:none}.jc-manager-errors li{padding:12px 0;border-top:1px solid var(--line)}.jc-manager-errors li:first-child{border-top:0}.jc-manager-errors p{margin:5px 0;color:#456c79;line-height:1.45}.jc-manager-errors small{color:var(--muted)}
 .jd-feed-status.audio_unavailable{background:#eef4f4;color:#617982}
 .jd-period{display:flex;align-items:center;flex-wrap:wrap;gap:3px;margin:-4px 0 18px;padding:4px;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 5px 16px rgba(30,86,97,.08)}.jd-period a{padding:7px 12px;border-radius:7px;color:var(--muted);font-size:11px;font-weight:800;text-decoration:none}.jd-period a:hover{color:var(--ink);background:#effafa}.jd-period a[aria-current="page"]{color:#fff;background:#13aaa6}.jd-period form{display:flex;align-items:center;gap:6px;margin-left:auto;padding-left:7px;border-left:1px solid var(--line)}.jd-period label{color:var(--muted);font-size:10px;font-weight:800;white-space:nowrap}.jd-period input{width:132px;padding:6px 7px;border:1px solid var(--line);border-radius:7px;color:var(--ink);font:inherit;font-size:11px}.jd-period button{padding:7px 10px;border:0;border-radius:7px;background:#13aaa6;color:#fff;cursor:pointer;font:inherit;font-size:11px;font-weight:800}.jc-section-head .jd-period{flex:0 0 auto;margin:0;box-shadow:none}@media(max-width:700px){.jd-period{width:100%;overflow-x:auto}.jd-period a{flex:1;text-align:center;white-space:nowrap}.jd-period form{width:100%;margin:4px 0 0;padding:8px 0 0;border-top:1px solid var(--line);border-left:0}.jd-period input{min-width:0;flex:1}.jc-section-head .jd-period{width:100%}}
 .jd-heading p,.jd-metrics span,.jd-panel-head p,.jd-panel-head>span,.jd-action small,.jd-review small,.jd-feed small,.jd-manager small,.jd-review-reason,.jd-call-type,.jd-empty{color:var(--muted)}.jd-source i{background:var(--amber)}.jd-source.ok i{background:var(--green)}.jd-source b{color:var(--green)}.jd-source.warning b{color:var(--amber)}.jd-metric-critical b{color:var(--red)}.jd-metric-review b{color:var(--amber)}.jd-action em{color:#9c525b}.jd-action-attention .jd-action-marker{background:var(--amber)}.jd-action-attention em{color:var(--amber)}.jd-arrow,.jd-panel-head a{color:#109d9a}.jd-empty b{color:var(--ink)}.jd-avatar{background:#dff7f5;color:#187e82}.jd-status.critical,.jd-feed-status.critical{background:var(--red-soft);color:var(--red)}.jd-status.review,.jd-status.attention,.jd-feed-status.needs_review,.jd-feed-status.low_score,.jd-review-score{background:var(--amber-soft);color:var(--amber)}.jd-status.normal,.jd-feed-status.normal{background:var(--green-soft);color:var(--green)}.jd-dot{background:#a7b6bd}.jd-dot.critical{background:var(--red)}.jd-dot.needs_review,.jd-dot.low_score{background:#e5a735}.jd-feed-status.pending{background:#eef4f4;color:#617982}.jd-funnel{grid-column:span 2}.jd-funnel-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1px;background:var(--line)}.jd-funnel-list>div,.jd-funnel-list>a{padding:16px 18px;background:#fff;color:inherit;text-decoration:none}.jd-funnel-list>a:hover{background:#f0fbfa}.jd-funnel-list b{display:block;font-size:13px}.jd-funnel-list span{display:block;margin-top:5px;color:var(--muted);font-size:11px}@media(max-width:900px){.jd-funnel{grid-column:auto}}
@@ -43,8 +44,39 @@ def _period_switch(period: str, path: str, *, date_from: str = "", date_to: str 
 <form action="{_text(path)}" method="get" aria-label="Выбор диапазона звонков"><label for="jarvisDateFrom">Период</label><input id="jarvisDateFrom" type="date" name="date_from" value="{_text(date_from)}" aria-label="Дата начала"><span>—</span><input type="date" name="date_to" value="{_text(date_to)}" aria-label="Дата окончания"><button type="submit">Показать</button></form></div>'''
 
 
-def _call_url(activity_id: Any, period: str, *, date_from: str = "", date_to: str = "") -> str:
-    return _period_url(f"/calls/{_text(activity_id)}", period, date_from=date_from, date_to=date_to)
+def _call_url(
+    activity_id: Any,
+    period: str,
+    *,
+    date_from: str = "",
+    date_to: str = "",
+    filters: Dict[str, str] | None = None,
+) -> str:
+    """Open a card without losing the exact working queue on the way back."""
+    path = f"/calls/{_text(activity_id)}"
+    if filters is None:
+        return _period_url(path, period, date_from=date_from, date_to=date_to)
+    return_params = {key: value for key, value in filters.items() if value not in (None, "")}
+    if period:
+        return_params["period"] = period
+    if date_from:
+        return_params["date_from"] = date_from
+    if date_to:
+        return_params["date_to"] = date_to
+    return_to = "/calls" + (f"?{urlencode(return_params)}" if return_params else "")
+    return f"{path}?{urlencode({'return_to': return_to})}"
+
+
+def _context_source_label(item: Dict[str, Any]) -> str:
+    """Name the CRM relation that supplied a context call without hiding fallback."""
+    source = str(item.get("source") or "current_deal")
+    if source == "previous_sales_deal":
+        return f"Контекст из предыдущей сделки продаж №{item.get('source_deal_id') or '—'}"
+    return {
+        "current_deal": "Контекст текущей сделки",
+        "contact": "Контекст через контакт",
+        "company": "Контекст через компанию",
+    }.get(source, "Источник контекста")
 
 
 _STAGE_FALLBACKS = {
@@ -452,7 +484,11 @@ def render_calls(
         score = analysis.get("overall_score") if analysis else None
         score = score if score is not None else "—"
         call_type = (analysis.get("call_type") or {}).get("label") or ("Запись 0 секунд" if recording_is_unavailable(call) else "Тип не подтверждён")
-        rows += f'''<a class="jc-row" href="{_call_url(call.get('activity_id'), period, date_from=date_from, date_to=date_to)}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small></span><span>{_text(call_type)}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
+        manual_view = call.get("_manual_review") or {}
+        reviewed = bool(manual_view.get("reviewed"))
+        reviewed_label = '<small class="jc-manual-label">✓ Проверено вручную</small>' if reviewed else ""
+        row_class = "jc-row is-manual-reviewed" if reviewed else "jc-row"
+        rows += f'''<a class="{row_class}" href="{_call_url(call.get('activity_id'), period, date_from=date_from, date_to=date_to, filters=filters)}"><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get('created') or ''))}</small>{reviewed_label}</span><span>{_text(call_type)}</span><span>{_text(_stage_name(crm) if crm.get('owner_id') else 'Связи со сделкой нет')}</span><strong>{_text(score)}</strong><i>→</i></a>'''
     note = description or "«Пустая запись» — Bitrix передал файл нулевой длительности; такой звонок нельзя прослушать или расшифровать. Пригодная запись без результата ожидает анализа. «Короткий звонок» не оценивается."
     content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>Каждый звонок — <span>с понятным статусом.</span></h1><small>{_text(note)}</small></section>{_period_switch(period, '/calls', date_from=date_from, date_to=date_to)}{filter_panel}<section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по выбранным фильтрам нет.</b></div>'}</section>'''
     return _console_page("Звонки", "calls", content, user, period=period, date_from=date_from, date_to=date_to)
@@ -520,7 +556,9 @@ def render_managers(
     return _console_page("Команда", "managers", content, user, period=period, date_from=date_from, date_to=date_to)
 
 
-def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[str, Any]) -> str:
+def render_call_detail(
+    call: Dict[str, Any], stored: Dict[str, Any], user: Dict[str, Any], *, return_to: str = "/calls",
+) -> str:
     analysis = (stored or {}).get("analysis") or {}
     transcription = (stored or {}).get("transcription") or {}
     unavailable_recording = recording_is_unavailable(call)
@@ -562,6 +600,7 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
     from claude_analyzer import CALL_TYPES
 
     manual_review = analysis.get("manual_review") or {}
+    manual_view = call.get("_manual_review") or {}
     ai_call_type = analysis.get("ai_call_type") or analysis.get("call_type") or {}
     selected_type = str((analysis.get("call_type") or {}).get("key") or "unknown")
     can_review = user.get("role") in {"rop", "director", "dashboard"}
@@ -575,14 +614,15 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
     review_html = ""
     if can_review:
         review_html = f'''<section class="jc-panel-section jc-type-review"><div class="jc-section-head"><div><h2>Проверка типа звонка</h2><p>ИИ: {_text(ai_call_type.get("label") or "Тип не подтверждён")}. Ручное решение имеет приоритет в отчётах и следующих разборах.</p></div><span>{"Подтверждено вручную" if manual_review else "Нужна проверка"}</span></div>{review_saved}<form id="callTypeReview"><label for="reviewCallType">Правильный тип</label><select id="reviewCallType" required>{type_options}</select><label for="reviewReason">Почему ИИ ошибся</label><textarea id="reviewReason" required minlength="3" maxlength="1200" placeholder="Например: это был дожим после обещанной оплаты, а не первичный звонок.">{_text(manual_review.get("reason") or "")}</textarea><div class="jc-review-actions"><button type="submit" data-reanalysis="0">Сохранить тип</button><button type="submit" data-reanalysis="1" class="secondary">Сохранить и переоценить</button><span id="reviewCallResult" role="status"></span></div></form></section>'''
+        review_html += f'''<section class="jc-panel-section jc-manual-review"><div><h2>Ручная обработка</h2><p>Отметьте после прослушивания: это отделяет уже проверенные примеры для обучения от очереди.</p></div><label class="jc-manual-checkbox"><input id="manualReviewed" type="checkbox"{" checked" if manual_view.get("reviewed") else ""}> <span>Просмотрено вручную</span></label><small id="manualReviewResult">{_text((manual_view.get("reviewer_name") or "") if manual_view.get("reviewed") else "")}</small></section>'''
     context_snapshot = analysis.get("context_snapshot") or {}
     context_calls = context_snapshot.get("previous_calls") if isinstance(context_snapshot, dict) else []
     context_calls = context_calls if isinstance(context_calls, list) else []
     context_rows = "".join(
-        f'<li><b>{_text(item.get("date") or "")}</b><span>{_text(item.get("call_type") or "Тип не указан")}</span><p>{_text(item.get("summary") or "Нет резюме")}</p><p><b>Возражения:</b> {_text(item.get("objections") or "не выделены")}<br><b>Договорённости:</b> {_text(item.get("agreements") or "не выделены")}<br><b>Следующий шаг:</b> {_text(item.get("next_step") or "не указан")}</p></li>'
+        f'<li><b>{_text(item.get("date") or "")}</b><span>{_text(item.get("call_type") or "Тип не указан")}</span><em>{_text(_context_source_label(item))}</em><p>{_text(item.get("summary") or "Нет резюме")}</p><p><b>Возражения:</b> {_text(item.get("objections") or "не выделены")}<br><b>Договорённости:</b> {_text(item.get("agreements") or "не выделены")}<br><b>Следующий шаг:</b> {_text(item.get("next_step") or "не указан")}</p></li>'
         for item in context_calls if isinstance(item, dict)
     )
-    context_html = f'''<details class="jc-context"><summary>Контекст для анализа: использовано {len(context_calls)} из 8 предыдущих звонков</summary><p>ИИ учитывал только краткие факты предыдущих разговоров этой сделки: тип, резюме, возражения, договорённости и следующий шаг.</p><ol>{context_rows or '<li>Предыдущих связанных звонков в контексте не было.</li>'}</ol></details>'''
+    context_html = f'''<details class="jc-context"><summary>Контекст для анализа: использовано {len(context_calls)} из 8 предыдущих звонков</summary><p>ИИ учитывал краткие факты звонков текущей сделки, связанных контакта и компании; если у текущей сделки не было звонков — предыдущей сделки продаж. Источник показан у каждого разговора.</p><ol>{context_rows or '<li>Предыдущих связанных звонков в контексте не было.</li>'}</ol></details>'''
     audio = call.get("audio") or {}
     if (audio.get("file_id") or audio.get("url") or audio.get("public_path")) and not unavailable_recording:
         direction_label = {"incoming": "Входящий", "outgoing": "Исходящий"}.get(str(call.get("direction")), "Направление не определено")
@@ -632,6 +672,22 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
     if not criteria_rows:
         criteria_rows = '<div class="jc-section-empty">Оценки по критериям появятся после завершения обработки.</div>'
 
+    manager_errors = analysis.get("manager_errors") or []
+    manager_error_rows = ""
+    for item in manager_errors:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("criterion") or "")
+        criterion_name = RUBRIC_CRITERIA.get(code, (code or "Критерий", 0))[0]
+        timecode = str(item.get("time") or "")
+        time_button = f'<button type="button" class="jc-timecode" data-timecode="{_text(timecode)}" onclick="seekCallAudio(this.dataset.timecode)">{_text(timecode)}</button>' if timecode else ""
+        manager_error_rows += f'<li><b>{_text(criterion_name)}</b><p>{_text(item.get("text") or "Нет пояснения")}</p><small>{time_button} {_text(item.get("quote") or "")}</small></li>'
+    if not manager_error_rows and analysis and not non_sales_call and not unavailable_recording:
+        manager_error_rows = '<li class="jc-section-empty">Конкретных ошибок, из-за которых снижен балл, Джарвис не выделил.</li>'
+    manager_errors_html = ""
+    if manager_error_rows:
+        manager_errors_html = f'''<section class="jc-panel-section jc-manager-errors"><div class="jc-section-head"><div><h2>Ошибки менеджера и снижение оценки</h2><p>Только конкретные моменты, которые повлияли на балл. У каждого — критерий и подтверждение из разговора.</p></div></div><ul>{manager_error_rows}</ul></section>'''
+
     script_rows = ""
     for item in analysis.get("scripts_alignment") or []:
         if not isinstance(item, dict):
@@ -680,15 +736,17 @@ def render_call_detail(call: Dict[str, Any], stored: Dict[str, Any], user: Dict[
     else:
         evaluation_html = f'''<section class="jc-analysis-grid"><article class="jc-panel-section"><div class="jc-section-head"><h2>Оценка по применимым критериям</h2><span>1–10</span></div>{criteria_rows}</article><article class="jc-panel-section"><div class="jc-section-head"><div><h2>Соблюдение скрипта</h2><div class="jc-script-tags">{script_tags}</div></div></div>{script_rows}</article></section>'''
         transcript_html = f'''<section class="jc-panel-section jc-transcript"><div class="jc-section-head"><div><h2>Транскрипт разговора</h2><p>Нажмите на таймкод, чтобы перейти к нужному месту записи.</p></div><input type="search" id="transcriptSearch" placeholder="Поиск по разговору" aria-label="Поиск по транскрипту" oninput="filterTranscript(this.value)"></div><div id="transcriptLines">{transcript_rows}</div></section>'''
-    content = f'''<a class="jc-back" href="/calls">← Все звонки</a><section class="jc-heading jc-call-heading"><div><p>{_text(_format_timestamp(str(call.get('created') or '')))}</p><h1>{_text(client)} <span>· {_text(score_heading)}</span></h1></div><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span></section>
+    content = f'''<a class="jc-back" href="{_text(return_to)}">← Все звонки</a><section class="jc-heading jc-call-heading"><div><p>{_text(_format_timestamp(str(call.get('created') or '')))}</p><h1>{_text(client)} <span>· {_text(score_heading)}</span></h1></div><span class="jc-status {status}">{_text(_status_label(status, analysis))}</span></section>
 <section class="jc-call-facts"><div><span>Ответственный</span><b>{_text(manager)}</b></div><div><span>Компания</span><b>{_text(company)}</b></div><div><span>{owner_label}</span><b>{crm_value}</b></div><div><span>Следующий контакт</span><b>{_text(str(crm.get('next_activity_date') or '')[:16].replace('T', ' ') or 'Не назначен')}</b></div></section>
 {review_html}
 {context_html}
 {audio_html}
 <section class="jc-detail-grid"><article><h2>Вывод Джарвиса</h2><p>{_text(summary)}</p>{quote}<h3>Рекомендованное действие</h3><p>{_text(recommendation)}</p></article><article><h2>Ключевые моменты</h2><ul class="jc-moments">{moment_rows}</ul></article></section>
+{manager_errors_html}
 {evaluation_html}
 {transcript_html}
 <script>function seekCallAudio(tc){{var audio=document.getElementById('callAudio');if(!audio||!tc)return;var p=tc.split(':');var seconds=p.length===2?Number(p[0])*60+Number(p[1]):Number(tc);if(Number.isFinite(seconds)){{audio.currentTime=seconds;audio.play();}}}}function filterTranscript(value){{var q=(value||'').trim().toLowerCase();document.querySelectorAll('.jc-transcript-line').forEach(function(row){{row.hidden=q&&!row.textContent.toLowerCase().includes(q);}});}}document.getElementById('callTypeReview')?.addEventListener('submit',async function(event){{event.preventDefault();var button=event.submitter;var result=document.getElementById('reviewCallResult');result.textContent='Сохраняю…';try{{var response=await fetch('/calls/{_text(activity_id)}/review',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{call_type_key:document.getElementById('reviewCallType').value,reason:document.getElementById('reviewReason').value,reanalyze:button?.dataset.reanalysis==='1'}})}});var payload=await response.json();if(!response.ok)throw new Error(payload.error||'Не удалось сохранить');result.textContent=payload.reanalysis==='started'?'Тип сохранён. Повторный анализ запущен.':'Тип сохранён.';setTimeout(function(){{location.reload()}},700)}}catch(error){{result.textContent=error.message||'Не удалось сохранить'}}}});</script>'''
+    content += f'''<script>document.getElementById('manualReviewed')?.addEventListener('change',async function(event){{var checkbox=event.currentTarget;var result=document.getElementById('manualReviewResult');var previous=!checkbox.checked;result.textContent='Сохраняю…';try{{var response=await fetch('/calls/{_text(activity_id)}/manual-review',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{reviewed:checkbox.checked}})}});var payload=await response.json();if(!response.ok)throw new Error(payload.error||'Не удалось сохранить');result.textContent=checkbox.checked?'Отмечено как просмотренное вручную.':'Метка снята.';}}catch(error){{checkbox.checked=previous;result.textContent=error.message||'Не удалось сохранить'}}}});</script>'''
     return _console_page("Карточка звонка", "calls", content, user)
 
 

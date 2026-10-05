@@ -503,6 +503,7 @@ class JarvisRepository:
         outside this server-side request.
         """
         with self.connection.cursor() as cursor:
+            self._ensure_manual_view_schema(cursor)
             cursor.execute(
                 """
                 select status, coalesce(finished_at, started_at) as happened_at
@@ -527,7 +528,10 @@ class JarvisRepository:
                   review.call_type_key as review_call_type_key,
                   review.reason as review_reason,
                   review.reviewer_name as review_reviewer_name,
-                  review.reviewed_at as review_reviewed_at
+                  review.reviewed_at as review_reviewed_at,
+                  manual_view.reviewed as manual_reviewed,
+                  manual_view.reviewer_name as manual_reviewer_name,
+                  manual_view.reviewed_at as manual_reviewed_at
                 from jarvis.calls c
                 left join jarvis.raw_events re on re.id = c.raw_event_id
                 left join lateral (
@@ -545,6 +549,7 @@ class JarvisRepository:
                   order by cr.reviewed_at desc, cr.id desc
                   limit 1
                 ) review on true
+                left join jarvis.call_manual_views manual_view on manual_view.call_id = c.id
                 order by c.occurred_at desc, c.id desc
                 """
             )
@@ -569,6 +574,11 @@ class JarvisRepository:
                 {"available": bool(row.get("recording_available")), "status": row.get("audio_status") or "unknown"},
             )
             call.setdefault("crm", {})
+            call["_manual_review"] = {
+                "reviewed": bool(row.get("manual_reviewed")),
+                "reviewer_name": str(row.get("manual_reviewer_name") or ""),
+                "reviewed_at": self._timestamp(row.get("manual_reviewed_at")),
+            }
             if latest_sync:
                 call["_jarvis_sync"] = {
                     "status": latest_sync.get("status"),
@@ -610,6 +620,58 @@ class JarvisRepository:
                 "analyzed_at": self._timestamp(row.get("analyzed_at")),
             }
         return calls, analyses
+
+    @staticmethod
+    def _ensure_manual_view_schema(cursor: Any) -> None:
+        """Keep the dashboard writable while a fresh database awaits migrations."""
+        cursor.execute(
+            """
+            create table if not exists jarvis.call_manual_views (
+              call_id bigint primary key references jarvis.calls(id) on delete cascade,
+              reviewed boolean not null default false,
+              reviewer_name text not null default '',
+              reviewed_at timestamptz,
+              updated_at timestamptz not null default now()
+            )
+            """
+        )
+
+    def save_call_manual_review(
+        self, activity_id: str, reviewed: bool, reviewer_name: str,
+    ) -> Dict[str, Any]:
+        with self.connection.cursor() as cursor:
+            self._ensure_manual_view_schema(cursor)
+            cursor.execute(
+                """
+                select id from jarvis.calls
+                where source = 'bitrix24' and source_call_id = %s
+                """,
+                (activity_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError("Звонок не найден в хранилище Jarvis")
+            call_id = row["id"] if isinstance(row, dict) else row[0]
+            cursor.execute(
+                """
+                insert into jarvis.call_manual_views
+                  (call_id, reviewed, reviewer_name, reviewed_at)
+                values (%s, %s, %s, case when %s then now() else null end)
+                on conflict (call_id) do update set
+                  reviewed = excluded.reviewed,
+                  reviewer_name = excluded.reviewer_name,
+                  reviewed_at = case when excluded.reviewed then now() else jarvis.call_manual_views.reviewed_at end,
+                  updated_at = now()
+                returning reviewed, reviewer_name, reviewed_at
+                """,
+                (call_id, bool(reviewed), reviewer_name, bool(reviewed)),
+            )
+            saved = cursor.fetchone()
+        self.connection.commit()
+        return dict(saved) if isinstance(saved, dict) else {
+            "reviewed": bool(saved[0]), "reviewer_name": str(saved[1] or ""),
+            "reviewed_at": self._timestamp(saved[2]),
+        }
 
     def save_call_review(
         self,

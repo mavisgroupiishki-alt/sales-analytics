@@ -23,6 +23,16 @@ class _Pipeline:
         return True
 
 
+class _HealthPipeline:
+    def __init__(self):
+        self.state = {"status": "idle", "last_error": None}
+        self.starts = 0
+
+    def start(self):
+        self.starts += 1
+        return True
+
+
 class LiveWorkerTests(unittest.TestCase):
     def test_render_worker_uses_its_own_port(self):
         old_port = os.environ.get("PORT")
@@ -55,7 +65,8 @@ class LiveWorkerTests(unittest.TestCase):
         self.previous_secret = os.environ.get("JARVIS_SYNC_SECRET")
         os.environ["JARVIS_SYNC_SECRET"] = "test-private-secret"
         self.pipeline = _Pipeline()
-        self.client = create_app(self.pipeline).test_client()
+        self.health_pipeline = _HealthPipeline()
+        self.client = create_app(self.pipeline, self.health_pipeline).test_client()
 
     def tearDown(self):
         if self.previous_secret is None:
@@ -87,3 +98,17 @@ class LiveWorkerTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 202)
         self.assertEqual(self.pipeline.modes, [(True, "2026-09-07")])
+
+    def test_health_sync_uses_same_private_header_and_does_not_start_call_pipeline(self):
+        response = self.client.post(
+            "/internal/health-sync", headers={"x-jarvis-sync-secret": "test-private-secret"}
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(self.health_pipeline.starts, 1)
+        self.assertEqual(self.pipeline.modes, [])
+
+    def test_health_status_rejects_anonymous_request(self):
+        response = self.client.get("/internal/health-status")
+
+        self.assertEqual(response.status_code, 401)
