@@ -210,7 +210,10 @@ class DashboardModelTests(unittest.TestCase):
         call = {"activity_id": "42", "manager": {"name": "Роман"}}
         stored = {"analysis": {
             "call_type": {"key": "unknown", "label": "Неизвестно", "confirmed": False},
-            "context_snapshot": {"previous_calls": [{"date": "2026-09-01", "call_type": "Дожим", "summary": "Обсудили срок"}]},
+            "context_snapshot": {
+                "previous_calls": [{"date": "2026-09-01", "call_type": "Дожим", "summary": "Обсудили срок"}],
+                "memory": {"scope": "company", "facts_count": 18},
+            },
         }}
 
         html = render_call_detail(call, stored, {"role": "rop", "name": "РОП"})
@@ -218,6 +221,7 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("Проверка типа звонка", html)
         self.assertIn("Почему ИИ ошибся", html)
         self.assertIn("использовано 1 из 8 предыдущих звонков", html)
+        self.assertIn("Постоянная память компании:</b> 18 фактов", html)
         self.assertIn("Обсудили срок", html)
 
     def test_call_list_keeps_all_filters_in_the_back_link_and_marks_manual_review(self):

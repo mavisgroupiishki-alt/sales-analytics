@@ -136,6 +136,16 @@ class OperationsExportsTests(unittest.TestCase):
         self.assertTrue(response.get_json()["review"]["reviewed"])
         persist_manual_review.assert_called_once_with("42", True, "РОП")
 
+    @patch("subprocess.Popen")
+    @patch.object(jarvis_app, "load_analyses")
+    def test_single_call_reanalysis_forces_a_new_persisted_analysis_version(self, load_analyses, popen):
+        load_analyses.return_value = {"42": {"analysis": {"overall_score": 4}}}
+        with patch.dict(os.environ, {"JARVIS_DATABASE_URL": "postgres://private"}, clear=False):
+            self.assertTrue(jarvis_app._start_call_reanalysis("42"))
+
+        self.assertEqual(popen.call_args.kwargs["env"]["REANALYZE_ID"], "42")
+        self.assertEqual(popen.call_args.kwargs["env"]["JARVIS_FORCE_ANALYSIS_VERSION"], "1")
+
     @patch.object(jarvis_app, "build_crm_audit_snapshot")
     def test_audit_export_returns_existing_table_shape(self, build_snapshot):
         build_snapshot.return_value = {

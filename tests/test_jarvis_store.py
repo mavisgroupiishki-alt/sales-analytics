@@ -5,10 +5,295 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from claude_analyzer import compute_applicable_score, evaluate_triage, is_reanalysis_target, reanalysis_scope  # noqa: E402
-from jarvis_store import JarvisRepository, JarvisStore, NormalizedCall, normalize_bitrix_call, payload_sha256  # noqa: E402
+from jarvis_store import (  # noqa: E402
+    JarvisRepository,
+    JarvisStore,
+    NormalizedCall,
+    context_fact_from_analysis,
+    context_scopes_for_call,
+    normalize_bitrix_call,
+    payload_sha256,
+)
 
 
 class JarvisStoreTests(unittest.TestCase):
+    def test_context_scopes_are_explicit_and_partitioned_by_funnel(self):
+        scopes = context_scopes_for_call(
+            {
+                "crm": {
+                    "owner_type": "deal", "owner_id": "42", "company_id": "5",
+                    "contact_ids": ["9", "9"], "category_id": "0",
+                },
+                "client": {"contact_id": "11"},
+            }
+        )
+
+        self.assertEqual(scopes, [("deal", "42", "0"), ("company", "5", "0"), ("contact", "9", "0"), ("contact", "11", "0")])
+
+    def test_context_scopes_do_not_share_an_unclassified_company_between_funnels(self):
+        scopes = context_scopes_for_call(
+            {
+                "crm": {"owner_type": "contact", "owner_id": "9", "company_id": "5"},
+                "client": {"contact_id": "9"},
+            }
+        )
+
+        self.assertEqual(scopes, [])
+
+    def test_context_fact_keeps_compact_call_outcome_not_transcript(self):
+        fact = context_fact_from_analysis(
+            {"activity_id": "100", "created": "2026-10-05T12:00:00+03:00"},
+            {
+                "call_type": {"key": "payment_push", "label": "Дожим клиента"},
+                "summary": "Обсудили оплату",
+                "outcome": "Клиент вернётся с ответом",
+                "recommended_action": "Перезвонить в пятницу",
+                "key_moments": [{"type": "negative", "text": "Нет точной даты"}],
+                "transcript": "Полный текст никогда не должен попадать в факт",
+            },
+        )
+
+        self.assertEqual(fact["activity_id"], "100")
+        self.assertEqual(fact["call_type_key"], "payment_push")
+        self.assertEqual(fact["objections"], ["Нет точной даты"])
+        self.assertNotIn("transcript", fact)
+
+    def test_context_fact_has_hard_bounds_for_prompt_safe_memory(self):
+        fact = context_fact_from_analysis(
+            {"activity_id": "100", "created": "2026-10-05T12:00:00+03:00"},
+            {
+                "call_type": {"key": "k" * 120, "label": "l" * 200},
+                "summary": "s" * 700,
+                "outcome": "o" * 500,
+                "recommended_action": "n" * 500,
+                "key_moments": [{"type": "negative", "text": "x" * 300}] * 4,
+            },
+        )
+
+        self.assertEqual(len(fact["call_type_key"]), 80)
+        self.assertEqual(len(fact["call_type"]), 160)
+        self.assertEqual(len(fact["summary"]), 600)
+        self.assertEqual(len(fact["outcome"]), 400)
+        self.assertEqual(len(fact["next_step"]), 400)
+        self.assertEqual(len(fact["objections"]), 3)
+        self.assertTrue(all(len(item) == 240 for item in fact["objections"]))
+
+    def test_context_backfill_uses_the_same_compact_fact_limits(self):
+        migration = (Path(__file__).resolve().parents[1] / "migrations" / "006_company_context_memory.sql").read_text(encoding="utf-8")
+
+        self.assertIn("left(coalesce(result ->> 'summary', ''), 600)", migration)
+        self.assertIn("left(coalesce(result ->> 'outcome', ''), 400)", migration)
+        self.assertIn("left(coalesce(moment.value ->> 'text', moment.value ->> 'detail'), 240)", migration)
+        self.assertIn("order by moment.ordinal", migration)
+        self.assertIn("limit 3", migration)
+
+    def test_excluded_call_does_not_write_company_context_fact(self):
+        class Cursor:
+            def __init__(self):
+                self.statements = []
+
+            def execute(self, statement, _params):
+                self.statements.append(statement)
+
+            def fetchall(self):
+                return []
+
+        cursor = Cursor()
+        JarvisStore._write_context_facts(
+            object.__new__(JarvisStore),
+            cursor,
+            call_id=7,
+            analysis_id=8,
+            call={"activity_id": "100", "created": "2026-10-05T12:00:00+03:00", "crm": {"company_id": "5"}},
+            analysis={"summary": "Короткий звонок"},
+            status="excluded",
+        )
+        self.assertEqual(len(cursor.statements), 1)
+        self.assertIn("delete from jarvis.context_facts", cursor.statements[0].lower())
+
+    def test_reanalysis_to_excluded_removes_its_previous_context_fact(self):
+        class Cursor:
+            def __init__(self):
+                self.statements = []
+
+            def execute(self, statement, params):
+                self.statements.append((statement, params))
+
+            def fetchall(self):
+                return [{"scope_type": "company", "scope_external_id": "5", "funnel_id": "0"}]
+
+        cursor = Cursor()
+        JarvisStore._write_context_facts(
+            object.__new__(JarvisStore),
+            cursor,
+            call_id=7,
+            analysis_id=8,
+            call={"activity_id": "100", "created": "2026-10-05T12:00:00+03:00"},
+            analysis={"summary": "Короткий технический звонок"},
+            status="excluded",
+        )
+
+        self.assertEqual(len(cursor.statements), 3)
+        self.assertIn("delete from jarvis.context_facts", cursor.statements[0][0].lower())
+        self.assertIn("jarvis.context_profiles", cursor.statements[1][0].lower())
+
+    def test_marking_manual_view_does_not_update_context_call_type(self):
+        class Cursor:
+            def __init__(self):
+                self.results = [{"id": 7}, {"reviewed": True, "reviewer_name": "РОП", "reviewed_at": None}]
+                self.statements = []
+
+            def execute(self, statement, params):
+                self.statements.append(statement)
+
+            def fetchone(self):
+                return self.results.pop(0)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+            def commit(self):
+                pass
+
+        connection = Connection()
+        result = JarvisRepository(connection).save_call_manual_review("100", True, "РОП")
+
+        self.assertTrue(result["reviewed"])
+        self.assertEqual(len(connection.cursor_instance.statements), 2)
+
+    def test_worker_checks_only_current_activity_ids_for_existing_analysis(self):
+        class Cursor:
+            def __init__(self):
+                self.params = ()
+
+            def execute(self, statement, params):
+                self.params = params
+                self.statement = statement
+
+            def fetchall(self):
+                return [{"source_call_id": "100"}]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+            def commit(self):
+                pass
+
+        connection = Connection()
+        existing = JarvisRepository(connection).load_persisted_activity_ids(["101", "100", "100"])
+
+        self.assertEqual(existing, {"100"})
+        self.assertEqual(connection.cursor_instance.params, (["100", "101"],))
+        self.assertIn("ca.status <> 'failed'", connection.cursor_instance.statement)
+
+    def test_context_memory_reads_prior_company_facts_without_transcript(self):
+        class Cursor:
+            def __init__(self):
+                self.results = [
+                    [{
+                        "call_id": 7,
+                        "occurred_at": "2026-10-04T10:00:00+03:00",
+                        "scope_type": "company", "scope_external_id": "5",
+                        "fact": {"activity_id": "99", "summary": "Обсудили бюджет", "outcome": "Вернутся с ответом", "next_step": "Перезвонить", "objections": ["Нет бюджета"]},
+                    }],
+                    [{
+                        "scope_type": "company", "scope_external_id": "5", "facts_count": 24,
+                        "latest_call_at": "2026-10-04T10:00:00+03:00",
+                        "current_state": {"last_outcome": "Вернутся с ответом", "next_step": "Перезвонить"},
+                    }],
+                ]
+                self.statements = []
+
+            def execute(self, statement, params):
+                self.statements.append((statement, params))
+
+            def fetchall(self):
+                return self.results.pop(0)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+            def commit(self):
+                pass
+
+        connection = Connection()
+        context = JarvisRepository(connection).load_context_for_call(
+            {"activity_id": "100", "created": "2026-10-05T12:00:00+03:00", "crm": {"company_id": "5", "category_id": "0"}}
+        )
+
+        self.assertEqual(context["memory"]["facts_count"], 24)
+        self.assertEqual(context["previous_calls"][0]["activity_id"], "99")
+        self.assertEqual(context["previous_calls"][0]["objections"], "Нет бюджета")
+        self.assertIn("cf.occurred_at <", connection.cursor_instance.statements[0][0])
+        self.assertNotIn("transcript", connection.cursor_instance.statements[0][0].lower())
+        self.assertEqual(connection.cursor_instance.statements[0][1][-1], 8)
+
+    def test_manual_type_review_refreshes_context_fact(self):
+        class Cursor:
+            def __init__(self):
+                self.results = [{"id": 7}, {"call_type_key": "payment_push", "reason": "Верный тип", "reviewer_name": "РОП", "reviewed_at": None, "reanalysis_requested": False}]
+                self.statements = []
+
+            def execute(self, statement, params):
+                self.statements.append(statement)
+
+            def fetchone(self):
+                return self.results.pop(0)
+
+            def fetchall(self):
+                return []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+            def commit(self):
+                pass
+
+        connection = Connection()
+        JarvisRepository(connection).save_call_review("100", "payment_push", "Верный тип", "РОП")
+
+        self.assertIn("update jarvis.context_facts", connection.cursor_instance.statements[2].lower())
+
     def test_transcript_status_matches_database_contract(self):
         class Cursor:
             def __init__(self):

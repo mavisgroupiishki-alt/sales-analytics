@@ -654,11 +654,18 @@ def render_call_detail(
     context_snapshot = analysis.get("context_snapshot") or {}
     context_calls = context_snapshot.get("previous_calls") if isinstance(context_snapshot, dict) else []
     context_calls = context_calls if isinstance(context_calls, list) else []
+    context_memory = context_snapshot.get("memory") if isinstance(context_snapshot, dict) else {}
+    context_memory = context_memory if isinstance(context_memory, dict) else {}
+    memory_count = int(context_memory.get("facts_count") or 0)
+    memory_scope_label = {"company": "компании", "contact": "контакта", "deal": "сделки"}.get(str(context_memory.get("scope") or ""), "CRM")
+    memory_note = ""
+    if memory_count:
+        memory_note = f'<p><b>Постоянная память {memory_scope_label}:</b> {memory_count} фактов. В разбор переданы только 8 последних; полный архив остаётся связан с CRM.</p>'
     context_rows = "".join(
         f'<li><b>{_text(item.get("date") or "")}</b><span>{_text(item.get("call_type") or "Тип не указан")}</span><em>{_text(_context_source_label(item))}</em><p>{_text(item.get("summary") or "Нет резюме")}</p><p><b>Возражения:</b> {_text(item.get("objections") or "не выделены")}<br><b>Договорённости:</b> {_text(item.get("agreements") or "не выделены")}<br><b>Следующий шаг:</b> {_text(item.get("next_step") or "не указан")}</p></li>'
         for item in context_calls if isinstance(item, dict)
     )
-    context_html = f'''<details class="jc-context"><summary>Контекст для анализа: использовано {len(context_calls)} из 8 предыдущих звонков</summary><p>ИИ учитывал краткие факты звонков текущей сделки, связанных контакта и компании; если у текущей сделки не было звонков — предыдущей сделки продаж. Источник показан у каждого разговора.</p><ol>{context_rows or '<li>Предыдущих связанных звонков в контексте не было.</li>'}</ol></details>'''
+    context_html = f'''<details class="jc-context"><summary>Контекст для анализа: использовано {len(context_calls)} из 8 предыдущих звонков</summary><p>ИИ учитывал краткие факты текущей сделки, связанных контакта и компании в той же воронке. Источник показан у каждого разговора.</p>{memory_note}<ol>{context_rows or '<li>Предыдущих связанных звонков в контексте не было.</li>'}</ol></details>'''
     audio = call.get("audio") or {}
     if (audio.get("file_id") or audio.get("url") or audio.get("public_path")) and not unavailable_recording:
         direction_label = {"incoming": "Входящий", "outgoing": "Исходящий"}.get(str(call.get("direction")), "Направление не определено")

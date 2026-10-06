@@ -179,6 +179,9 @@ class ReactivationTests(unittest.TestCase):
             def load_snapshot(self):
                 return [], analyses
 
+            def load_context_for_call(self, _call):
+                return None
+
             def close(self):
                 return None
 
@@ -206,13 +209,40 @@ class ReactivationTests(unittest.TestCase):
                  patch("claude_analyzer.build_deal_context", return_value=[]), \
                  patch("claude_analyzer.load_manual_corrections", return_value={}), \
                  patch("claude_analyzer.load_scripts", return_value={}), \
-                 patch("claude_analyzer.mirror_analyses_to_jarvis"):
+                 patch("claude_analyzer.mirror_analyses_to_jarvis") as mirror_analyses:
                 first = analyse_reactivation_calls(FakeBitrix(), Path(directory))
                 second = analyse_reactivation_calls(FakeBitrix(), Path(directory))
 
         self.assertEqual(first["analyzed"], 1)
         self.assertEqual(second["alreadyAnalyzed"], 1)
         self.assertEqual(calls_to_model, [True])
+        # Immediate persistence makes the fact available to the next call;
+        # it must not be written again by the final batch in the same run.
+        self.assertEqual(mirror_analyses.call_count, 1)
+
+    def test_worker_closes_context_repository_when_persistence_fails(self):
+        class Repository:
+            def __init__(self):
+                self.closed = False
+
+            def load_snapshot(self):
+                return [], {}
+
+            def close(self):
+                self.closed = True
+
+        repository = Repository()
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"JARVIS_DATABASE_URL": "test"}, clear=False), \
+                 patch("reactivation.find_reactivation_category", return_value=(20, "Реанимация")), \
+                 patch("reactivation._deal_rows", return_value=[{"ID": "42"}]), \
+                 patch("reactivation.fetch_reactivation_calls", return_value=[]), \
+                 patch("jarvis_store.JarvisRepository.connect", return_value=repository), \
+                 patch("bitrix.mirror_snapshot_to_jarvis", side_effect=RuntimeError("storage unavailable")):
+                with self.assertRaisesRegex(RuntimeError, "storage unavailable"):
+                    analyse_reactivation_calls(FakeBitrix(), Path(directory))
+
+        self.assertTrue(repository.closed)
 
 
 if __name__ == "__main__":

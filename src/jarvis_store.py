@@ -75,6 +75,80 @@ def payload_sha256(payload: Dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def context_scopes_for_call(call: Dict[str, Any]) -> list[tuple[str, str, str]]:
+    """Return explicit CRM context folders for a call.
+
+    A folder is never inferred from a display name or phone number.  The
+    funnel id is part of every key so a company's separate sales funnels do
+    not silently share commercial history.
+    """
+    crm = call.get("crm") or {}
+    client = call.get("client") or {}
+    funnel_id = str(crm.get("category_id") or "").strip()
+    # A contact/company activity without an explicit sales funnel cannot be
+    # safely shared: the same company may have several pipelines.  Exclude it
+    # rather than placing it in a common empty-folder key.
+    if not funnel_id:
+        return []
+    scopes: list[tuple[str, str, str]] = []
+
+    owner_type = str(crm.get("owner_type") or "").strip()
+    owner_id = str(crm.get("owner_id") or "").strip()
+    if owner_type in {"deal", "contact", "company"} and owner_id:
+        scopes.append((owner_type, owner_id, funnel_id))
+
+    company_id = str(crm.get("company_id") or client.get("company_id") or "").strip()
+    if company_id:
+        scopes.append(("company", company_id, funnel_id))
+
+    contact_values = crm.get("contact_ids") or []
+    if not isinstance(contact_values, (list, tuple, set)):
+        contact_values = [contact_values]
+    if client.get("contact_id"):
+        contact_values = [*contact_values, client.get("contact_id")]
+    for contact_id in contact_values:
+        normalized = str(contact_id or "").strip()
+        if normalized:
+            scopes.append(("contact", normalized, funnel_id))
+
+    return list(dict.fromkeys(scopes))
+
+
+def _context_text(value: Any, *, limit: int) -> str:
+    return str(value or "").strip()[:limit]
+
+
+def context_fact_from_analysis(call: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """Project one assessment into compact, source-traceable CRM memory."""
+    call_type = analysis.get("call_type") or {}
+    if not isinstance(call_type, dict):
+        call_type = {}
+    objection_texts = [
+        _context_text(item.get("text") or item.get("detail"), limit=240)
+        for item in (analysis.get("key_moments") or [])
+        if isinstance(item, dict) and str(item.get("type") or "").strip().lower() == "negative"
+    ]
+    next_contact = analysis.get("next_contact") or {}
+    if not isinstance(next_contact, dict):
+        next_contact = {}
+    return {
+        "activity_id": str(call.get("activity_id") or ""),
+        "date": str(call.get("created") or ""),
+        "call_type_key": _context_text(call_type.get("key") or "unknown", limit=80),
+        "call_type": _context_text(call_type.get("label") or "Тип не указан", limit=160),
+        "summary": _context_text(analysis.get("summary"), limit=600),
+        "outcome": _context_text(analysis.get("outcome"), limit=400),
+        "objections": objection_texts[:3],
+        "next_step": _context_text(
+            analysis.get("recommended_action")
+            or analysis.get("recommendation")
+            or next_contact.get("context")
+            or "",
+            limit=400,
+        ),
+    }
+
+
 class JarvisStore:
     """Writes idempotent Bitrix snapshots into the private `jarvis` schema."""
 
@@ -175,6 +249,7 @@ class JarvisStore:
                     status,
                     record.get("analyzed_at"),
                 )
+                self._write_context_facts(cursor, call_id, analysis_id, call, analysis, status)
                 self._write_evidence(cursor, analysis_id, analysis, rule_id, reason)
                 if status == "critical":
                     self._open_critical_case(cursor, analysis_id, rule_id, reason, analysis)
@@ -281,6 +356,175 @@ class JarvisStore:
             ),
         )
         return cursor.fetchone()[0]
+
+    def _write_context_facts(
+        self,
+        cursor: Any,
+        call_id: int,
+        analysis_id: int,
+        call: Dict[str, Any],
+        analysis: Dict[str, Any],
+        status: str,
+    ) -> None:
+        """Upsert compact memory items for the current analysis version only."""
+        if status in {"excluded", "failed"}:
+            # A forced reanalysis can turn a formerly working call into a
+            # service/short/unusable one. Remove its previous sales fact so
+            # later prompts never retain invalid historical evidence.
+            cursor.execute(
+                """
+                delete from jarvis.context_facts
+                where call_id = %s
+                returning scope_type, scope_external_id, funnel_id
+                """,
+                (call_id,),
+            )
+            for stale_scope in cursor.fetchall():
+                self._remove_context_profile(
+                    cursor,
+                    str(stale_scope["scope_type"] if isinstance(stale_scope, dict) else stale_scope[0]),
+                    str(stale_scope["scope_external_id"] if isinstance(stale_scope, dict) else stale_scope[1]),
+                    str(stale_scope["funnel_id"] if isinstance(stale_scope, dict) else stale_scope[2]),
+                )
+            return
+        occurred_at = str(call.get("created") or "").strip()
+        if not occurred_at:
+            return
+        fact = context_fact_from_analysis(call, analysis)
+        scopes = context_scopes_for_call(call)
+        stale_scope_filter = " or ".join(
+            "(scope_type = %s and scope_external_id = %s and funnel_id = %s)" for _ in scopes
+        )
+        stale_sql = """
+            delete from jarvis.context_facts
+            where call_id = %s
+        """
+        stale_params: list[Any] = [call_id]
+        if stale_scope_filter:
+            stale_sql += f" and not ({stale_scope_filter})"
+            stale_params.extend(value for scope in scopes for value in scope)
+        stale_sql += " returning scope_type, scope_external_id, funnel_id"
+        cursor.execute(stale_sql, stale_params)
+        for stale_scope in cursor.fetchall():
+            self._remove_context_profile(
+                cursor,
+                str(stale_scope["scope_type"] if isinstance(stale_scope, dict) else stale_scope[0]),
+                str(stale_scope["scope_external_id"] if isinstance(stale_scope, dict) else stale_scope[1]),
+                str(stale_scope["funnel_id"] if isinstance(stale_scope, dict) else stale_scope[2]),
+            )
+
+        for scope_type, scope_external_id, funnel_id in scopes:
+            cursor.execute(
+                """
+                select 1 from jarvis.context_facts
+                where call_id = %s and scope_type = %s and scope_external_id = %s and funnel_id = %s
+                """,
+                (call_id, scope_type, scope_external_id, funnel_id),
+            )
+            already_present = bool(cursor.fetchone())
+            cursor.execute(
+                """
+                insert into jarvis.context_facts
+                    (call_id, analysis_id, scope_type, scope_external_id, funnel_id, occurred_at, fact)
+                values (%s, %s, %s, %s, %s, %s::timestamptz, %s::jsonb)
+                on conflict (call_id, scope_type, scope_external_id, funnel_id) do update set
+                    analysis_id = excluded.analysis_id,
+                    occurred_at = excluded.occurred_at,
+                    fact = excluded.fact,
+                    updated_at = now()
+                """,
+                (
+                    call_id,
+                    analysis_id,
+                    scope_type,
+                    scope_external_id,
+                    funnel_id,
+                    occurred_at,
+                    json.dumps(fact, ensure_ascii=False),
+                ),
+            )
+            self._touch_context_profile(cursor, scope_type, scope_external_id, funnel_id, occurred_at, fact, added=not already_present)
+
+    @staticmethod
+    def _touch_context_profile(
+        cursor: Any,
+        scope_type: str,
+        scope_external_id: str,
+        funnel_id: str,
+        occurred_at: str,
+        fact: Dict[str, Any],
+        *,
+        added: bool,
+    ) -> None:
+        """Update a profile in constant work after an insert or replacement."""
+        cursor.execute(
+            """
+            insert into jarvis.context_profiles
+              (scope_type, scope_external_id, funnel_id, facts_count, latest_call_at, current_state)
+            values (%s, %s, %s, 1, %s::timestamptz, %s::jsonb)
+            on conflict (scope_type, scope_external_id, funnel_id) do update set
+              facts_count = jarvis.context_profiles.facts_count + %s,
+              latest_call_at = greatest(jarvis.context_profiles.latest_call_at, excluded.latest_call_at),
+              current_state = case
+                when jarvis.context_profiles.latest_call_at is null
+                  or jarvis.context_profiles.latest_call_at <= excluded.latest_call_at
+                then excluded.current_state else jarvis.context_profiles.current_state end,
+              updated_at = now()
+            """,
+            (
+                scope_type,
+                scope_external_id,
+                funnel_id,
+                occurred_at,
+                json.dumps({
+                    "latest_call_id": fact.get("activity_id") or "",
+                    "last_summary": fact.get("summary") or "",
+                    "last_outcome": fact.get("outcome") or "",
+                    "next_step": fact.get("next_step") or "",
+                }, ensure_ascii=False),
+                1 if added else 0,
+            ),
+        )
+
+    @staticmethod
+    def _remove_context_profile(cursor: Any, scope_type: str, scope_external_id: str, funnel_id: str) -> None:
+        """Repair one old folder after a call moved to another CRM relation."""
+        cursor.execute(
+            """
+            delete from jarvis.context_profiles profile
+            where profile.scope_type = %s and profile.scope_external_id = %s and profile.funnel_id = %s
+              and not exists (
+                select 1 from jarvis.context_facts fact
+                where fact.scope_type = profile.scope_type
+                  and fact.scope_external_id = profile.scope_external_id
+                  and fact.funnel_id = profile.funnel_id
+              )
+            """,
+            (scope_type, scope_external_id, funnel_id),
+        )
+        cursor.execute(
+            """
+            with latest as (
+              select occurred_at, fact
+              from jarvis.context_facts
+              where scope_type = %s and scope_external_id = %s and funnel_id = %s
+              order by occurred_at desc, call_id desc
+              limit 1
+            )
+            update jarvis.context_profiles profile
+            set facts_count = greatest(profile.facts_count - 1, 0),
+                latest_call_at = (select occurred_at from latest),
+                current_state = jsonb_build_object(
+                  'latest_call_id', coalesce((select fact ->> 'activity_id' from latest), ''),
+                  'last_summary', coalesce((select fact ->> 'summary' from latest), ''),
+                  'last_outcome', coalesce((select fact ->> 'outcome' from latest), ''),
+                  'next_step', coalesce((select fact ->> 'next_step' from latest), '')
+                ),
+                updated_at = now()
+            where profile.scope_type = %s and profile.scope_external_id = %s and profile.funnel_id = %s
+            """,
+            (scope_type, scope_external_id, funnel_id, scope_type, scope_external_id, funnel_id),
+        )
 
     def _write_evidence(
         self,
@@ -620,6 +864,158 @@ class JarvisRepository:
             }
         return calls, analyses
 
+    def load_persisted_activity_ids(self, activity_ids: Iterable[str]) -> set[str]:
+        """Return only completed current-run ids, without loading all history.
+
+        Workers use this small lookup to skip calls already handled in an
+        earlier run.  Historical CRM context is read separately from
+        ``context_facts`` so a new recording never needs thousands of prior
+        transcripts or analysis payloads in process memory.
+        """
+        identifiers = sorted({str(activity_id).strip() for activity_id in activity_ids if str(activity_id).strip()})
+        if not identifiers:
+            return set()
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select distinct c.source_call_id
+                from jarvis.calls c
+                join jarvis.call_analyses ca on ca.call_id = c.id
+                where c.source = 'bitrix24'
+                  and c.source_call_id = any(%s)
+                  and ca.status <> 'failed'
+                  and ca.result is not null
+                """,
+                (identifiers,),
+            )
+            rows = cursor.fetchall()
+        self.connection.commit()
+        return {
+            str(row["source_call_id"] if isinstance(row, dict) else row[0])
+            for row in rows
+        }
+
+    def load_context_for_call(self, call: Dict[str, Any], *, limit: int = 8) -> Dict[str, Any] | None:
+        """Read ready company memory without opening or transcribing old audio.
+
+        The selection is deliberately bounded at the database boundary.  All
+        facts remain in the CRM folder, while the model receives only recent,
+        source-labelled evidence from the same sales funnel.
+        """
+        scopes = context_scopes_for_call(call)
+        occurred_at = str(call.get("created") or "").strip()
+        if not scopes or not occurred_at:
+            return None
+        limit = max(1, min(int(limit), 8))
+        # Bound database work before deduplication: each explicit relation
+        # contributes at most eight indexed rows, then only eight facts reach
+        # the prompt.  A company's full history can grow without making this
+        # selection scan its whole archive.
+        scopes = scopes[:8]
+        priority_by_scope = {"deal": 0, "contact": 1, "company": 2}
+        candidates = []
+        candidate_params: list[Any] = []
+        for scope_type, scope_external_id, funnel_id in scopes:
+            candidates.append(
+                """
+                (select cf.call_id, cf.occurred_at, cf.fact, cf.scope_type, cf.scope_external_id, %s::integer as scope_priority
+                 from jarvis.context_facts cf
+                 where cf.scope_type = %s and cf.scope_external_id = %s and cf.funnel_id = %s
+                   and cf.occurred_at < %s::timestamptz
+                 order by cf.occurred_at desc, cf.call_id desc
+                 limit %s)
+                """
+            )
+            candidate_params.extend([
+                priority_by_scope.get(scope_type, 3), scope_type, scope_external_id, funnel_id, occurred_at, limit,
+            ])
+        candidates_sql = " union all ".join(candidates)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                with candidates as (
+                  {candidates_sql}
+                ), selected as (
+                  select distinct on (cf.call_id)
+                    cf.call_id, cf.occurred_at, cf.fact, cf.scope_type, cf.scope_external_id
+                  from candidates cf
+                  order by cf.call_id, cf.scope_priority, cf.occurred_at desc
+                ), recent as (
+                  select * from selected
+                  order by occurred_at desc, call_id desc
+                  limit %s
+                )
+                select * from recent
+                order by occurred_at asc, call_id asc
+                """,
+                [*candidate_params, limit],
+            )
+            facts = cursor.fetchall()
+            profile_conditions = " or ".join(
+                "(scope_type = %s and scope_external_id = %s and funnel_id = %s)"
+                for _ in scopes
+            )
+            cursor.execute(
+                f"""
+                select scope_type, scope_external_id, facts_count, latest_call_at, current_state
+                from jarvis.context_profiles
+                where {profile_conditions}
+                """,
+                [value for scope in scopes for value in scope],
+            )
+            profiles = cursor.fetchall()
+        self.connection.commit()
+        if not facts and not profiles:
+            return None
+
+        source_labels = {"deal": "current_deal", "contact": "contact", "company": "company"}
+        previous_calls = []
+        sources: Dict[str, Dict[str, Any]] = {}
+        for row in facts:
+            fact = self._json_object(row.get("fact"))
+            source = source_labels.get(str(row.get("scope_type") or ""), "company")
+            source_meta = sources.setdefault(source, {"count": 0})
+            source_meta["count"] += 1
+            if source == "current_deal":
+                source_meta["deal_id"] = str(row.get("scope_external_id") or "")
+            previous_calls.append(
+                {
+                    "activity_id": str(fact.get("activity_id") or row.get("call_id") or ""),
+                    "date": str(fact.get("date") or self._timestamp(row.get("occurred_at"))),
+                    "call_type": str(fact.get("call_type") or "Тип не указан"),
+                    "summary": str(fact.get("summary") or "нет"),
+                    "objections": "; ".join(str(item) for item in (fact.get("objections") or []) if str(item)) or "не выделены",
+                    "agreements": str(fact.get("outcome") or "не выделены"),
+                    "next_step": str(fact.get("next_step") or "не указан"),
+                    "source": source,
+                    "source_deal_id": "",
+                }
+            )
+
+        preferred_profiles = sorted(
+            profiles,
+            key=lambda row: ({"company": 0, "contact": 1, "deal": 2}.get(str(row.get("scope_type") or ""), 3), -int(row.get("facts_count") or 0)),
+        )
+        profile = preferred_profiles[0] if preferred_profiles else {}
+        state = self._json_object(profile.get("current_state")) if profile else {}
+        crm = call.get("crm") or {}
+        return {
+            "crm": {
+                "stage": crm.get("stage_name") or crm.get("stage_id"),
+                "responsible": (call.get("manager") or {}).get("name"),
+                "next_activity_date": crm.get("next_activity_date"),
+            },
+            "previous_calls": previous_calls,
+            "sources": sources,
+            "memory": {
+                "scope": str(profile.get("scope_type") or ""),
+                "facts_count": int(profile.get("facts_count") or 0),
+                "latest_call_at": self._timestamp(profile.get("latest_call_at")) if profile else "",
+                "last_outcome": str(state.get("last_outcome") or ""),
+                "next_step": str(state.get("next_step") or ""),
+            },
+        }
+
     def save_call_manual_review(
         self, activity_id: str, reviewed: bool, reviewer_name: str,
     ) -> Dict[str, Any]:
@@ -693,6 +1089,20 @@ class JarvisRepository:
                 (call_id, call_type_key, reason, reviewer_name, reanalysis_requested),
             )
             saved = cursor.fetchone()
+            from claude_analyzer import CALL_TYPES
+
+            label = str((CALL_TYPES.get(call_type_key) or {}).get("label") or call_type_key)
+            cursor.execute(
+                """
+                update jarvis.context_facts
+                set fact = jsonb_set(
+                  jsonb_set(fact, '{call_type_key}', to_jsonb(%s::text), true),
+                  '{call_type}', to_jsonb(%s::text), true
+                ), updated_at = now()
+                where call_id = %s
+                """,
+                (call_type_key, label, call_id),
+            )
         self.connection.commit()
         return dict(saved) if isinstance(saved, dict) else {
             "call_type_key": saved[0], "reason": saved[1], "reviewer_name": saved[2],

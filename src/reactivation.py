@@ -514,17 +514,6 @@ def analyse_reactivation_calls(client: Any, runtime_dir: Path, *, now: datetime 
     read and only presents analyses that have been safely persisted. Existing
     immutable analyses are never sent to the model again.
     """
-    from bitrix import NonAudioFileError, download_audio, mirror_snapshot_to_jarvis
-    from claude_analyzer import (
-        MIN_DURATION_FOR_ANALYSIS,
-        analyze_transcript,
-        apply_manual_corrections,
-        build_deal_context,
-        load_manual_corrections,
-        load_scripts,
-        mirror_analyses_to_jarvis,
-        transcribe_audio,
-    )
     from jarvis_store import JarvisRepository
 
     now = now or datetime.now().astimezone()
@@ -538,8 +527,48 @@ def analyse_reactivation_calls(client: Any, runtime_dir: Path, *, now: datetime 
     repository = JarvisRepository.connect(database_url)
     try:
         stored_calls, analyses = repository.load_snapshot()
+    except Exception:
+        repository.close()
+        raise
+
+    try:
+        return _analyse_reactivation_calls_with_repository(
+            client,
+            runtime_dir,
+            now=now,
+            deals=deals,
+            direct_calls=direct_calls,
+            repository=repository,
+            stored_calls=stored_calls,
+            analyses=analyses,
+        )
     finally:
         repository.close()
+
+
+def _analyse_reactivation_calls_with_repository(
+    client: Any,
+    runtime_dir: Path,
+    *,
+    now: datetime,
+    deals: list[Dict[str, Any]],
+    direct_calls: list[Dict[str, Any]],
+    repository: Any,
+    stored_calls: list[Dict[str, Any]],
+    analyses: Dict[str, Any],
+) -> Dict[str, int]:
+    """Run the analysis with one already-open durable context repository."""
+    from bitrix import NonAudioFileError, download_audio, mirror_snapshot_to_jarvis
+    from claude_analyzer import (
+        MIN_DURATION_FOR_ANALYSIS,
+        analyze_transcript,
+        apply_manual_corrections,
+        build_deal_context,
+        load_manual_corrections,
+        load_scripts,
+        mirror_analyses_to_jarvis,
+        transcribe_audio,
+    )
 
     # A fresh Bitrix activity does not retain a prior terminal download status.
     # Carry that status forward before writing the latest raw snapshot, so a
@@ -573,6 +602,11 @@ def analyse_reactivation_calls(client: Any, runtime_dir: Path, *, now: datetime 
 
     summary = {"deals": len(deals), "calls": len(direct_calls), "analyzed": 0, "alreadyAnalyzed": 0, "notScored": 0, "unavailable": 0, "failed": 0}
     completed: dict[str, Dict[str, Any]] = {}
+    # Persist each completed assessment immediately so a later call of the
+    # same company in this run can read it from durable context.  Keep track
+    # of successful writes: a final batch must not create a second immutable
+    # analysis version when a manually requested reanalysis is forced.
+    durably_persisted_activity_ids: set[str] = set()
     for call in direct_calls:
         activity_id = str(call.get("activity_id") or "")
         if not activity_id:
@@ -605,17 +639,24 @@ def analyse_reactivation_calls(client: Any, runtime_dir: Path, *, now: datetime 
                     "exclusion_reason": "Звонок короче 30 секунд: транскрипт сохранён без оценки качества",
                 }
             else:
+                try:
+                    deal_context = repository.load_context_for_call(call)
+                except Exception as exc:
+                    logger.warning("Could not read durable call context %s (%s)", activity_id, type(exc).__name__)
+                    deal_context = None
                 analysis = analyze_transcript(
                     transcription,
                     call,
                     scripts,
-                    deal_context=build_deal_context(history_calls, analyses, call, corrections),
+                    deal_context=deal_context or build_deal_context(history_calls, analyses, call, corrections),
                     forced_call_type_key=correction.get("call_type_key"),
                 )
                 analysis = apply_manual_corrections(activity_id, analysis, corrections)
             record = {"call_meta": call, "transcription": transcription, "analysis": analysis, "analyzed_at": now.isoformat()}
             analyses[activity_id] = record
             completed[activity_id] = record
+            if mirror_analyses_to_jarvis([call], {activity_id: record}):
+                durably_persisted_activity_ids.add(activity_id)
             if _has_ai_analysis(record):
                 summary["analyzed"] += 1
         except NonAudioFileError:
@@ -637,7 +678,13 @@ def analyse_reactivation_calls(client: Any, runtime_dir: Path, *, now: datetime 
     # the same unusable file forever.
     mirror_snapshot_to_jarvis(direct_calls)
     if completed:
-        mirror_analyses_to_jarvis(history_calls, completed)
+        pending_persistence = {
+            activity_id: record
+            for activity_id, record in completed.items()
+            if activity_id not in durably_persisted_activity_ids
+        }
+        if pending_persistence:
+            mirror_analyses_to_jarvis(history_calls, pending_persistence)
     return summary
 
 

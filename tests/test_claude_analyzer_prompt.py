@@ -17,6 +17,7 @@ from claude_analyzer import (  # noqa: E402
     detect_service_administrative_followup,
     detect_service_contact_routing,
     detect_service_document_delivery,
+    _context_prompt_block,
 )
 from bitrix import (  # noqa: E402
     fetch_previous_deal_recordings,
@@ -26,6 +27,25 @@ from bitrix import (  # noqa: E402
 
 
 class ClaudeAnalyzerPromptTests(unittest.TestCase):
+    def test_prompt_exposes_durable_company_memory_without_expanding_history(self):
+        prompt = _context_prompt_block(
+            {
+                "crm": {},
+                "previous_calls": [{"date": "2026-10-05", "call_type": "Дожим", "summary": "Обсудили оплату"}],
+                "sources": {"company": {"count": 1}},
+                "memory": {
+                    "scope": "company", "facts_count": 37,
+                    "latest_call_at": "2026-10-05T10:00:00+03:00",
+                    "last_outcome": "Клиент согласует бюджет",
+                    "next_step": "Перезвонить в пятницу",
+                },
+            }
+        )
+
+        self.assertIn("Постоянная память компании: 37", prompt)
+        self.assertIn("Клиент согласует бюджет", prompt)
+        self.assertIn("Использовано предыдущих разговоров: 1 из 8", prompt)
+
     def test_context_backfill_reads_previous_calls_from_bitrix(self):
         class BitrixFixture:
             def __init__(self):

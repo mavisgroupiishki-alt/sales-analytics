@@ -2596,7 +2596,7 @@ def _start_call_reanalysis(activity_id):
     import subprocess, sys
     subprocess.Popen(
         [sys.executable, "src/claude_analyzer.py"],
-        env={**os.environ, "REANALYZE_ID": activity_id},
+        env={**os.environ, "REANALYZE_ID": activity_id, "JARVIS_FORCE_ANALYSIS_VERSION": "1"},
         cwd=str(Path(__file__).parent)
     )
     return True

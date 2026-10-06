@@ -841,6 +841,16 @@ def _context_prompt_block(deal_context: Optional[Dict[str, Any]]) -> str:
         f"- Ответственный: {crm.get('responsible') or 'не указан'}",
         f"- Следующая активность CRM: {crm.get('next_activity_date') or 'не назначена'}",
     ]
+    memory = deal_context.get("memory") or {}
+    facts_count = int(memory.get("facts_count") or 0)
+    memory_scope = str(memory.get("scope") or "")
+    memory_label = {"company": "компании", "contact": "контакта", "deal": "сделки"}.get(memory_scope, "связанных сущностей")
+    if facts_count:
+        lines.append(f"- Постоянная память {memory_label}: {facts_count} фактов; в этот раз показаны только 8 последних.")
+        if memory.get("last_outcome"):
+            lines.append(f"- Последний зафиксированный результат: {memory['last_outcome']}")
+        if memory.get("next_step"):
+            lines.append(f"- Актуальный следующий шаг из памяти: {memory['next_step']}")
     sources = deal_context.get("sources") or {}
     if not previous_calls:
         lines.append("- Связанных разобранных разговоров не найдено.")
@@ -1814,26 +1824,30 @@ def main():
     else:
         analyses = {}
     # A Render filesystem is ephemeral, while conversation history must survive
-    # between worker runs.  Merge the private snapshot only as read context;
-    # current input files still define which audio files this run processes.
+    # between worker runs.  Current ids and durable context are loaded
+    # separately: a worker must not deserialize the entire CRM history merely
+    # to score one new recording.
     history_calls = list(calls)
     database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
+    context_repository = None
+    persisted_activity_ids: set[str] = set()
     if database_url:
         try:
             from jarvis_store import JarvisRepository
 
             repository = JarvisRepository.connect(database_url)
             try:
-                stored_calls, stored_analyses = repository.load_snapshot()
-            finally:
+                persisted_activity_ids = repository.load_persisted_activity_ids(
+                    str(call.get("activity_id") or "") for call in calls
+                )
+            except Exception:
                 repository.close()
-            history_by_id = {str(call.get("activity_id") or ""): call for call in stored_calls}
-            history_by_id.update({str(call.get("activity_id") or ""): call for call in calls})
-            history_calls = list(history_by_id.values())
-            for stored_id, stored_analysis in stored_analyses.items():
-                analyses.setdefault(str(stored_id), stored_analysis)
+                raise
+            context_repository = repository
         except Exception as exc:
             logger.warning("Не удалось загрузить историю разговоров из Jarvis DB: %s", type(exc).__name__)
+    if database_url and context_repository is None:
+        logger.error("Постоянный контекст Jarvis недоступен: исторические записи не будут скачиваться в текущем запуске")
 
     requested_ids, requested_date = reanalysis_scope(os.environ)
     targeted_reanalysis = bool(requested_ids or requested_date)
@@ -1865,6 +1879,7 @@ def main():
     critical_count = 0
     type_stats = {}
     completed_activity_ids: set[str] = set()
+    durably_persisted_activity_ids: set[str] = set()
 
     for i, (audio_path, call_meta) in enumerate(audio_entries, 1):
         print(f"\n{'='*60}")
@@ -1877,7 +1892,8 @@ def main():
             continue
         if is_reanalysis_target(call_meta, requested_ids, requested_date):
             analyses.pop(activity_id, None)
-        if activity_id in analyses:
+            persisted_activity_ids.discard(activity_id)
+        if activity_id in analyses or activity_id in persisted_activity_ids:
             print(f"   ⏭ Уже проанализирован, пропускаем")
             continue
 
@@ -1887,10 +1903,10 @@ def main():
         call_duration = call_meta.get("duration_sec") or 0
         transcribe_only_mode = call_duration and call_duration < MIN_DURATION_FOR_ANALYSIS
 
-        # Context is prepared just in time for this call.  Do not force a
-        # historical reanalysis here: the forced request concerns today's
-        # target calls, while completed history is valid context as-is.
-        if call_duration >= MIN_DURATION_FOR_ANALYSIS:
+        # A production worker reads prepared CRM memory instead of downloading
+        # and transcribing old recordings.  The old Bitrix path remains only
+        # for a local run without the private database.
+        if not database_url and call_duration >= MIN_DURATION_FOR_ANALYSIS:
             try:
                 from bitrix import Bitrix24Client, fetch_previous_deal_recordings, mirror_snapshot_to_jarvis
 
@@ -1943,7 +1959,14 @@ def main():
                 continue
 
             manual_correction = corrections.get(activity_id) or {}
-            deal_context = build_deal_context(history_calls, analyses, call_meta, corrections)
+            deal_context = None
+            if context_repository is not None:
+                try:
+                    deal_context = context_repository.load_context_for_call(call_meta)
+                except Exception as exc:
+                    logger.warning("Не удалось прочитать постоянный контекст %s: %s", activity_id, type(exc).__name__)
+            if deal_context is None:
+                deal_context = build_deal_context(history_calls, analyses, call_meta, corrections)
             analysis = analyze_transcript(
                 transcription,
                 call_meta,
@@ -1980,6 +2003,16 @@ def main():
             completed_activity_ids.add(activity_id)
             success += 1
 
+            # Store this compact fact before processing the next call.  A
+            # later call from the same company can therefore use it immediately
+            # without fetching or transcribing the first recording again.
+            if context_repository is not None:
+                mirrored_current = mirror_analyses_to_jarvis([call_meta], {activity_id: analyses[activity_id]})
+                if mirrored_current:
+                    durably_persisted_activity_ids.add(activity_id)
+                else:
+                    logger.warning("Контекстный факт для звонка %s не записан", activity_id)
+
             # РОП-поток не пишет сотрудникам автоматически. Уведомления —
             # отдельная, явно включаемая интеграция, чтобы повторный разбор
             # не создавал лишних сообщений в Bitrix.
@@ -2001,11 +2034,13 @@ def main():
             failed += 1
 
     analyses_path.write_text(json.dumps(analyses, ensure_ascii=False, indent=2), encoding="utf-8")
+    if context_repository is not None:
+        context_repository.close()
     try:
         completed_analyses = {
             activity_id: analyses[activity_id]
             for activity_id in completed_activity_ids
-            if activity_id in analyses
+            if activity_id in analyses and activity_id not in durably_persisted_activity_ids
         }
         mirrored = mirror_analyses_to_jarvis(history_calls, completed_analyses)
         if os.environ.get("JARVIS_DATABASE_URL"):
