@@ -41,6 +41,25 @@ def reactivation_sync_interval_seconds() -> int:
         return 0
 
 
+def run_reactivation_schedule(
+    live_pipeline: "LivePipeline", interval: int, stop_event: threading.Event | None = None
+) -> None:
+    """Run low-priority history scans only after the first interval elapses.
+
+    A full reactivation scan can take substantially longer than a current-day
+    sales pass. Starting it at process boot starved an operator-requested
+    reanalysis behind the historical job. The sales worker is now allowed to
+    serve its first live pass before reactivation starts.
+    """
+    event = stop_event or threading.Event()
+    while not event.wait(interval):
+        # Do not drop a full-history scan merely because the five-minute sales
+        # sync owns the worker lock at that exact moment.
+        while not live_pipeline.start(reactivation=True):
+            if event.wait(30):
+                return
+
+
 class LivePipeline:
     """Runs one non-overlapping private sync at a time."""
 
@@ -229,14 +248,7 @@ def create_app(pipeline: LivePipeline | None = None) -> Flask:
     reactivation_interval = reactivation_sync_interval_seconds()
     if reactivation_interval:
         def run_reactivation_periodically() -> None:
-            # Do not drop a full-history scan merely because the five-minute
-            # sales sync owns the worker lock at that exact moment.
-            while not live_pipeline.start(reactivation=True):
-                threading.Event().wait(30)
-            while True:
-                threading.Event().wait(reactivation_interval)
-                while not live_pipeline.start(reactivation=True):
-                    threading.Event().wait(30)
+            run_reactivation_schedule(live_pipeline, reactivation_interval)
 
         threading.Thread(target=run_reactivation_periodically, daemon=True, name="jarvis-reactivation-scheduler").start()
 

@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 try:
-    from jarvis_live_worker import LivePipeline  # noqa: E402
+    from jarvis_live_worker import LivePipeline, run_reactivation_schedule  # noqa: E402
 except ModuleNotFoundError as exc:
     if exc.name == "flask":
         raise unittest.SkipTest("Flask is installed by requirements.txt in the worker image")
@@ -15,6 +15,31 @@ except ModuleNotFoundError as exc:
 
 
 class LiveWorkerDateWindowTests(unittest.TestCase):
+    def test_reactivation_waits_an_interval_before_claiming_the_sales_worker(self):
+        class Pipeline:
+            def __init__(self):
+                self.starts = []
+
+            def start(self, **kwargs):
+                self.starts.append(kwargs)
+                return True
+
+        class StopImmediately:
+            def __init__(self):
+                self.waits = []
+
+            def wait(self, seconds):
+                self.waits.append(seconds)
+                return True
+
+        pipeline = Pipeline()
+        stopper = StopImmediately()
+
+        run_reactivation_schedule(pipeline, 3600, stopper)
+
+        self.assertEqual(stopper.waits, [3600])
+        self.assertEqual(pipeline.starts, [])
+
     def test_prepare_runtime_removes_stale_audio_only(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime_dir = Path(directory)
