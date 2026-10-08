@@ -46,6 +46,21 @@ class LiveWorkerDateWindowTests(unittest.TestCase):
                 else:
                     os.environ[key] = value
 
+    def test_historical_reanalysis_is_queued_when_another_run_holds_the_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pipeline = LivePipeline(Path(directory))
+            pipeline.lock.acquire()
+            try:
+                status = pipeline.request_reanalysis("2026-10-07")
+            finally:
+                pipeline.lock.release()
+
+        self.assertEqual(status, "queued")
+        self.assertEqual(
+            pipeline._pending_reanalysis,
+            {"reanalyze_today": True, "reanalysis_date": "2026-10-07"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
