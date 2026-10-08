@@ -1684,6 +1684,16 @@ def analyze_transcript(
         result["criteria"] = calibrated_criteria
     if calibration_notes:
         result["score_calibration_notes"] = calibration_notes
+        inapplicable_codes = {
+            str(item.get("code") or "")
+            for item in calibrated_criteria
+            if isinstance(item, dict) and item.get("applicable") is False
+        }
+        if inapplicable_codes and isinstance(result.get("manager_errors"), list):
+            result["manager_errors"] = [
+                item for item in result["manager_errors"]
+                if not isinstance(item, dict) or str(item.get("criterion") or "") not in inapplicable_codes
+            ]
     rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
     if rubric_score is None:
         criteria_contract = "\n".join(

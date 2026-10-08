@@ -323,6 +323,43 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertTrue(criteria[0]["applicable"])
         self.assertEqual(notes, [])
 
+    def test_calibrated_non_applicable_criterion_is_removed_from_manager_errors(self):
+        call_type = '{"call_type_key":"kp_feedback","confirmed":true,"evidence":"обсуждают статус предложения"}'
+        analysis = json.dumps(
+            {
+                "overall_score": 4,
+                "criteria": [
+                    {"code": "opening", "applicable": True, "score": 8},
+                    {"code": "need", "applicable": True, "score": 9},
+                    {"code": "presentation", "applicable": False, "score": 0},
+                    {"code": "expertise", "applicable": False, "score": 0},
+                    {"code": "objection", "applicable": True, "score": 2},
+                    {"code": "next_step", "applicable": True, "score": 0},
+                    {"code": "communication", "applicable": True, "score": 8},
+                ],
+                "manager_errors": [
+                    {"criterion": "objection", "text": "Внутренняя экономика не отработана"},
+                    {"criterion": "next_step", "text": "Не зафиксирован точный час"},
+                ],
+                "flags": {},
+            }
+        )
+
+        with patch("claude_analyzer.call_claude_api", side_effect=[(call_type, {}), (analysis, {})]):
+            result = analyze_transcript(
+                {
+                    "text": "Вы мне в любом случае наберите, я на этой неделе поговорю с директором. "
+                    "Непонятна экономика: выбираем между металлической конструкцией и железобетоном.",
+                    "text_with_timecodes": "[00:10] Вы мне наберите на этой неделе",
+                    "duration_sec": 90,
+                },
+                {"direction": "outgoing", "duration_sec": 90, "crm": {}},
+                {},
+            )
+
+        self.assertEqual(result["overall_score"], 8.0)
+        self.assertEqual([item["criterion"] for item in result["manager_errors"]], ["next_step"])
+
     def test_analysis_retries_malformed_json_and_requires_complete_rubric(self):
         call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
         valid_analysis = json.dumps(
