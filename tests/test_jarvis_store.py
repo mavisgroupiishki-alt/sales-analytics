@@ -453,6 +453,20 @@ class JarvisStoreTests(unittest.TestCase):
         self.assertEqual(status, "normal")
         self.assertEqual(rule, "")
 
+    def test_unknown_call_type_cannot_become_a_low_score(self):
+        status, reason, rule = evaluate_triage(
+            {
+                "overall_score": 1.0,
+                "overall_score_method": "applicable_rubric_v2",
+                "call_type": {"key": "unknown", "confirmed": True},
+                "flags": {},
+            }
+        )
+
+        self.assertEqual(status, "needs_review")
+        self.assertIn("тип звонка", reason)
+        self.assertEqual(rule, "")
+
     def test_low_confidence_current_score_requires_review(self):
         status, _, _ = evaluate_triage(
             {

@@ -605,6 +605,11 @@ def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
     if flags.get("critical"):
         return "needs_review", "Нужна проверка РОПом: критичный флаг не подтверждён доказательством", ""
 
+    call_type = analysis.get("call_type") or {}
+    if isinstance(call_type, dict) and call_type and (
+        call_type.get("key") == "unknown" or call_type.get("confirmed") is not True
+    ):
+        return "needs_review", "Нужна проверка РОПом: тип звонка не подтверждён", ""
     if analysis.get("overall_score") is None:
         return "needs_review", "Нужна проверка РОПом: нет итогового балла", ""
     confidence = analysis.get("analysis_confidence")
@@ -614,12 +619,9 @@ def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
         low_confidence = confidence == "low"
     if analysis.get("rubric_missing_codes") or low_confidence:
         return "needs_review", "Нужна проверка РОПом: часть критериев оценена с низкой уверенностью", ""
-    call_type = analysis.get("call_type") or {}
     # Historical records can predate call-type classification. Keep them out of
     # the new queue until they are re-analysed; only an explicit unconfirmed
     # classification requires a ROP decision.
-    if isinstance(call_type, dict) and call_type and call_type.get("confirmed") is not True:
-        return "needs_review", "Нужна проверка РОПом: тип звонка не подтверждён", ""
     return "normal", "", ""
 
 
@@ -1565,6 +1567,18 @@ def analyze_transcript(
         break
     if result is None:
         raise RuntimeError("AI response omitted the required rubric criteria")
+
+    # The JSON template contains a fixed `confirmed` field, so never let an
+    # unclassified call be accidentally promoted to a scored sales scenario.
+    # It remains visible to the ROP for a manual type decision instead.
+    if call_type_key == "unknown":
+        call_type = result.get("call_type") if isinstance(result.get("call_type"), dict) else {}
+        result["call_type"] = {
+            "key": "unknown",
+            "label": CALL_TYPES["unknown"]["label"],
+            "confirmed": False,
+            "source": call_type.get("source") or "ai",
+        }
 
     result["source_duration_seconds"] = call_meta.get("duration_sec")
 

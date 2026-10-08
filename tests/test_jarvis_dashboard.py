@@ -89,6 +89,32 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("Нужно решение РОПа", overview)
         self.assertIn("Неподтверждённый тип", overview)
 
+    def test_unconfirmed_type_does_not_lower_manager_average_or_show_a_draft_score(self):
+        calls = [
+            {"activity_id": "confirmed", "created": "2026-09-08T12:00:00+03:00", "manager": {"id": 1, "name": "Анна"}},
+            {"activity_id": "unknown", "created": "2026-09-08T13:00:00+03:00", "manager": {"id": 1, "name": "Анна"}},
+        ]
+        analyses = {
+            "confirmed": {"analysis": {
+                "overall_score": 8.0, "overall_score_method": "applicable_rubric_v2", "flags": {},
+                "call_type": {"key": "payment_push", "confirmed": True},
+            }},
+            "unknown": {"analysis": {
+                "overall_score": 1.0, "overall_score_method": "applicable_rubric_v2", "flags": {},
+                "call_type": {"key": "unknown", "confirmed": True},
+            }},
+        }
+
+        model = dashboard_model(calls, analyses)
+        journal = render_calls(calls, analyses, {"role": "rop", "name": "РОП"})
+        detail = render_call_detail(calls[1], analyses["unknown"], {"role": "rop", "name": "РОП"})
+
+        self.assertEqual(model["managers"][0]["average"], 8.0)
+        self.assertEqual(model["managers"][0]["scored"], 1)
+        self.assertEqual(len(model["review"]), 1)
+        self.assertIn("Требует подтверждения типа", detail)
+        self.assertNotIn("Низкая оценка", journal)
+
     def test_empty_bitrix_recording_is_not_presented_as_pending_or_playable(self):
         call = {
             "activity_id": "1",

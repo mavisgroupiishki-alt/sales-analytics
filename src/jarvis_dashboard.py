@@ -115,6 +115,20 @@ def _analysis_for(analyses: Dict[str, Any], call: Dict[str, Any]) -> Dict[str, A
     return (analyses.get(str(call.get("activity_id")), {}) or {}).get("analysis") or {}
 
 
+def has_confirmed_call_type(analysis: Dict[str, Any]) -> bool:
+    """Only a classified commercial scenario may affect a manager KPI."""
+    call_type = analysis.get("call_type") or {}
+    if not call_type:
+        # Old immutable analyses did not contain a call-type object. Their
+        # current-rubric score remains usable until they are re-analysed.
+        return True
+    return bool(
+        isinstance(call_type, dict)
+        and call_type.get("key") not in {None, "", "unknown"}
+        and call_type.get("confirmed") is True
+    )
+
+
 def recording_is_unavailable(call: Dict[str, Any]) -> bool:
     """Return true when Bitrix supplied only an empty/non-playable recording."""
     audio = call.get("audio") or {}
@@ -259,7 +273,7 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
             entry["excluded"] += 1
             continue
         score = analysis.get("overall_score")
-        if isinstance(score, (int, float)):
+        if isinstance(score, (int, float)) and has_confirmed_call_type(analysis):
             entry["scores"].append(float(score))
             entry["scored"] += 1
         status, reason, rule_id = triage_for(analysis)
@@ -383,7 +397,7 @@ def render_dashboard(
         status, _, _ = triage_for(analysis) if analysis else (("audio_unavailable", "", "") if recording_is_unavailable(call) else ("pending", "", ""))
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or ""
-        score = analysis.get("overall_score") if analysis else None
+        score = analysis.get("overall_score") if analysis and has_confirmed_call_type(analysis) else None
         status_label = _status_label(status, analysis)
         feed += f'''<a class="jd-feed" href="{_call_url(call.get("activity_id"), period, date_from=date_from, date_to=date_to)}">
           <span class="jd-dot {status}"></span><span><b>{_text(client)}</b><small>{_text(manager)} · {_format_timestamp(str(call.get("created") or ""))}</small></span>
@@ -629,8 +643,12 @@ def render_call_detail(
     company = client_data.get("company") or "Компания не указана"
     manager = (call.get("manager") or {}).get("name") or "Менеджер не определён"
     crm = call.get("crm") or {}
-    score = analysis.get("overall_score") if analysis.get("overall_score") is not None else "—"
-    score_heading = "Не оценивается" if non_sales_call or unavailable_recording else f"{score}/10"
+    confirmed_type = has_confirmed_call_type(analysis)
+    score = analysis.get("overall_score") if analysis.get("overall_score") is not None and confirmed_type else "—"
+    score_heading = (
+        "Не оценивается" if non_sales_call or unavailable_recording
+        else ("Требует подтверждения типа" if analysis and not confirmed_type else f"{score}/10")
+    )
     duration = call.get("duration_sec") or transcription.get("duration_sec")
     try:
         duration_seconds = int(float(duration)) if duration else 0
