@@ -1502,6 +1502,17 @@ _CONSULTATION_OR_SALES_PATTERN = re.compile(
     r"услови\w*\s+(?:оплат|постав|догов))\w*",
     re.IGNORECASE,
 )
+_NPS_EXPERT_FEEDBACK_PATTERN = re.compile(
+    r"(?:как\s+вам\s+(?:работал|работалось)[^.]{0,80}(?:эксперт|специалист)|"
+    r"оцен\w{0,14}[^.]{0,80}(?:работ[уы]|эксперт[ауы]?)[^.]{0,100}"
+    r"(?:от\s*(?:одного|1)\s*(?:до|[-–])\s*(?:десяти|10)|[1-9]\s*(?:из|/)\s*10))",
+    re.IGNORECASE,
+)
+_NPS_RATING_SCALE_PATTERN = re.compile(
+    r"(?:от\s*(?:одного|1)\s*(?:до|[-–])\s*(?:десяти|10)|"
+    r"оцен\w{0,14}\s*(?:эксперт[ауы]?|работ[уы])|\b[1-9]\s*(?:из|/)\s*10\b)",
+    re.IGNORECASE,
+)
 
 
 def detect_service_contact_routing(transcript: str) -> bool:
@@ -1538,6 +1549,23 @@ def detect_service_administrative_followup(transcript: str) -> bool:
         for pattern in _ADMIN_PENDING_PATTERNS
     )
     return bool(_ADMIN_DELIVERABLE_PATTERN.search(normalized) and pending_signals >= 2)
+
+
+def detect_service_nps_feedback(transcript: str) -> bool:
+    """Keep expert-satisfaction surveys out of the sales quality KPI.
+
+    An NPS call can mention a future confirmation procedure, but it does not
+    become a sales call until the manager actually discusses a need, offer,
+    price, payment, or commercial terms.  Scoring it as a cold-periodic call
+    would otherwise create a false deduction for not making a sale.
+    """
+    normalized = " ".join(str(transcript or "").lower().replace("ё", "е").split())
+    if not normalized or _ACTIVE_SALES_DISCUSSION_PATTERN.search(normalized):
+        return False
+    return bool(
+        _NPS_EXPERT_FEEDBACK_PATTERN.search(normalized)
+        and _NPS_RATING_SCALE_PATTERN.search(normalized)
+    )
 
 
 def _service_analysis(
@@ -1616,6 +1644,19 @@ def _service_administrative_followup_analysis(transcription: Dict, call_meta: Di
         reason="Административный контроль ранее обещанного действия",
     )
 
+
+def _service_nps_feedback_analysis(transcription: Dict, call_meta: Dict) -> Dict[str, Any]:
+    return _service_analysis(
+        transcription,
+        call_meta,
+        key="service_nps_feedback",
+        label="Служебный NPS по работе эксперта",
+        goal="Собрать оценку клиентского опыта по завершённой работе",
+        summary="Менеджер запросил оценку работы эксперта; коммерческое обсуждение не велось.",
+        outcome="Оценка клиентского опыта собрана; звонок не участвует в оценке продаж.",
+        reason="Сбор NPS по работе эксперта",
+    )
+
 def analyze_transcript(
     transcription: Dict,
     call_meta: Dict,
@@ -1638,6 +1679,11 @@ def analyze_transcript(
     if detect_service_administrative_followup(transcript_text):
         logger.info("   Тип: Служебный контроль исполнения")
         result = _service_administrative_followup_analysis(transcription, call_meta)
+        result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
+        return result
+    if detect_service_nps_feedback(transcript_text):
+        logger.info("   Тип: Служебный NPS по работе эксперта")
+        result = _service_nps_feedback_analysis(transcription, call_meta)
         result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
         return result
     relevant_scripts = select_relevant_scripts(transcript_text, scripts_db)

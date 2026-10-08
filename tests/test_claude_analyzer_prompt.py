@@ -18,6 +18,7 @@ from claude_analyzer import (  # noqa: E402
     detect_service_administrative_followup,
     detect_service_contact_routing,
     detect_service_document_delivery,
+    detect_service_nps_feedback,
     transcription_from_store,
     _context_prompt_block,
 )
@@ -553,6 +554,35 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertEqual(result["call_type"]["key"], "service_administrative_followup")
         self.assertTrue(result["service_call"])
         self.assertIsNone(result["overall_score"])
+
+    def test_nps_expert_feedback_is_not_scored_as_periodic_sales(self):
+        transcript = (
+            "Ирина, компания Mavis Group. Хочу узнать, как вам работалось с нашим экспертом. "
+            "Оценочку эксперту поставить от одного до десяти. Девять. "
+            "Спасибо за обратную связь, не забывайте ежегодное подтверждение."
+        )
+
+        self.assertTrue(detect_service_nps_feedback(transcript))
+        with patch("claude_analyzer.call_claude_api") as api:
+            result = analyze_transcript(
+                {"text": transcript, "text_with_timecodes": "[00:23] Клиент: девять", "duration_sec": 53},
+                {"direction": "outgoing", "duration_sec": 53, "crm": {}},
+                {},
+            )
+
+        api.assert_not_called()
+        self.assertEqual(result["call_type"]["key"], "service_nps_feedback")
+        self.assertTrue(result["service_call"])
+        self.assertTrue(result["exclude_from_stats"])
+        self.assertIsNone(result["overall_score"])
+
+    def test_nps_feedback_with_actual_commercial_discussion_stays_sales(self):
+        transcript = (
+            "Оцените работу эксперта от одного до десяти. Спасибо. "
+            "Теперь обсудим стоимость продления, условия оплаты и подготовим договор."
+        )
+
+        self.assertFalse(detect_service_nps_feedback(transcript))
 
     def test_ai_non_sales_result_cannot_keep_a_numeric_sales_score(self):
         call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
