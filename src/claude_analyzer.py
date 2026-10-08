@@ -484,6 +484,65 @@ def compute_applicable_score(call_type_key: str, observations: Any) -> Optional[
     return max(1.0, min(10.0, weighted))
 
 
+def calibrate_client_controlled_followup(
+    transcript: str, criteria: Any
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    """Prevent two repeatable false deductions in follow-up conversations.
+
+    A client can explicitly ask the manager to call back or promise to return
+    after an internal decision.  That is a next step, even without an exact
+    calendar slot.  Likewise, a choice between the client's own construction
+    scenarios is not a price objection to Mavis unless the transcript ties it
+    to the service, proposal, or product price.  These are narrow safeguards:
+    they only soften an AI deduction when the supporting words are present.
+    """
+    if not isinstance(criteria, list):
+        return [], []
+
+    text = str(transcript or "").lower()
+    followup_by_client = bool(re.search(
+        r"(?:вы\s+мне\s+(?:в\s+любом\s+случае\s+)?(?:наберите|позвоните|перезвоните)|"
+        r"я\s+вам\s+(?:сообщу|позвоню|перезвоню|наберу)|"
+        r"как\s+(?:будет|только\s+будет)\s+(?:известно|решение))",
+        text,
+    ))
+    has_timeframe = bool(re.search(r"на\s+(?:этой|следующей)\s+недел|в\s+ближайшее\s+время|до\s+конца\s+недел", text))
+    external_economy = bool(re.search(
+        r"(?:металл(?:ическ)?|железобетон|стройк|производств|проект)\w{0,18}.*(?:экономик|стоимост)|"
+        r"(?:экономик|стоимост).*?(?:металл(?:ическ)?|железобетон|стройк|производств|проект)",
+        text,
+    ))
+    mavis_price = bool(re.search(
+        r"(?:ваш[а-я ]{0,30}(?:цен|стоим)|(?:цен|стоим)[а-я ]{0,30}(?:ваш|кп|предложен|сро|сертифик|аттестац|услуг))",
+        text,
+    ))
+
+    calibrated: List[Dict[str, Any]] = []
+    notes: List[str] = []
+    for raw_item in criteria:
+        item = dict(raw_item) if isinstance(raw_item, dict) else raw_item
+        if not isinstance(item, dict) or item.get("applicable") is not True:
+            calibrated.append(item)
+            continue
+        try:
+            score = float(item.get("score"))
+        except (TypeError, ValueError):
+            calibrated.append(item)
+            continue
+        if item.get("code") == "next_step" and followup_by_client and score < 6:
+            item.update({
+                "score": 6.0 if not has_timeframe else 7.0,
+                "finding": "Клиент подтвердил возврат к разговору или попросил менеджера перезвонить; срок не идеален, но следующий шаг есть.",
+            })
+            notes.append("Следующий контакт подтверждён клиентом; отсутствие точного часа не засчитано как провал.")
+        elif item.get("code") == "objection" and external_economy and not mavis_price and score < 5:
+            item["applicable"] = False
+            item["finding"] = "В разговоре обсуждалась внутренняя экономика проекта клиента, а не цена или условия услуги Mavis."
+            notes.append("Внутренняя экономика проекта клиента не засчитана как неотработанное возражение по услуге.")
+        calibrated.append(item)
+    return calibrated, notes
+
+
 def manager_errors_from_analysis(analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Return concrete, evidenced deductions for the call detail card."""
     supplied = analysis.get("manager_errors")
@@ -1618,6 +1677,13 @@ def analyze_transcript(
         result["model_overall_score"] = float(result.get("overall_score", 0))
     except (TypeError, ValueError):
         result["model_overall_score"] = None
+    calibrated_criteria, calibration_notes = calibrate_client_controlled_followup(
+        transcript_text, result.get("criteria")
+    )
+    if calibrated_criteria:
+        result["criteria"] = calibrated_criteria
+    if calibration_notes:
+        result["score_calibration_notes"] = calibration_notes
     rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
     if rubric_score is None:
         criteria_contract = "\n".join(

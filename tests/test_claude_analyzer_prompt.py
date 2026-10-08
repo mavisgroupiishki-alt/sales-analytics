@@ -11,6 +11,7 @@ from claude_analyzer import (  # noqa: E402
     apply_manual_corrections,
     build_analysis_prompt,
     build_deal_context,
+    calibrate_client_controlled_followup,
     complete_missing_criteria_neutrally,
     decode_json_response,
     detect_call_type,
@@ -294,6 +295,33 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertIn("Исходная оценка для корректно выполненного узкого звонка — 8", prompt)
         self.assertIn("applicable:false", prompt)
         self.assertIn("Не ставь 5–6 только потому, что звонок не закрыл продажу", prompt)
+
+    def test_client_controlled_followup_is_not_zero_and_external_economy_is_not_mavis_objection(self):
+        criteria, notes = calibrate_client_controlled_followup(
+            (
+                "Вы мне в любом случае наберите, я на этой неделе поговорю с директором. "
+                "Непонятна экономика: выбираем между металлической конструкцией и железобетоном."
+            ),
+            [
+                {"code": "objection", "applicable": True, "score": 2},
+                {"code": "next_step", "applicable": True, "score": 0},
+                {"code": "communication", "applicable": True, "score": 8},
+            ],
+        )
+
+        by_code = {item["code"]: item for item in criteria}
+        self.assertFalse(by_code["objection"]["applicable"])
+        self.assertEqual(by_code["next_step"]["score"], 7.0)
+        self.assertEqual(len(notes), 2)
+
+    def test_client_side_economy_does_not_override_a_real_mavis_price_objection(self):
+        criteria, notes = calibrate_client_controlled_followup(
+            "Экономика стройки сложная, но ваша цена по КП нас не устраивает.",
+            [{"code": "objection", "applicable": True, "score": 2}],
+        )
+
+        self.assertTrue(criteria[0]["applicable"])
+        self.assertEqual(notes, [])
 
     def test_analysis_retries_malformed_json_and_requires_complete_rubric(self):
         call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
