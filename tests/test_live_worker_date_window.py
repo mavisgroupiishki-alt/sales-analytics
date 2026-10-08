@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 try:
-    from jarvis_live_worker import LivePipeline, run_reactivation_schedule  # noqa: E402
+    from jarvis_live_worker import LivePipeline, run_reactivation_schedule, run_sales_schedule  # noqa: E402
 except ModuleNotFoundError as exc:
     if exc.name == "flask":
         raise unittest.SkipTest("Flask is installed by requirements.txt in the worker image")
@@ -15,6 +15,31 @@ except ModuleNotFoundError as exc:
 
 
 class LiveWorkerDateWindowTests(unittest.TestCase):
+    def test_sales_sync_waits_an_interval_so_an_operator_can_start_reanalysis_first(self):
+        class Pipeline:
+            def __init__(self):
+                self.starts = 0
+
+            def start(self):
+                self.starts += 1
+                return True
+
+        class StopImmediately:
+            def __init__(self):
+                self.waits = []
+
+            def wait(self, seconds):
+                self.waits.append(seconds)
+                return True
+
+        pipeline = Pipeline()
+        stopper = StopImmediately()
+
+        run_sales_schedule(pipeline, 300, stopper)
+
+        self.assertEqual(stopper.waits, [300])
+        self.assertEqual(pipeline.starts, 0)
+
     def test_reactivation_waits_an_interval_before_claiming_the_sales_worker(self):
         class Pipeline:
             def __init__(self):

@@ -60,6 +60,20 @@ def run_reactivation_schedule(
                 return
 
 
+def run_sales_schedule(
+    live_pipeline: "LivePipeline", interval: int, stop_event: threading.Event | None = None
+) -> None:
+    """Run routine syncing on its cadence without claiming a fresh worker at boot.
+
+    The production dashboard can receive a manual date reanalysis immediately
+    after a deploy. Starting a full routine ingestion first caused that explicit
+    operator request to wait behind every new recording from the current day.
+    """
+    event = stop_event or threading.Event()
+    while not event.wait(interval):
+        live_pipeline.start()
+
+
 class LivePipeline:
     """Runs one non-overlapping private sync at a time."""
 
@@ -238,10 +252,7 @@ def create_app(pipeline: LivePipeline | None = None) -> Flask:
     interval = autosync_interval_seconds()
     if interval:
         def run_periodically() -> None:
-            live_pipeline.start()
-            while True:
-                threading.Event().wait(interval)
-                live_pipeline.start()
+            run_sales_schedule(live_pipeline, interval)
 
         threading.Thread(target=run_periodically, daemon=True, name="jarvis-live-scheduler").start()
 
