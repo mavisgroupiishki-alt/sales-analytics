@@ -114,6 +114,7 @@ class DashboardModelTests(unittest.TestCase):
         self.assertEqual(len(model["review"]), 1)
         self.assertIn("Требует подтверждения типа", detail)
         self.assertNotIn("Низкая оценка", journal)
+        self.assertIn("<strong>—</strong>", journal)
 
     def test_empty_bitrix_recording_is_not_presented_as_pending_or_playable(self):
         call = {

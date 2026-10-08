@@ -529,7 +529,7 @@ def render_calls(
         client = (call.get("client") or {}).get("name") or "Клиент не определён"
         manager = (call.get("manager") or {}).get("name") or "—"
         crm = call.get("crm") or {}
-        score = analysis.get("overall_score") if analysis else None
+        score = analysis.get("overall_score") if analysis and has_confirmed_call_type(analysis) else None
         score = score if score is not None else "—"
         call_type = (analysis.get("call_type") or {}).get("label") or ("Запись 0 секунд" if recording_is_unavailable(call) else "Тип не подтверждён")
         manual_view = call.get("_manual_review") or {}
