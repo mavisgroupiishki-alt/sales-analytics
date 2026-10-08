@@ -1073,15 +1073,32 @@ def detect_call_type(transcript: str, call_meta: Dict, deal_context: Optional[Di
     Ответь строго JSON: {{"call_type_key":"ключ из списка или unknown","confirmed":true|false,"evidence":"короткая цитата или факт из транскрипта"}}.
     `confirmed=true` допустим только если тип прямо подтверждается транскриптом или CRM-контекстом. Не угадывай, является ли клиент новым, холодным или действующим: если основания нет, верни `unknown`."""
 
-    try:
-        text, _ = call_claude_api(prompt, max_tokens=50)
-        payload = decode_json_response(text)
+    for attempt in (1, 2):
+        request_prompt = prompt
+        if attempt == 2:
+            request_prompt += (
+                "\n\nПОВТОРНЫЙ ОТВЕТ: предыдущий JSON был обрезан или синтаксически неверен. "
+                "Верни заново один короткий валидный JSON-объект без Markdown."
+            )
+        try:
+            # 50 tokens can cut a Russian evidence string before the closing
+            # quote, which turns a valid classification into `unknown`.
+            text, _ = call_claude_api(request_prompt, max_tokens=256)
+            payload = decode_json_response(text)
+        except (json.JSONDecodeError, ValueError) as exc:
+            if attempt == 1:
+                continue
+            logger.warning("Ошибка определения типа звонка: %s", exc)
+            break
+        except Exception as exc:
+            logger.warning("Ошибка определения типа звонка: %s", exc)
+            break
+
         key = str(payload.get("call_type_key") or "").strip().lower()
         evidence = str(payload.get("evidence") or "").strip()
         if payload.get("confirmed") is True and key in CALL_TYPES and key != "unknown" and len(evidence) >= 8:
             return key
-    except Exception as e:
-        logger.warning(f"Ошибка определения типа звонка: {e}")
+        break
 
     # Нельзя по одному направлению звонка угадывать тип клиента или цель.
     return "unknown"

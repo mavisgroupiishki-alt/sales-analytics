@@ -255,6 +255,17 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         prompt = api.call_args.args[0]
         self.assertIn('"call_type_key":"ключ из списка или unknown"', prompt)
 
+    def test_call_type_retries_truncated_json_with_sufficient_token_budget(self):
+        truncated = '{"call_type_key":"kp_feedback","confirmed":true,"evidence":"клиент обсуждает'
+        valid = '{"call_type_key":"kp_feedback","confirmed":true,"evidence":"клиент обсуждает коммерческое предложение"}'
+
+        with patch("claude_analyzer.call_claude_api", side_effect=[(truncated, {}), (valid, {})]) as api:
+            result = detect_call_type("Давайте обсудим коммерческое предложение", {"direction": "outgoing", "crm": {}})
+
+        self.assertEqual(result, "kp_feedback")
+        self.assertEqual(api.call_count, 2)
+        self.assertGreaterEqual(api.call_args_list[0].kwargs["max_tokens"], 150)
+
     def test_prompt_calibrates_narrow_calls_without_artificial_penalties(self):
         prompt = build_analysis_prompt(
             "[00:00] Менеджер подтвердил договорённость.",
