@@ -102,6 +102,17 @@ class SalesScopeTests(unittest.TestCase):
         self.assertIn("Третий", html)
         self.assertIn('name="date_from" value="2026-09-20"', html)
 
+    @patch.object(jarvis_app, "request_day_reanalysis", return_value="accepted")
+    def test_selected_day_reanalysis_is_forwarded_to_private_worker(self, request_day_reanalysis):
+        response = self.client.post(
+            "/calls/reanalyze-date",
+            data={"date": "2026-10-07", "return_to": "/calls?period=yesterday"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(request_day_reanalysis.call_args.args, ("2026-10-07",))
+        self.assertIn("reanalyze=accepted", response.headers["Location"])
+
 
 if __name__ == "__main__":
     unittest.main()

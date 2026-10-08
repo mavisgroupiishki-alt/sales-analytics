@@ -407,6 +407,7 @@ _CALL_TYPE_CRITERIA = {
 }
 EXPECTED_RUBRIC_CODE = "jarvis_rop"
 EXPECTED_RUBRIC_VERSION = 1
+APPLICABLE_RUBRIC_METHODS = {"applicable_rubric_v1", "applicable_rubric_v2"}
 
 
 # ============================================================
@@ -437,29 +438,49 @@ def applicable_criteria(call_type_key: str) -> tuple[str, ...]:
 
 
 def compute_applicable_score(call_type_key: str, observations: Any) -> Optional[float]:
-    """Calculate a reproducible score from applicable AI observations only."""
+    """Calculate a reproducible score from criteria that fit this call.
+
+    A call type describes the broad commercial scenario, not a mandatory
+    checklist for every individual conversation. The model must therefore
+    return every available criterion and explicitly mark narrow-call criteria
+    as not applicable. An absent criterion is still an incomplete analysis;
+    a deliberately inapplicable one is not a hidden zero.
+    """
     applicable = applicable_criteria(call_type_key)
     if not applicable or not isinstance(observations, list):
         return None
-    ratings: Dict[str, float] = {}
+    supplied: Dict[str, Dict[str, Any]] = {}
     for item in observations:
         if not isinstance(item, dict):
             continue
         code = str(item.get("code") or "")
-        if code not in applicable or item.get("applicable") is not True:
+        if code in applicable:
+            supplied[code] = item
+    if set(supplied) != set(applicable):
+        return None
+    ratings: Dict[str, float] = {}
+    for code in applicable:
+        item = supplied[code]
+        if item.get("applicable") is False:
             continue
+        if item.get("applicable") is not True:
+            return None
         try:
             score = float(item.get("score"))
         except (TypeError, ValueError):
-            continue
+            return None
         if 0 <= score <= 10:
             ratings[code] = score
-    # Missing evidence is not silently reweighted away.  The ROP sees an
-    # incomplete rubric as a review item instead of an inflated score.
-    if set(ratings) != set(applicable):
+        else:
+            return None
+    # Communication is observable in every real conversation. Require it plus
+    # at least one commercial criterion, so a narrow call cannot be inflated
+    # using tone alone.
+    commercial = set(ratings) - {"opening", "communication"}
+    if "communication" not in ratings or not commercial:
         return None
-    denominator = sum(RUBRIC_CRITERIA[code][1] for code in applicable)
-    weighted = round(sum(ratings[code] * RUBRIC_CRITERIA[code][1] for code in applicable) / denominator, 1)
+    denominator = sum(RUBRIC_CRITERIA[code][1] for code in ratings)
+    weighted = round(sum(ratings[code] * RUBRIC_CRITERIA[code][1] for code in ratings) / denominator, 1)
     return max(1.0, min(10.0, weighted))
 
 
@@ -579,7 +600,7 @@ def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
     # current scores. They wait for a fresh versioned analysis, not ROP review.
     # This comes after documented critical evidence so a real incident is never
     # hidden by a migration marker.
-    if analysis.get("overall_score_method") != "applicable_rubric_v1":
+    if analysis.get("overall_score_method") not in APPLICABLE_RUBRIC_METHODS:
         return "requires_reanalysis", "Нужен новый разбор по текущей методике: старый результат несопоставим", ""
     if flags.get("critical"):
         return "needs_review", "Нужна проверка РОПом: критичный флаг не подтверждён доказательством", ""
@@ -1113,11 +1134,13 @@ def build_analysis_prompt(
 - "Уточнил способ связи", "представился" — это НЕ достижения, это базовый минимум. Не хвали за это.
 - Хвали только за реальные продажные действия: выявил боль клиента, отработал возражение, закрыл на конкретный шаг
 - Критикуй конкретно: не "мог лучше работать с возражениями", а "клиент сказал 'дорого' [01:23] — менеджер не спросил с чем сравнивает и не обосновал цену"
-- Оценка 7+ = менеджер реально продвинул сделку. 5-6 = топтание на месте. Ниже 5 = потенциальный клиент потерян или сделка зависла
+- ШКАЛА: 8–9 — корректно проведённый уместный разговор без существенной ошибки; 7 — рабочий разговор с одной умеренной, доказанной зоной роста; 5–6 — есть одна или несколько существенных доказанных ошибок; 1–4 — явный серьёзный провал или упущенная готовая возможность. Не ставь 5–6 только потому, что звонок не закрыл продажу.
+- Исходная оценка для корректно выполненного узкого звонка — 8, а не 5. Снижай только за доказанные ошибки менеджера, а не за действия, которые в этом разговоре не требовались.
 - НЕ снижай за отсутствие этапов скрипта если цель звонка была узкой (уточнение, перенос)
 - СНИЖАЙ за: нет конкретного следующего шага, не отработано возражение когда клиент был готов, звонок завершился в никуда
 - Если собеседник не ЛПР, только переадресовал к ЛПР или дал другой контакт, это не продажный разговор: поставь `not_sales: true`, объясни «переадресовал к ЛПР» и не учитывай его в оценке менеджера.
 - Один пропущенный следующий шаг или неиспользованная допродажа при вежливом отказе клиента — умеренное снижение, не больше чем на 1–2 балла. Сам по себе вежливый отказ («справимся сами», «я сам позвоню») не превращай в ошибку менеджера и не требуй следующую дату.
+- Не снижай оценку за перенос решения, задержку на стороне клиента или отсутствие новой презентации, если менеджер ранее уже донёс ценность и это подтверждено контекстом. В таком случае оцени только цель текущего разговора.
 - Любое снижение балла объясняй отдельной конкретной ошибкой менеджера с цитатой и таймкодом. Если ошибки нет, не выдумывай её ради низкой оценки.
 
 ИНФОРМАЦИЯ О ЗВОНКЕ:
@@ -1157,7 +1180,7 @@ def build_analysis_prompt(
 
 6. ОЦЕНКА 1-10 и объяснение — почему именно столько с точки зрения продажного результата.
 
-6a. ФАКТЫ ДЛЯ РАСЧЁТА БАЛЛА. Оцени ТОЛЬКО перечисленные критерии. Для каждого дай score 0–10, конкретный факт и цитату/таймкод. Не добавляй неприменимые критерии и не ставь им ноль:
+6a. ФАКТЫ ДЛЯ РАСЧЁТА БАЛЛА. Верни РОВНО по одной записи для КАЖДОГО перечисленного критерия. Если критерий не требовался для цели именно этого звонка, поставь `applicable:false` и не превращай его отсутствие в ноль. Для каждого применимого критерия дай score 0–10, конкретный факт и цитату/таймкод. `communication` всегда применим. Должен быть хотя бы один применимый коммерческий критерий помимо начала и общения:
 {criteria_contract}
 
 6b. ОШИБКИ МЕНЕДЖЕРА И СНИЖЕНИЕ ОЦЕНКИ. Верни только реальные ошибки, которые действительно снизили оценку. Для каждой укажи критерий, коротко что не сделал менеджер, точную цитату и таймкод. Если таких ошибок нет, верни пустой массив.
@@ -1470,7 +1493,7 @@ def analyze_transcript(
             request_prompt += (
                 "\n\nПОВТОРНЫЙ ОТВЕТ: предыдущий ответ был синтаксически неверным JSON "
                 "или содержал неполный набор критериев. Верни заново только валидный JSON. "
-                f"Массив criteria обязан содержать ровно эти применимые коды: {expected_codes}."
+                f"Массив criteria обязан содержать ровно эти коды: {expected_codes}. Для узкого звонка явно укажи applicable=false у неприменимых критериев, а не ставь им ноль."
             )
         try:
             text, meta = call_claude_api(request_prompt, max_tokens=10000)
@@ -1532,7 +1555,7 @@ def analyze_transcript(
             f'- {code}: {RUBRIC_CRITERIA[code][0]}' for code in applicable_criteria(call_type_key)
         )
         rubric_prompt = f"""Оцени только перечисленные критерии звонка по шкале 0–10.
-Для каждого кода верни одну запись с applicable=true, конкретным фактом, цитатой и таймкодом.
+Для каждого кода верни одну запись. Если критерий не требовался в цели этого узкого звонка, укажи applicable=false; это не ноль. Для применимого критерия дай конкретный факт, цитату и таймкод. `communication` всегда применим, а помимо него должен быть хотя бы один применимый коммерческий критерий.
 Не добавляй и не пропускай коды.
 
 КРИТЕРИИ:
@@ -1565,7 +1588,7 @@ def analyze_transcript(
     if rubric_score is None:
         raise RuntimeError("Rubric score could not be calculated")
     result["overall_score"] = rubric_score
-    result["overall_score_method"] = "applicable_rubric_v1" if rubric_score is not None else "not_scored"
+    result["overall_score_method"] = "applicable_rubric_v2" if rubric_score is not None else "not_scored"
 
     flags = result.get("flags", {}) or {}
 

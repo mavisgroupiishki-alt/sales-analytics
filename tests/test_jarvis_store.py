@@ -488,6 +488,34 @@ class JarvisStoreTests(unittest.TestCase):
     def test_missing_applicable_criterion_is_not_silently_reweighted(self):
         self.assertIsNone(compute_applicable_score("payment_push", [{"code": "next_step", "applicable": True, "score": 10}]))
 
+    def test_narrow_call_does_not_turn_irrelevant_sales_stages_into_zeroes(self):
+        score = compute_applicable_score(
+            "payment_push",
+            [
+                {"code": "opening", "applicable": True, "score": 8},
+                {"code": "need", "applicable": False},
+                {"code": "expertise", "applicable": True, "score": 8},
+                {"code": "objection", "applicable": False},
+                {"code": "closing", "applicable": False},
+                {"code": "next_step", "applicable": True, "score": 8},
+                {"code": "communication", "applicable": True, "score": 8},
+            ],
+        )
+
+        self.assertEqual(score, 8.0)
+
+    def test_tone_alone_cannot_create_a_sales_score(self):
+        score = compute_applicable_score(
+            "unknown",
+            [
+                {"code": "expertise", "applicable": False},
+                {"code": "next_step", "applicable": False},
+                {"code": "communication", "applicable": True, "score": 10},
+            ],
+        )
+
+        self.assertIsNone(score)
+
     def test_unconfirmed_call_type_still_has_a_factual_score(self):
         score = compute_applicable_score(
             "unknown",

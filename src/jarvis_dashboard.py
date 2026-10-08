@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape
 from typing import Any, Dict, Iterable, List
 from urllib.parse import urlencode, urlparse
@@ -526,14 +526,23 @@ def render_calls(
     note = description or ("В этой вкладке — только технические, пустые, короткие и непродажные звонки. Они не влияют на оценку менеджеров и не попадают в очередь РОПа." if excluded_tab else "В рабочей очереди остаются только звонки, по которым можно принять управленческое решение. Технические, пустые, короткие и непродажные записи вынесены отдельно.")
     tabs = f'''<nav class="jc-call-tabs" aria-label="Состав журнала"><a href="{_period_url('/calls', period, date_from=date_from, date_to=date_to)}"{' aria-current="page"' if not excluded_tab else ''}>Рабочие звонки</a><a href="{_period_url('/calls', period, date_from=date_from, date_to=date_to, tab='excluded')}"{' aria-current="page"' if excluded_tab else ''}>Исключённые</a></nav>'''
     reanalysis_notice = {
-        "accepted": "Переанализ за сегодня запущен: будут применены текущая методика, контекст и исключения.",
-        "queued": "Переанализ за сегодня поставлен в очередь и начнётся сразу после текущего обновления.",
+        "accepted": "Переанализ выбранной даты запущен: будут применены текущая методика, контекст и исключения.",
+        "queued": "Переанализ выбранной даты поставлен в очередь и начнётся сразу после текущего обновления.",
         "error": "Не удалось запустить переанализ. Попробуйте ещё раз через минуту.",
     }.get(reanalysis_status, "")
     return_to = _period_url('/calls', period, date_from=date_from, date_to=date_to, tab="excluded" if excluded_tab else "")
     reanalysis_control = ""
     if user.get("role") in {"rop", "director", "dashboard"} and title == "Журнал звонков":
-        reanalysis_control = f'''<form class="jc-reanalysis" method="post" action="/calls/reanalyze-today"><input type="hidden" name="return_to" value="{_text(return_to)}"><button type="submit">Переанализировать сегодня</button><small>Пересчитает только звонки сегодняшней даты по обновлённым правилам.</small></form>'''
+        selected_day = ""
+        if date_from and date_from == date_to:
+            selected_day = date_from
+        elif period == "today":
+            selected_day = datetime.now().date().isoformat()
+        elif period == "yesterday":
+            selected_day = (datetime.now().date() - timedelta(days=1)).isoformat()
+        if selected_day:
+            date_label = _format_timestamp(f"{selected_day}T00:00:00")[:10]
+            reanalysis_control = f'''<form class="jc-reanalysis" method="post" action="/calls/reanalyze-date"><input type="hidden" name="return_to" value="{_text(return_to)}"><input type="hidden" name="date" value="{_text(selected_day)}"><button type="submit">Переанализировать { _text(date_label) }</button><small>Пересчитает только звонки этой даты по обновлённой шкале, контексту и исключениям.</small></form>'''
     notice_class = " is-error" if reanalysis_status == "error" else ""
     notice_html = f'<p class="jc-reanalysis-notice{notice_class}">{_text(reanalysis_notice)}</p>' if reanalysis_notice else ""
     content = f'''<section class="jc-heading"><p>{_text(title)}</p><h1>{'Исключённые' if excluded_tab else 'Рабочие'} <span>звонки.</span></h1><small>{_text(note)}</small></section>{reanalysis_control}{notice_html}{tabs}{_period_switch(period, '/calls', date_from=date_from, date_to=date_to)}{filter_panel}<section class="jc-table"><div class="jc-table-head"><span>Статус</span><span>Клиент и менеджер</span><span>Тип звонка</span><span>Стадия сделки</span><span>Балл</span><span></span></div>{rows or '<div class="jd-empty"><b>Звонков по выбранным фильтрам нет.</b></div>'}</section>'''

@@ -255,6 +255,18 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         prompt = api.call_args.args[0]
         self.assertIn('"call_type_key":"ключ из списка или unknown"', prompt)
 
+    def test_prompt_calibrates_narrow_calls_without_artificial_penalties(self):
+        prompt = build_analysis_prompt(
+            "[00:00] Менеджер подтвердил договорённость.",
+            {"direction": "outgoing", "duration_sec": 60, "crm": {}},
+            {},
+            "payment_push",
+        )
+
+        self.assertIn("Исходная оценка для корректно выполненного узкого звонка — 8", prompt)
+        self.assertIn("applicable:false", prompt)
+        self.assertIn("Не ставь 5–6 только потому, что звонок не закрыл продажу", prompt)
+
     def test_analysis_retries_malformed_json_and_requires_complete_rubric(self):
         call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
         valid_analysis = json.dumps(

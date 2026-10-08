@@ -1248,16 +1248,15 @@ def _append_query_status(url: str, key: str, value: str) -> str:
     return f"{url}{separator}{key}={value}"
 
 
-def request_today_reanalysis() -> str:
-    """Ask the private live worker for a single forced pass for today's calls."""
+def _request_live_reanalysis(payload: dict) -> str:
+    """Ask the private worker for one bounded, authenticated reanalysis."""
     secret = str(os.environ.get("JARVIS_SYNC_SECRET") or "").strip()
     if not secret:
         raise RuntimeError("Live reanalysis is not configured")
     port = int(os.environ.get("JARVIS_WORKER_PORT") or "8080")
-    payload = json.dumps({"mode": "reanalyze_today"}).encode("utf-8")
     worker_request = Request(
         f"http://127.0.0.1:{port}/internal/sync",
-        data=payload,
+        data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", "x-jarvis-sync-secret": secret},
         method="POST",
     )
@@ -1274,6 +1273,20 @@ def request_today_reanalysis() -> str:
     if status not in {"accepted", "queued"}:
         raise RuntimeError("Live reanalysis was not accepted")
     return status
+
+
+def request_today_reanalysis() -> str:
+    """Ask the private live worker for a single forced pass for today's calls."""
+    return _request_live_reanalysis({"mode": "reanalyze_today"})
+
+
+def request_day_reanalysis(day: str) -> str:
+    """Ask the private live worker to reanalyse one explicitly selected day."""
+    try:
+        normalized_day = datetime.strptime(str(day or ""), "%Y-%m-%d").date().isoformat()
+    except ValueError as exc:
+        raise RuntimeError("Invalid reanalysis date") from exc
+    return _request_live_reanalysis({"mode": "reanalyze_day", "date": normalized_day})
 
 
 def requested_jarvis_filters(default="today"):
@@ -1641,6 +1654,18 @@ def reanalyze_today_calls():
     return_to = requested_reanalysis_return_to()
     try:
         status = request_today_reanalysis()
+    except RuntimeError:
+        return redirect(_append_query_status(return_to, "reanalyze", "error"))
+    return redirect(_append_query_status(return_to, "reanalyze", status))
+
+
+@app.post("/calls/reanalyze-date")
+@rop_required
+def reanalyze_selected_day_calls():
+    """Queue a bounded reanalysis for the exact date visible in the journal."""
+    return_to = requested_reanalysis_return_to()
+    try:
+        status = request_day_reanalysis(str(request.form.get("date") or ""))
     except RuntimeError:
         return redirect(_append_query_status(return_to, "reanalyze", "error"))
     return redirect(_append_query_status(return_to, "reanalyze", status))
