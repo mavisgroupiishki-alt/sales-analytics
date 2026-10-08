@@ -17,6 +17,7 @@ from claude_analyzer import (  # noqa: E402
     detect_service_administrative_followup,
     detect_service_contact_routing,
     detect_service_document_delivery,
+    transcription_from_store,
     _context_prompt_block,
 )
 from bitrix import (  # noqa: E402
@@ -27,6 +28,22 @@ from bitrix import (  # noqa: E402
 
 
 class ClaudeAnalyzerPromptTests(unittest.TestCase):
+    def test_reanalysis_reuses_stored_transcript_and_restores_timecodes(self):
+        transcription = transcription_from_store(
+            {
+                "text": "Менеджер договорился созвониться завтра",
+                "segments": [
+                    {"start": "0", "end": "4.2", "text": "Менеджер договорился"},
+                    {"start": 4.2, "end": 8.6, "text": "созвониться завтра"},
+                ],
+            },
+            fallback_duration=90,
+        )
+
+        self.assertEqual(transcription["duration_sec"], 8.6)
+        self.assertIn("[00:00] Менеджер договорился", transcription["text_with_timecodes"])
+        self.assertIn("[00:04] созвониться завтра", transcription["text_with_timecodes"])
+
     def test_prompt_exposes_durable_company_memory_without_expanding_history(self):
         prompt = _context_prompt_block(
             {

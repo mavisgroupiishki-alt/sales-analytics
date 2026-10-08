@@ -895,6 +895,51 @@ class JarvisRepository:
             for row in rows
         }
 
+    def load_transcriptions_for_activity_ids(self, activity_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+        """Return the newest completed transcript for a bounded reanalysis set.
+
+        A changed rubric needs a fresh assessment, not a second Whisper pass of
+        the same recording.  The transcript stays in the private database and
+        is only made available to the worker that already processes the call.
+        """
+        identifiers = sorted({str(activity_id).strip() for activity_id in activity_ids if str(activity_id).strip()})
+        if not identifiers:
+            return {}
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select c.source_call_id, transcript.transcript as transcript_text,
+                       transcript.diarization as transcript_segments
+                from jarvis.calls c
+                join lateral (
+                    select t.transcript, t.diarization
+                    from jarvis.call_analyses ca
+                    join jarvis.transcripts t on t.id = ca.transcript_id
+                    where ca.call_id = c.id
+                      and ca.status <> 'failed'
+                      and t.status = 'complete'
+                      and coalesce(t.transcript, '') <> ''
+                    order by ca.analyzed_at desc nulls last, ca.id desc
+                    limit 1
+                ) transcript on true
+                where c.source = 'bitrix24'
+                  and c.source_call_id = any(%s)
+                """,
+                (identifiers,),
+            )
+            rows = cursor.fetchall()
+        self.connection.commit()
+        result: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            activity_id = str(row["source_call_id"] if isinstance(row, dict) else row[0])
+            transcript_text = row["transcript_text"] if isinstance(row, dict) else row[1]
+            transcript_segments = row["transcript_segments"] if isinstance(row, dict) else row[2]
+            result[activity_id] = {
+                "text": str(transcript_text or ""),
+                "segments": self._json_value(transcript_segments, []),
+            }
+        return result
+
     def load_context_for_call(self, call: Dict[str, Any], *, limit: int = 8) -> Dict[str, Any] | None:
         """Read ready company memory without opening or transcribing old audio.
 

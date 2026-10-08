@@ -206,6 +206,47 @@ class JarvisStoreTests(unittest.TestCase):
         self.assertEqual(connection.cursor_instance.params, (["100", "101"],))
         self.assertIn("ca.status <> 'failed'", connection.cursor_instance.statement)
 
+    def test_reanalysis_loads_only_its_existing_transcripts(self):
+        class Cursor:
+            def __init__(self):
+                self.params = ()
+                self.statement = ""
+
+            def execute(self, statement, params):
+                self.statement = statement
+                self.params = params
+
+            def fetchall(self):
+                return [{
+                    "source_call_id": "100",
+                    "transcript_text": "Перезвоню во вторник",
+                    "transcript_segments": '[{"start": 0, "end": 2.5, "text": "Перезвоню"}]',
+                }]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        class Connection:
+            def __init__(self):
+                self.cursor_instance = Cursor()
+
+            def cursor(self):
+                return self.cursor_instance
+
+            def commit(self):
+                pass
+
+        connection = Connection()
+        transcripts = JarvisRepository(connection).load_transcriptions_for_activity_ids(["101", "100", "100"])
+
+        self.assertEqual(connection.cursor_instance.params, (["100", "101"],))
+        self.assertEqual(transcripts["100"]["text"], "Перезвоню во вторник")
+        self.assertEqual(transcripts["100"]["segments"][0]["end"], 2.5)
+        self.assertIn("t.status = 'complete'", connection.cursor_instance.statement)
+
     def test_context_memory_reads_prior_company_facts_without_transcript(self):
         class Cursor:
             def __init__(self):

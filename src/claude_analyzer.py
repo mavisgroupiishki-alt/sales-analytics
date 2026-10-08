@@ -786,6 +786,44 @@ def transcribe_audio(audio_path: Path, model=None) -> Dict[str, Any]:
     }
 
 
+def transcription_from_store(record: Dict[str, Any], fallback_duration: Any = 0) -> Dict[str, Any]:
+    """Restore a previously saved transcription for a rubric-only reanalysis."""
+    text = str(record.get("text") or "").strip()
+    segments = record.get("segments") or []
+    normalized_segments = []
+    duration_sec = 0.0
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        try:
+            start = round(float(segment.get("start", 0)), 1)
+            end = round(float(segment.get("end", start)), 1)
+        except (TypeError, ValueError):
+            continue
+        normalized_segments.append({
+            "start": start,
+            "end": end,
+            "text": str(segment.get("text") or "").strip(),
+        })
+        duration_sec = max(duration_sec, end)
+    if not duration_sec:
+        try:
+            duration_sec = round(float(fallback_duration or 0), 1)
+        except (TypeError, ValueError):
+            duration_sec = 0.0
+    text_with_timecodes = "\n".join(
+        f"[{format_timecode(segment['start'])}] {segment['text']}"
+        for segment in normalized_segments
+        if segment["text"]
+    ) or text
+    return {
+        "text": text,
+        "text_with_timecodes": text_with_timecodes,
+        "segments": normalized_segments,
+        "duration_sec": duration_sec,
+    }
+
+
 
 # ============================================================
 # CLAUDE API — HTTP (без SDK, совместимо с Bitrix Vibe Code)
@@ -1840,16 +1878,12 @@ def main():
     print("=" * 60)
 
     audio_dir = Path("audio_temp")
-    if not audio_dir.exists():
-        print("audio_temp/ не существует")
+    audio_files = sorted(audio_dir.glob("*.mp3")) if audio_dir.exists() else []
+    calls_path = Path("calls_data.json")
+    if not calls_path.exists():
+        print("calls_data.json не найден")
         return
-    audio_files = sorted(audio_dir.glob("*.mp3"))
-    if not audio_files:
-        print("Нет аудиофайлов")
-        return
-    print(f"\nНайдено файлов: {len(audio_files)}")
-
-    calls = json.loads(Path("calls_data.json").read_text(encoding="utf-8"))
+    calls = json.loads(calls_path.read_text(encoding="utf-8"))
     scripts_db = load_scripts()
     corrections = load_manual_corrections()
     print(f"Скриптов в базе: {len([k for k in scripts_db if not k.startswith('_')])}")
@@ -1895,18 +1929,43 @@ def main():
         target_description = requested_date or ", ".join(sorted(requested_ids))
         print(f"♻️  Повторный разбор только для: {target_description}")
 
+    stored_transcriptions: Dict[str, Dict[str, Any]] = {}
+    if targeted_reanalysis and context_repository is not None:
+        try:
+            stored_transcriptions = context_repository.load_transcriptions_for_activity_ids(
+                str(call.get("activity_id") or "")
+                for call in calls
+                if is_reanalysis_target(call, requested_ids, requested_date)
+            )
+        except Exception as exc:
+            logger.warning("Не удалось загрузить сохранённые расшифровки: %s", type(exc).__name__)
+    if stored_transcriptions:
+        print(f"♻️  Сохранённых расшифровок для повторного разбора: {len(stored_transcriptions)}")
+
     # Resolve audio metadata once and process targets chronologically.  This
     # makes an earlier call from the same day available to a later call as
     # context after it has been re-analysed.
     audio_entries = []
-    for audio_path in audio_files:
-        file_id_str = audio_path.name.split("_")[0]
-        call_meta = next(
-            (c for c in calls if c.get("audio") and str(c["audio"].get("file_id")) == file_id_str),
-            None,
-        )
-        if call_meta:
-            audio_entries.append((audio_path, call_meta))
+    audio_by_file_id = {
+        audio_path.name.split("_")[0]: audio_path
+        for audio_path in audio_files
+    }
+    for call_meta in calls:
+        activity_id = str(call_meta.get("activity_id") or "")
+        cached_transcription = stored_transcriptions.get(activity_id)
+        if cached_transcription:
+            audio_entries.append((None, call_meta, cached_transcription))
+            continue
+        audio = call_meta.get("audio") or {}
+        audio_path = audio_by_file_id.get(str(audio.get("file_id") or ""))
+        if audio_path:
+            audio_entries.append((audio_path, call_meta, None))
+    if not audio_entries:
+        print("Нет аудиофайлов или сохранённых расшифровок")
+        if context_repository is not None:
+            context_repository.close()
+        return
+    print(f"\nНайдено аудиофайлов: {len(audio_files)}; записей для анализа: {len(audio_entries)}")
     audio_entries.sort(key=lambda entry: (str(entry[1].get("created") or ""), str(entry[1].get("activity_id") or "")))
 
     # Fetch context just in time for each target.  Querying all deals,
@@ -1921,9 +1980,10 @@ def main():
     completed_activity_ids: set[str] = set()
     durably_persisted_activity_ids: set[str] = set()
 
-    for i, (audio_path, call_meta) in enumerate(audio_entries, 1):
+    for i, (audio_path, call_meta, cached_transcription) in enumerate(audio_entries, 1):
         print(f"\n{'='*60}")
-        print(f"[{i}/{len(audio_files)}] {audio_path.name}")
+        entry_name = audio_path.name if audio_path is not None else f"{call_meta.get('activity_id')} (сохранённый транскрипт)"
+        print(f"[{i}/{len(audio_entries)}] {entry_name}")
         print(f"{'='*60}")
 
         activity_id = call_meta["activity_id"]
@@ -1973,7 +2033,11 @@ def main():
                 logger.warning("Не удалось подготовить контекст звонка %s: %s", activity_id, type(exc).__name__)
 
         try:
-            transcription = transcribe_audio(audio_path)
+            if cached_transcription:
+                transcription = transcription_from_store(cached_transcription, call_duration)
+                print("   ♻️ Используем сохранённую расшифровку")
+            else:
+                transcription = transcribe_audio(audio_path)
             print(f"   Транскрипт: {len(transcription['text'])} символов, {transcription['duration_sec']} сек")
 
             if transcribe_only_mode:
