@@ -41,6 +41,25 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("0 критичных · 1 с баллом ≤3", overview)
         self.assertIn("Низкая оценка", journal)
 
+    def test_manager_average_ignores_records_excluded_from_operational_scoring(self):
+        calls = [
+            {"activity_id": "sales", "manager": {"id": 1, "name": "Анна"}, "duration_sec": 180},
+            {"activity_id": "short", "manager": {"id": 1, "name": "Анна"}, "duration_sec": 20},
+            {"activity_id": "poor-audio", "manager": {"id": 1, "name": "Анна"}, "duration_sec": 180},
+        ]
+        analyses = {
+            "sales": {"analysis": {"overall_score": 8.0, "flags": {}}},
+            "short": {"analysis": {"overall_score": 1.0, "flags": {}}},
+            "poor-audio": {"analysis": {"overall_score": 1.0, "exclude_from_stats": True, "poor_audio": True, "flags": {}}},
+        }
+
+        model = dashboard_model(calls, analyses)
+        manager = model["managers"][0]
+
+        self.assertEqual(manager["average"], 8.0)
+        self.assertEqual(manager["scored"], 1)
+        self.assertEqual(manager["excluded"], 2)
+
     def test_missing_analysis_is_not_claimed_to_be_waiting_for_ai(self):
         calls = [{"activity_id": "1", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}}]
 

@@ -231,12 +231,16 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         manager_id = int(manager.get("id") or 0)
         entry = by_manager.setdefault(
             manager_id,
-            {"manager": manager, "calls": 0, "analyzed": 0, "critical": 0, "attention": 0, "review": 0, "reanalysis": 0, "scores": []},
+            {"manager": manager, "calls": 0, "analyzed": 0, "scored": 0, "excluded": 0, "critical": 0, "attention": 0, "review": 0, "reanalysis": 0, "scores": []},
         )
         entry["calls"] += 1
+        excluded = is_operationally_excluded(call, analysis or None)
         if not analysis:
             if recording_is_unavailable(call):
                 unavailable_audio += 1
+            if excluded:
+                entry["excluded"] += 1
+                continue
             else:
                 pending_analysis += 1
                 review.append({
@@ -249,9 +253,15 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
             continue
         analyzed.append(call)
         entry["analyzed"] += 1
+        if excluded:
+            # A numeric draft may remain on a poor-audio or service record.
+            # It is useful for audit history, but never a manager KPI.
+            entry["excluded"] += 1
+            continue
         score = analysis.get("overall_score")
         if isinstance(score, (int, float)):
             entry["scores"].append(float(score))
+            entry["scored"] += 1
         status, reason, rule_id = triage_for(analysis)
         record = {"call": call, "analysis": analysis, "reason": reason, "rule_id": rule_id}
         if status == "critical":
@@ -362,7 +372,7 @@ def render_dashboard(
         signal = "Критично" if item["critical"] else ("Разобрать" if item["attention"] else ("Проверить" if item["review"] else "В норме"))
         signal_class = "critical" if item["critical"] else ("attention" if item["attention"] else ("review" if item["review"] else "normal"))
         managers += f'''<a class="jd-manager" href="{_period_url(f'/managers/{_text(manager.get("id"))}', period, date_from=date_from, date_to=date_to)}">
-          {_avatar(manager)}<span class="jd-manager-name"><b>{_text(manager.get("name") or "Менеджер")}</b><small>{item["analyzed"]} разборов · {item["calls"]} звонков</small></span>
+          {_avatar(manager)}<span class="jd-manager-name"><b>{_text(manager.get("name") or "Менеджер")}</b><small>{item["scored"]} оценок · {item["calls"]} звонков</small></span>
           <span class="jd-score">{average}</span><span class="jd-status {signal_class}">{signal}</span></a>'''
     if not managers:
         managers = '<div class="jd-empty"><b>Нет менеджеров в выбранной выборке.</b></div>'
@@ -587,8 +597,8 @@ def render_managers(
         score = f"{item['average']:.1f}" if item["average"] is not None else "—"
         signal = "Срочно" if item["critical"] else ("Разобрать" if item["attention"] else ("Проверить" if item["review"] else ("Требует обновления" if item["reanalysis"] else "В норме")))
         manager_href = _period_url(f"/managers/{_text(manager.get('id'))}", period, date_from=date_from, date_to=date_to)
-        rows += f'''<a class="jc-manager-row" href="{manager_href}">{_avatar(manager)}<span><b>{_text(manager.get('name') or 'Менеджер')}</b><small>{item['calls']} звонков · AI-покрытие {round(item['analyzed'] / item['calls'] * 100) if item['calls'] else 0}%</small></span><strong>{score}</strong><span>{item['critical']} срочно · {item['attention']} низких · {item['review']} проверить</span><em>{_text(signal)}</em><i>→</i></a>'''
-    content = f'''<section class="jc-heading"><p>Команда</p><h1>Качество — <span>без ложных рейтингов.</span></h1><small>Средний балл строится только по завершённым разборам и применимым критериям текущей методики.</small></section>{_period_switch(period, '/managers', date_from=date_from, date_to=date_to)}<section class="jc-table jc-managers"><div class="jc-table-head"><span></span><span>Менеджер</span><span>Балл</span><span>Сигналы</span><span>Статус</span><span></span></div>{rows or '<div class="jd-empty"><b>Нет менеджеров в выборке.</b></div>'}</section>'''
+        rows += f'''<a class="jc-manager-row" href="{manager_href}">{_avatar(manager)}<span><b>{_text(manager.get('name') or 'Менеджер')}</b><small>{item['scored']} оценок · {item['calls']} звонков · AI-покрытие {round(item['analyzed'] / item['calls'] * 100) if item['calls'] else 0}%</small></span><strong>{score}</strong><span>{item['critical']} срочно · {item['attention']} низких · {item['review']} проверить</span><em>{_text(signal)}</em><i>→</i></a>'''
+    content = f'''<section class="jc-heading"><p>Команда</p><h1>Качество — <span>без ложных рейтингов.</span></h1><small>Средний балл строится только по оценённым продажным звонкам с применимыми критериями. Технические, короткие и неполные записи не влияют на него.</small></section>{_period_switch(period, '/managers', date_from=date_from, date_to=date_to)}<section class="jc-table jc-managers"><div class="jc-table-head"><span></span><span>Менеджер</span><span>Балл</span><span>Сигналы</span><span>Статус</span><span></span></div>{rows or '<div class="jd-empty"><b>Нет менеджеров в выборке.</b></div>'}</section>'''
     return _console_page("Команда", "managers", content, user, period=period, date_from=date_from, date_to=date_to)
 
 

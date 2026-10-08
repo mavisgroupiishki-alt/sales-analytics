@@ -12,6 +12,7 @@ from jarvis_dashboard import (
     _avatar,
     _format_timestamp,
     _freshness,
+    is_operationally_excluded,
     _stage_name,
     empty_recording_count_label,
     pending_analysis_count_label,
@@ -153,6 +154,8 @@ def rop_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Dict[str
                 "manager": manager,
                 "calls": 0,
                 "analyzed": 0,
+                "scored": 0,
+                "excluded": 0,
                 "critical": 0,
                 "attention": 0,
                 "review": 0,
@@ -178,14 +181,21 @@ def rop_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Dict[str
 
         analysis = _analysis_for(analyses, call)
         if not analysis:
+            if is_operationally_excluded(call, None):
+                entry["excluded"] += 1
+                continue
             if not recording_is_unavailable(call):
                 pending_analysis += 1
             continue
         analyzed += 1
         entry["analyzed"] += 1
+        if is_operationally_excluded(call, analysis):
+            entry["excluded"] += 1
+            continue
         score = _score(analysis.get("overall_score"))
         if score is not None:
             entry["scores"].append(score)
+            entry["scored"] += 1
         status, reason, rule_id = triage_for(analysis)
         item = {"call": call, "analysis": analysis, "reason": reason, "rule_id": rule_id}
         if status == "critical":

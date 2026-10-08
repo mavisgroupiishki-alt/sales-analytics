@@ -108,6 +108,21 @@ class RopModelTests(unittest.TestCase):
         self.assertIn("Внимание РОПа", html)
         self.assertIn("0 критичных · 1 низких", html)
 
+    def test_manager_average_ignores_excluded_calls(self):
+        calls = [
+            {"activity_id": "sales", "manager": {"id": 1, "name": "Анна"}, "duration_sec": 180},
+            {"activity_id": "short", "manager": {"id": 1, "name": "Анна"}, "duration_sec": 20},
+        ]
+        analyses = {
+            "sales": {"analysis": {"overall_score": 8.0, "flags": {}}},
+            "short": {"analysis": {"overall_score": 1.0, "flags": {}}},
+        }
+
+        model = rop_model(calls, analyses)
+
+        self.assertEqual(model["managers"][0]["average"], 8.0)
+        self.assertEqual(model["managers"][0]["scored"], 1)
+
     def test_empty_recording_is_separate_from_pending_analysis(self):
         call = {
             "activity_id": "empty",
