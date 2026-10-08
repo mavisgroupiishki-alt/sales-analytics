@@ -323,6 +323,35 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertTrue(criteria[0]["applicable"])
         self.assertEqual(notes, [])
 
+    def test_noncritical_near_term_agreement_is_not_penalized_as_three_failures(self):
+        criteria, notes = calibrate_client_controlled_followup(
+            "Тогда будем ожидать сегодня. Да, хорошо, добро.",
+            [
+                {"code": "opening", "applicable": True, "score": 8},
+                {"code": "objection", "applicable": True, "score": 2},
+                {"code": "closing", "applicable": True, "score": 1},
+                {"code": "next_step", "applicable": True, "score": 0},
+                {"code": "communication", "applicable": True, "score": 3},
+            ],
+            {"critical": False},
+        )
+
+        by_code = {item["code"]: item for item in criteria}
+        self.assertEqual(by_code["next_step"]["score"], 5.0)
+        self.assertFalse(by_code["closing"]["applicable"])
+        self.assertEqual(by_code["communication"]["score"], 5.0)
+        self.assertEqual(len(notes), 3)
+
+    def test_confirmed_rudeness_keeps_communication_deduction(self):
+        criteria, notes = calibrate_client_controlled_followup(
+            "Тогда будем ожидать сегодня.",
+            [{"code": "communication", "applicable": True, "score": 2}],
+            {"critical": True, "critical_rule_id": "confirmed_rudeness"},
+        )
+
+        self.assertEqual(criteria[0]["score"], 2)
+        self.assertEqual(notes, [])
+
     def test_calibrated_non_applicable_criterion_is_removed_from_manager_errors(self):
         call_type = '{"call_type_key":"kp_feedback","confirmed":true,"evidence":"обсуждают статус предложения"}'
         analysis = json.dumps(

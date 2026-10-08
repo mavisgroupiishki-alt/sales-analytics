@@ -485,7 +485,7 @@ def compute_applicable_score(call_type_key: str, observations: Any) -> Optional[
 
 
 def calibrate_client_controlled_followup(
-    transcript: str, criteria: Any
+    transcript: str, criteria: Any, flags: Any = None
 ) -> tuple[List[Dict[str, Any]], List[str]]:
     """Prevent two repeatable false deductions in follow-up conversations.
 
@@ -517,6 +517,16 @@ def calibrate_client_controlled_followup(
         text,
     ))
 
+    source_flags = flags if isinstance(flags, dict) else {}
+    is_critical = bool(source_flags.get("critical"))
+    confirmed_rudeness = str(source_flags.get("critical_rule_id") or "") == "confirmed_rudeness"
+    agreed_near_term = bool(re.search(
+        r"(?:сегодня|завтра|на\s+(?:этой|следующей)\s+недел|до\s+конца\s+недел).{0,80}"
+        r"(?:договор|ожида|перезвон|созвон|наберите)|"
+        r"(?:договор|ожида|перезвон|созвон|наберите).{0,80}"
+        r"(?:сегодня|завтра|на\s+(?:этой|следующей)\s+недел|до\s+конца\s+недел)",
+        text,
+    ))
     calibrated: List[Dict[str, Any]] = []
     notes: List[str] = []
     for raw_item in criteria:
@@ -540,6 +550,48 @@ def calibrate_client_controlled_followup(
             item["finding"] = "В разговоре обсуждалась внутренняя экономика проекта клиента, а не цена или условия услуги Mavis."
             notes.append("Внутренняя экономика проекта клиента не засчитана как неотработанное возражение по услуге.")
         calibrated.append(item)
+
+    if not is_critical:
+        by_code = {
+            str(item.get("code") or ""): item
+            for item in calibrated
+            if isinstance(item, dict) and item.get("applicable") is True
+        }
+        next_step = by_code.get("next_step")
+        closing = by_code.get("closing")
+        communication = by_code.get("communication")
+        if next_step and agreed_near_term:
+            try:
+                next_score = float(next_step.get("score"))
+            except (TypeError, ValueError):
+                next_score = 10.0
+            if next_score < 5:
+                next_step.update({
+                    "score": 5.0,
+                    "finding": "Есть согласованный ориентир по сроку следующего действия; точный час не зафиксирован, поэтому это умеренная, а не критическая зона роста.",
+                })
+                notes.append("Согласованный срок без точного часа оценён как умеренная зона роста, а не отсутствие следующего шага.")
+        if next_step and closing:
+            try:
+                next_score = float(next_step.get("score"))
+                closing_score = float(closing.get("score"))
+            except (TypeError, ValueError):
+                next_score = closing_score = 10.0
+            if next_score <= 5 and closing_score <= 3:
+                closing["applicable"] = False
+                closing["finding"] = "Не продублировано: отсутствие точного следующего шага уже учтено отдельным критерием."
+                notes.append("Отсутствие точного шага не продублировано отдельным штрафом за закрытие.")
+        if communication and not confirmed_rudeness:
+            try:
+                communication_score = float(communication.get("score"))
+            except (TypeError, ValueError):
+                communication_score = 10.0
+            if communication_score < 5:
+                communication.update({
+                    "score": 5.0,
+                    "finding": "Речь требует улучшения, но подтверждённой грубости или срыва общения нет; применено нейтральное базовое значение.",
+                })
+                notes.append("Неуверенная формулировка без грубости не снижена ниже нейтрального базового уровня общения.")
     return calibrated, notes
 
 
@@ -1678,7 +1730,7 @@ def analyze_transcript(
     except (TypeError, ValueError):
         result["model_overall_score"] = None
     calibrated_criteria, calibration_notes = calibrate_client_controlled_followup(
-        transcript_text, result.get("criteria")
+        transcript_text, result.get("criteria"), result.get("flags")
     )
     if calibrated_criteria:
         result["criteria"] = calibrated_criteria
