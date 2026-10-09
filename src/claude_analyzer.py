@@ -1821,7 +1821,12 @@ def analyze_transcript(
                 f"Массив criteria обязан содержать ровно эти коды: {expected_codes}. Для узкого звонка явно укажи applicable=false у неприменимых критериев, а не ставь им ноль."
             )
         try:
-            text, meta = call_claude_api(request_prompt, max_tokens=4000, timeout_seconds=40)
+            # The response is structured and concise by contract.  A 4k
+            # completion allowance made the provider spend most of the
+            # per-call budget generating an unnecessarily long payload; 2.4k
+            # leaves room for every rubric observation while keeping a live
+            # review below the one-minute target together with type detection.
+            text, meta = call_claude_api(request_prompt, max_tokens=2400, timeout_seconds=40)
             candidate = decode_json_response(text)
         except requests.RequestException as exc:
             logger.warning("ИИ не ответил в допустимое время; звонок сохранён для ручной проверки")
