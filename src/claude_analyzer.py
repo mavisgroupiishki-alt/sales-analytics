@@ -1706,7 +1706,14 @@ def _manual_review_analysis(
         "manager_errors": [],
         "source_duration_seconds": call_meta.get("duration_sec") or transcription.get("duration_sec"),
         "analysis_confidence": 0.0,
-        "_meta": {**meta, "attempts": attempts, "fallback": fallback},
+        "_meta": {
+            **meta,
+            "attempts": attempts,
+            "fallback": fallback,
+            # Downstream batch accounting must remain safe when the model
+            # never returned usage metadata.
+            "approx_cost_usd": float(meta.get("approx_cost_usd") or 0.0),
+        },
     }
 
 
@@ -2445,7 +2452,7 @@ def main():
             )
             analysis = apply_manual_corrections(activity_id, analysis, corrections)
 
-            cost = analysis["_meta"]["approx_cost_usd"]
+            cost = float((analysis.get("_meta") or {}).get("approx_cost_usd") or 0.0)
             total_cost += cost
             score = analysis.get("overall_score", 0)
             call_type_label = analysis.get("call_type", {}).get("label", "неизвестно")

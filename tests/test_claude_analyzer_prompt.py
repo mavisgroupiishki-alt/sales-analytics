@@ -708,6 +708,7 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertTrue(result["exclude_from_stats"])
         self.assertIsNone(result["overall_score"])
         self.assertEqual(result["_meta"]["fallback"], "provider_timeout_manual_review")
+        self.assertEqual(result["_meta"]["approx_cost_usd"], 0.0)
 
 
 if __name__ == "__main__":
