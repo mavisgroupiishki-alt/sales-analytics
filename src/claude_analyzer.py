@@ -984,7 +984,12 @@ def transcription_from_store(record: Dict[str, Any], fallback_duration: Any = 0)
 # CLAUDE API — HTTP (без SDK, совместимо с Bitrix Vibe Code)
 # ============================================================
 
-def call_claude_api(prompt: str, max_tokens: int = 10000) -> Tuple[str, Dict]:
+def call_claude_api(
+    prompt: str,
+    max_tokens: int = 4000,
+    *,
+    timeout_seconds: int = 40,
+) -> Tuple[str, Dict]:
     """
     Запрос к AI Router Vibe Code (OpenAI-совместимый формат).
     Авторизация: заголовок X-Api-Key с ключом Vibe Code (VIBE_API_KEY).
@@ -1003,7 +1008,11 @@ def call_claude_api(prompt: str, max_tokens: int = 10000) -> Tuple[str, Dict]:
         "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
     }
-    response = requests.post(VIBE_AI_URL, headers=headers, json=payload, timeout=120)
+    # A call-quality score is useful only while the conversation is still
+    # actionable.  A stalled provider must not hold the entire sales queue for
+    # minutes; the caller turns that case into an explicit manual-review item.
+    timeout_seconds = max(5, min(int(timeout_seconds), 40))
+    response = requests.post(VIBE_AI_URL, headers=headers, json=payload, timeout=timeout_seconds)
     response.raise_for_status()
     data = response.json()
 
@@ -1276,7 +1285,7 @@ def detect_call_type(transcript: str, call_meta: Dict, deal_context: Optional[Di
         try:
             # 50 tokens can cut a Russian evidence string before the closing
             # quote, which turns a valid classification into `unknown`.
-            text, _ = call_claude_api(request_prompt, max_tokens=256)
+            text, _ = call_claude_api(request_prompt, max_tokens=256, timeout_seconds=10)
             payload = decode_json_response(text)
         except (json.JSONDecodeError, ValueError) as exc:
             if attempt == 1:
@@ -1654,8 +1663,11 @@ def _manual_review_analysis(
     *,
     call_type_key: str,
     meta: Dict[str, Any],
+    reason: str = "ответ ИИ пришёл в некорректном формате",
+    fallback: str = "malformed_json_manual_review",
+    attempts: int = 2,
 ) -> Dict[str, Any]:
-    """Keep a call visible when the provider twice returns malformed JSON.
+    """Keep a call visible when the provider cannot produce a usable result.
 
     A provider-format failure is not evidence of poor manager work.  Saving a
     transparent manual-review result lets the rest of a date batch finish and
@@ -1670,12 +1682,12 @@ def _manual_review_analysis(
             "confirmed": call_type_key != "unknown",
         },
         "call_goal": "",
-        "summary": "Автоматический разбор не сформирован из-за некорректного ответа ИИ.",
+        "summary": "Автоматический разбор не сформирован; запись ожидает повторной проверки.",
         "outcome": "Нужен повторный разбор записи.",
         "overall_score": None,
         "model_overall_score": None,
         "overall_score_method": "analysis_unavailable_v1",
-        "score_explanation": "Оценка не выставлена: ИИ дважды вернул некорректный формат ответа. "
+        "score_explanation": f"Оценка не выставлена: {reason}. "
         "Это не влияет на средние показатели менеджера.",
         "criteria": [],
         "scripts_used": [],
@@ -1685,7 +1697,7 @@ def _manual_review_analysis(
         "not_sales_reason": "",
         "exclude_from_stats": True,
         "review_status": "needs_review",
-        "review_reason": "Нужен повторный разбор: ответ ИИ пришёл в некорректном формате",
+        "review_reason": f"Нужен повторный разбор: {reason}",
         "is_critical": False,
         "critical_reason": "",
         "critical_rule_id": "",
@@ -1694,7 +1706,7 @@ def _manual_review_analysis(
         "manager_errors": [],
         "source_duration_seconds": call_meta.get("duration_sec") or transcription.get("duration_sec"),
         "analysis_confidence": 0.0,
-        "_meta": {**meta, "attempts": 2, "fallback": "malformed_json_manual_review"},
+        "_meta": {**meta, "attempts": attempts, "fallback": fallback},
     }
 
 
@@ -1802,8 +1814,21 @@ def analyze_transcript(
                 f"Массив criteria обязан содержать ровно эти коды: {expected_codes}. Для узкого звонка явно укажи applicable=false у неприменимых критериев, а не ставь им ноль."
             )
         try:
-            text, meta = call_claude_api(request_prompt, max_tokens=10000)
+            text, meta = call_claude_api(request_prompt, max_tokens=4000, timeout_seconds=40)
             candidate = decode_json_response(text)
+        except requests.RequestException as exc:
+            logger.warning("ИИ не ответил в допустимое время; звонок сохранён для ручной проверки")
+            result = _manual_review_analysis(
+                transcription,
+                call_meta,
+                call_type_key=call_type_key,
+                meta=meta,
+                reason="ИИ не ответил за 40 секунд",
+                fallback="provider_timeout_manual_review",
+                attempts=attempt,
+            )
+            result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
+            return result
         except (json.JSONDecodeError, ValueError):
             if attempt == 1:
                 continue

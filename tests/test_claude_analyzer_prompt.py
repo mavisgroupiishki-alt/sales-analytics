@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import requests
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from claude_analyzer import (  # noqa: E402
@@ -640,6 +642,25 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertTrue(result["exclude_from_stats"])
         self.assertIsNone(result["overall_score"])
         self.assertEqual(result["overall_score_method"], "not_applicable_non_sales_v1")
+
+    def test_provider_timeout_keeps_call_visible_without_affecting_score(self):
+        with patch("claude_analyzer.call_claude_api", side_effect=requests.ReadTimeout("provider stalled")) as api:
+            result = analyze_transcript(
+                {
+                    "text": "Обсудили коммерческое предложение и договорились созвониться завтра в 11:00.",
+                    "text_with_timecodes": "[00:03] Обсудили коммерческое предложение",
+                    "duration_sec": 60,
+                },
+                {"direction": "outgoing", "duration_sec": 60, "crm": {}},
+                {},
+                forced_call_type_key="kp_feedback",
+            )
+
+        self.assertEqual(api.call_count, 1)
+        self.assertEqual(result["review_status"], "needs_review")
+        self.assertTrue(result["exclude_from_stats"])
+        self.assertIsNone(result["overall_score"])
+        self.assertEqual(result["_meta"]["fallback"], "provider_timeout_manual_review")
 
 
 if __name__ == "__main__":
