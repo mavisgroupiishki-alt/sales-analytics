@@ -1,5 +1,7 @@
 import json
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -22,6 +24,7 @@ from claude_analyzer import (  # noqa: E402
     detect_service_contact_routing,
     detect_service_document_delivery,
     detect_service_nps_feedback,
+    main as analyzer_main,
     transcription_from_store,
     _context_prompt_block,
 )
@@ -33,6 +36,50 @@ from bitrix import (  # noqa: E402
 
 
 class ClaudeAnalyzerPromptTests(unittest.TestCase):
+    def test_transcript_only_reanalysis_keeps_missing_transcript_neutral_and_visible(self):
+        class Repository:
+            def load_persisted_activity_ids(self, _activity_ids):
+                return set()
+
+            def load_transcriptions_for_activity_ids(self, _activity_ids):
+                return {}
+
+            def close(self):
+                return None
+
+        call = {
+            "activity_id": "missing-transcript",
+            "created": "2026-10-07T10:00:00+03:00",
+            "duration_sec": 120,
+            "manager": {"name": "Ирина"},
+            "client": {"name": "Клиент"},
+            "audio": {"file_id": "audio-1"},
+        }
+        original_cwd = os.getcwd()
+        try:
+            with tempfile.TemporaryDirectory() as directory, \
+                 patch.dict(os.environ, {
+                     "JARVIS_DATABASE_URL": "test",
+                     "REANALYZE_TODAY": "1",
+                     "REANALYZE_DATE": "2026-10-07",
+                     "JARVIS_TRANSCRIPT_ONLY_REANALYSIS": "1",
+                 }, clear=False), \
+                 patch("jarvis_store.JarvisRepository.connect", return_value=Repository()), \
+                 patch("claude_analyzer.load_scripts", return_value={}), \
+                 patch("claude_analyzer.load_manual_corrections", return_value={}), \
+                 patch("claude_analyzer.mirror_analyses_to_jarvis", return_value=1):
+                Path(directory, "calls_data.json").write_text(json.dumps([call]), encoding="utf-8")
+                os.chdir(directory)
+                analyzer_main()
+                analysis = json.loads(Path("analyses.json").read_text(encoding="utf-8"))["missing-transcript"]["analysis"]
+        finally:
+            os.chdir(original_cwd)
+
+        self.assertIsNone(analysis["overall_score"])
+        self.assertTrue(analysis["exclude_from_stats"])
+        self.assertEqual(analysis["review_status"], "needs_review")
+        self.assertEqual(analysis["_meta"]["fallback"], "missing_transcript_manual_review")
+
     def test_reanalysis_reuses_stored_transcript_and_restores_timecodes(self):
         transcription = transcription_from_store(
             {

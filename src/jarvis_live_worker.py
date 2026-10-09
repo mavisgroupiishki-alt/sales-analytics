@@ -222,7 +222,11 @@ class LivePipeline:
             "DATE_FROM": reanalysis_date or datetime.now().date().isoformat(),
             "DATE_TO": reanalysis_date,
             "DAYS_BACK": None,
-            "DOWNLOAD_AUDIO_COUNT": "-1",
+            # A rubric-only reanalysis reuses the transcript already stored in
+            # the private database. Downloading every old recording first can
+            # delay a manager's answer by tens of minutes.
+            "DOWNLOAD_AUDIO_COUNT": "0" if reanalyze_today else "-1",
+            "JARVIS_TRANSCRIPT_ONLY_REANALYSIS": "1" if reanalyze_today else None,
             "NOTIFY_MANAGERS": "0",
             "REANALYZE_TODAY": "1" if reanalyze_today else None,
             "REANALYZE_DATE": reanalysis_date if reanalyze_today else None,

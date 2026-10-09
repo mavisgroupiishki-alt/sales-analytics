@@ -2264,6 +2264,11 @@ def main():
     if stored_transcriptions:
         print(f"♻️  Сохранённых расшифровок для повторного разбора: {len(stored_transcriptions)}")
 
+    transcript_only_reanalysis = (
+        targeted_reanalysis
+        and os.environ.get("JARVIS_TRANSCRIPT_ONLY_REANALYSIS") == "1"
+    )
+
     # Resolve audio metadata once and process targets chronologically.  This
     # makes an earlier call from the same day available to a later call as
     # context after it has been re-analysed.
@@ -2282,7 +2287,20 @@ def main():
         audio_path = audio_by_file_id.get(str(audio.get("file_id") or ""))
         if audio_path:
             audio_entries.append((audio_path, call_meta, None))
-    if not audio_entries:
+
+    # A changed rubric does not justify a second download and Whisper pass for
+    # recordings that were never successfully transcribed.  Keep those calls
+    # visible and neutral instead of leaving an old score in place or blocking
+    # the whole date reanalysis behind slow audio downloads.
+    missing_transcript_targets = []
+    if transcript_only_reanalysis:
+        entry_ids = {str(entry[1].get("activity_id") or "") for entry in audio_entries}
+        missing_transcript_targets = [
+            call_meta for call_meta in calls
+            if is_reanalysis_target(call_meta, requested_ids, requested_date)
+            and str(call_meta.get("activity_id") or "") not in entry_ids
+        ]
+    if not audio_entries and not missing_transcript_targets:
         print("Нет аудиофайлов или сохранённых расшифровок")
         if context_repository is not None:
             context_repository.close()
@@ -2301,6 +2319,31 @@ def main():
     type_stats = {}
     completed_activity_ids: set[str] = set()
     durably_persisted_activity_ids: set[str] = set()
+
+    for call_meta in missing_transcript_targets:
+        activity_id = str(call_meta.get("activity_id") or "")
+        if not activity_id:
+            continue
+        analyses.pop(activity_id, None)
+        persisted_activity_ids.discard(activity_id)
+        manual_correction = corrections.get(activity_id) or {}
+        analysis = _manual_review_analysis(
+            {"duration_sec": call_meta.get("duration_sec")},
+            call_meta,
+            call_type_key=manual_correction.get("call_type_key") or "unknown",
+            meta={},
+            reason="для записи нет сохранённой расшифровки",
+            fallback="missing_transcript_manual_review",
+            attempts=0,
+        )
+        analyses[activity_id] = {
+            "call_meta": call_meta,
+            "transcription": {"text": "", "segments": [], "duration_sec": call_meta.get("duration_sec") or 0},
+            "analysis": analysis,
+            "analyzed_at": datetime.now().isoformat(),
+        }
+        completed_activity_ids.add(activity_id)
+        success += 1
 
     for i, (audio_path, call_meta, cached_transcription) in enumerate(audio_entries, 1):
         print(f"\n{'='*60}")

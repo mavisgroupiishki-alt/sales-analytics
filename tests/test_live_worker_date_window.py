@@ -80,7 +80,7 @@ class LiveWorkerDateWindowTests(unittest.TestCase):
             self.assertTrue((runtime_dir / "analyses.json").exists())
 
     def test_historical_reanalysis_is_bounded_to_one_calendar_day(self):
-        keys = ("DATE_FROM", "DATE_TO", "REANALYZE_DATE")
+        keys = ("DATE_FROM", "DATE_TO", "REANALYZE_DATE", "DOWNLOAD_AUDIO_COUNT", "JARVIS_TRANSCRIPT_ONLY_REANALYSIS")
         previous = {key: os.environ.get(key) for key in keys}
         try:
             with tempfile.TemporaryDirectory() as directory:
@@ -89,6 +89,8 @@ class LiveWorkerDateWindowTests(unittest.TestCase):
                     self.assertEqual(os.environ["DATE_FROM"], "2026-09-08")
                     self.assertEqual(os.environ["DATE_TO"], "2026-09-08")
                     self.assertEqual(os.environ["REANALYZE_DATE"], "2026-09-08")
+                    self.assertEqual(os.environ["DOWNLOAD_AUDIO_COUNT"], "0")
+                    self.assertEqual(os.environ["JARVIS_TRANSCRIPT_ONLY_REANALYSIS"], "1")
         finally:
             for key, value in previous.items():
                 if value is None:
