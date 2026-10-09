@@ -416,6 +416,23 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertEqual(result["_meta"]["attempts"], 2)
         self.assertEqual(result["overall_score"], 6.8)
 
+    def test_analysis_keeps_call_visible_when_both_json_responses_are_malformed(self):
+        call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
+        responses = [(call_type, {}), ('{"broken":', {}), ('{"still_broken":', {})]
+
+        with patch("claude_analyzer.call_claude_api", side_effect=responses) as api:
+            result = analyze_transcript(
+                {"text": "Достаточно длинный транскрипт разговора", "text_with_timecodes": "[00:00] Текст"},
+                {"direction": "incoming", "duration_sec": 60, "crm": {}},
+                {},
+            )
+
+        self.assertEqual(api.call_count, 3)
+        self.assertEqual(result["review_status"], "needs_review")
+        self.assertTrue(result["exclude_from_stats"])
+        self.assertIsNone(result["overall_score"])
+        self.assertEqual(result["_meta"]["fallback"], "malformed_json_manual_review")
+
     def test_analysis_requests_focused_rubric_when_full_response_is_incomplete(self):
         call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
         incomplete = json.dumps({"overall_score": 5, "criteria": [], "flags": {}})

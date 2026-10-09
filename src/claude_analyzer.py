@@ -1606,6 +1606,56 @@ def _service_analysis(
     }
 
 
+def _manual_review_analysis(
+    transcription: Dict,
+    call_meta: Dict,
+    *,
+    call_type_key: str,
+    meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Keep a call visible when the provider twice returns malformed JSON.
+
+    A provider-format failure is not evidence of poor manager work.  Saving a
+    transparent manual-review result lets the rest of a date batch finish and
+    makes this one recording retryable from its card instead of silently
+    disappearing from the journal.
+    """
+    call_type = CALL_TYPES.get(call_type_key, CALL_TYPES["unknown"])
+    return {
+        "call_type": {
+            "key": call_type_key if call_type_key in CALL_TYPES else "unknown",
+            "label": call_type["label"],
+            "confirmed": call_type_key != "unknown",
+        },
+        "call_goal": "",
+        "summary": "Автоматический разбор не сформирован из-за некорректного ответа ИИ.",
+        "outcome": "Нужен повторный разбор записи.",
+        "overall_score": None,
+        "model_overall_score": None,
+        "overall_score_method": "analysis_unavailable_v1",
+        "score_explanation": "Оценка не выставлена: ИИ дважды вернул некорректный формат ответа. "
+        "Это не влияет на средние показатели менеджера.",
+        "criteria": [],
+        "scripts_used": [],
+        "scripts_alignment": [],
+        "flags": {"critical": False, "not_sales": False},
+        "not_sales": False,
+        "not_sales_reason": "",
+        "exclude_from_stats": True,
+        "review_status": "needs_review",
+        "review_reason": "Нужен повторный разбор: ответ ИИ пришёл в некорректном формате",
+        "is_critical": False,
+        "critical_reason": "",
+        "critical_rule_id": "",
+        "poor_audio": False,
+        "poor_audio_reason": "",
+        "manager_errors": [],
+        "source_duration_seconds": call_meta.get("duration_sec") or transcription.get("duration_sec"),
+        "analysis_confidence": 0.0,
+        "_meta": {**meta, "attempts": 2, "fallback": "malformed_json_manual_review"},
+    }
+
+
 def _service_contact_analysis(transcription: Dict, call_meta: Dict) -> Dict[str, Any]:
     return _service_analysis(
         transcription,
@@ -1715,7 +1765,15 @@ def analyze_transcript(
         except (json.JSONDecodeError, ValueError):
             if attempt == 1:
                 continue
-            raise
+            logger.warning("ИИ дважды вернул некорректный JSON; звонок сохранён для ручной проверки")
+            result = _manual_review_analysis(
+                transcription,
+                call_meta,
+                call_type_key=call_type_key,
+                meta=meta,
+            )
+            result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
+            return result
         candidate_is_not_sales = bool((candidate.get("flags") or {}).get("not_sales"))
         if not candidate_is_not_sales and compute_applicable_score(call_type_key, candidate.get("criteria")) is None and attempt == 1:
             continue
