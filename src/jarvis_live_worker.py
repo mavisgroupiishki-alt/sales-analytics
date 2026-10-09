@@ -231,6 +231,10 @@ class LivePipeline:
             "REANALYZE_TODAY": "1" if reanalyze_today else None,
             "REANALYZE_DATE": reanalysis_date if reanalyze_today else None,
             "JARVIS_FORCE_ANALYSIS_VERSION": "1" if reanalyze_today else None,
+            # The full transcription remains in storage; the live analysis
+            # requests only the decision-ready summary and evidence so a
+            # manager does not wait for a duplicated conversation protocol.
+            "JARVIS_COMPACT_ANALYSIS_PROMPT": "1",
         }
         before = {key: os.environ.get(key) for key in changed}
         try:

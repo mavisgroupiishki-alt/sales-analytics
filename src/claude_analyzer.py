@@ -1341,6 +1341,51 @@ def build_analysis_prompt(
         f'- `{code}` — {RUBRIC_CRITERIA[code][0]}' for code in applicable_criteria(call_type_key)
     ) or "Тип звонка не подтверждён: критерии не оценивай."
 
+    if os.environ.get("JARVIS_COMPACT_ANALYSIS_PROMPT") == "1":
+        script_names = ", ".join(name for name, _ in scripts) or "нет применимых"
+        return f"""Ты — тренер B2B-продаж Mavis Group. Оцени конкретный звонок честно и компактно.
+
+ПРАВИЛА:
+- Корректный узкий звонок начинается с 8/10. Снижай балл только за доказанную ошибку менеджера.
+- Вежливый отказ клиента, перенос решения, задержка клиента или отсутствие новой презентации не являются ошибкой сами по себе.
+- Одна неиспользованная допродажа или один незафиксированный следующий шаг снижают максимум на 1–2 балла.
+- Любая ошибка и снижение требуют цитату и таймкод. Если факта нет — не выдумывай ошибку.
+- Если собеседник лишь переадресовал к ЛПР, звонок технический или непродажный, верни `not_sales:true` и не выставляй балл.
+
+ЗВОНОК:
+{call_info}
+{_context_prompt_block(deal_context)}
+Применимые скрипты: {script_names}.
+Критерии:
+{criteria_contract}
+
+ТРАНСКРИПТ:
+---
+{transcript_with_timecodes}
+---
+
+Ответь только валидным компактным JSON. Текстовые поля — до 1–2 коротких предложений; цитаты — короткие. Не пересказывай стенограмму: `transcript_split` оставь пустым.
+{{
+  "call_type": {{"key":"{call_type_key}","label":"{call_type['label']}","confirmed":true}},
+  "transcript_split": [],
+  "call_goal":"...",
+  "summary":"...",
+  "outcome":"...",
+  "key_quotes":[{{"speaker":"client","time":"MM:SS","text":"..."}}],
+  "overall_score":8.0,
+  "score_explanation":"...",
+  "criteria":[{{"code":"one_of_the_listed_codes","applicable":true,"score":8.0,"finding":"факт","time":"MM:SS","quote":"цитата"}}],
+  "manager_errors":[{{"criterion":"one_of_the_listed_codes","text":"доказанная ошибка","time":"MM:SS","quote":"цитата"}}],
+  "strengths":[{{"text":"...","time":"MM:SS"}}],
+  "improvements":[{{"text":"...","quote":"...","time":"MM:SS"}}],
+  "recommendation":"...",
+  "next_contact":{{"date_or_period":null,"time":null,"initiator":null,"context":null}},
+  "flags":{{"critical":false,"critical_reason":null,"critical_rule_id":null,"critical_evidence":{{"time":null,"quote":null}},"missed_deal":false,"no_next_step":false,"poor_audio":false,"poor_audio_reason":null,"not_sales":false,"not_sales_reason":null}},
+  "key_moments":[{{"type":"positive|negative|neutral","time":"MM:SS","text":"...","detail":"..."}}],
+  "scripts_used":{json.dumps([name for name, _ in scripts], ensure_ascii=False)},
+  "scripts_alignment":[{{"stage":"...","status":"full|partial|miss","evidence":"...","time":"MM:SS"}}]
+}}"""
+
     prompt = f"""Ты — Игорь, лучший тренер по продажам в СНГ с 15-летним опытом в B2B.
 Ты лично закрыл сотни сложных сделок и обучил десятки отделов продаж.
 Компания Mavis Group (Беларусь) продаёт: СРО, ISO, ГОСТ, СПК, аттестация специалистов в строительстве.
