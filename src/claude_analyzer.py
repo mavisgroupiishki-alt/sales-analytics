@@ -1387,7 +1387,7 @@ def build_analysis_prompt(
 
 ТВОЙ РАЗБОР:
 
-1. Раздели реплики на менеджера и клиента с таймкодами.
+1. Выдели только 3–6 ключевых фрагментов диалога менеджера и клиента с таймкодами. Не переписывай разговор целиком: исходная расшифровка уже хранится отдельно.
 
 2. Определи реальную цель этого конкретного звонка (1 предложение).
 
@@ -1414,7 +1414,7 @@ def build_analysis_prompt(
 
 10. Следующий контакт — если в разговоре договорились о дате/времени.
 
-11. КЛЮЧЕВЫЕ МОМЕНТЫ звонка (3-5 штук) — самые важные повороты:
+11. КЛЮЧЕВЫЕ МОМЕНТЫ звонка (2-4 штуки) — самые важные повороты:
     - positive: конкретное продажное действие которое реально помогло
     - negative: момент где сделка могла продвинуться но не продвинулась
     - neutral: важный факт о клиенте или ситуации
@@ -1823,10 +1823,10 @@ def analyze_transcript(
         try:
             # The response is structured and concise by contract.  A 4k
             # completion allowance made the provider spend most of the
-            # per-call budget generating an unnecessarily long payload; 2.4k
+            # per-call budget generating an unnecessarily long payload; 1.8k
             # leaves room for every rubric observation while keeping a live
             # review below the one-minute target together with type detection.
-            text, meta = call_claude_api(request_prompt, max_tokens=2400, timeout_seconds=40)
+            text, meta = call_claude_api(request_prompt, max_tokens=1800, timeout_seconds=40)
             candidate = decode_json_response(text)
         except requests.RequestException as exc:
             logger.warning("ИИ не ответил в допустимое время; звонок сохранён для ручной проверки")

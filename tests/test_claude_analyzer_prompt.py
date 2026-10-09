@@ -291,6 +291,12 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertIn("не больше чем на 1–2 балла", prompt)
         self.assertIn("вежливый отказ", prompt)
 
+    def test_analysis_prompt_requests_key_fragments_not_a_duplicate_transcript(self):
+        prompt = build_analysis_prompt("[00:00] тест", {"crm": {}}, [], "unknown")
+
+        self.assertIn("только 3–6 ключевых фрагментов", prompt)
+        self.assertIn("Не переписывай разговор целиком", prompt)
+
     def test_manual_type_is_preserved_over_new_ai_result(self):
         analysis = apply_manual_corrections(
             "42",
