@@ -12,6 +12,7 @@ from claude_analyzer import (  # noqa: E402
     build_analysis_prompt,
     build_deal_context,
     calibrate_client_controlled_followup,
+    calibrate_unsupported_deductions,
     complete_missing_criteria_neutrally,
     decode_json_response,
     detect_call_type,
@@ -414,7 +415,20 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
 
         self.assertEqual(api.call_count, 3)
         self.assertEqual(result["_meta"]["attempts"], 2)
-        self.assertEqual(result["overall_score"], 6.8)
+        self.assertEqual(result["overall_score"], 7.5)
+
+    def test_unsupported_low_criterion_does_not_reduce_score(self):
+        criteria, notes = calibrate_unsupported_deductions(
+            [
+                {"code": "objection", "applicable": True, "score": 3, "finding": "Не отработал"},
+                {"code": "next_step", "applicable": True, "score": 6, "finding": "Нет точного часа", "time": "00:25", "quote": "Созвонимся на следующей неделе"},
+            ],
+            duration_seconds=90,
+        )
+
+        self.assertEqual(criteria[0]["score"], 8.0)
+        self.assertEqual(criteria[1]["score"], 6)
+        self.assertEqual(len(notes), 1)
 
     def test_analysis_keeps_call_visible_when_both_json_responses_are_malformed(self):
         call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'

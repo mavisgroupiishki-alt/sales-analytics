@@ -686,6 +686,48 @@ def valid_timecode(value: str, duration_seconds: Any = None) -> bool:
     return int(match.group(1)) * 60 + int(match.group(2)) <= duration
 
 
+def calibrate_unsupported_deductions(
+    criteria: Any, duration_seconds: Any = None
+) -> tuple[List[Dict[str, Any]], List[str]]:
+    """Do not let an unexplained low criterion pull a manager KPI down.
+
+    Every deduction in the rubric must cite the recording and name a timecode.
+    A generic model conclusion cannot be audited by the ROP, so values below
+    7 without both pieces of evidence return to the standard 8/10 baseline.
+    A documented 7/10 remains a normal moderate deduction.
+    """
+    if not isinstance(criteria, list):
+        return [], []
+
+    calibrated: List[Dict[str, Any]] = []
+    notes: List[str] = []
+    for raw_item in criteria:
+        item = dict(raw_item) if isinstance(raw_item, dict) else raw_item
+        if not isinstance(item, dict) or item.get("applicable") is not True:
+            calibrated.append(item)
+            continue
+        try:
+            score = float(item.get("score"))
+        except (TypeError, ValueError):
+            calibrated.append(item)
+            continue
+        quote = str(item.get("quote") or "").strip()
+        time = str(item.get("time") or "").strip()
+        has_evidence = len(quote) >= 8 and valid_timecode(time, duration_seconds)
+        if score < 7 and not has_evidence:
+            item.update({
+                "score": 8.0,
+                "finding": "Снижение не учтено: в ответе ИИ нет проверяемой цитаты и таймкода из звонка.",
+                "time": "",
+                "quote": "",
+            })
+            notes.append(
+                f"Критерий {item.get('code') or 'без кода'} ниже 7 не учтён без цитаты и таймкода."
+            )
+        calibrated.append(item)
+    return calibrated, notes
+
+
 def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
     """Return `(status, reason, rule_id)` without treating score as an incident.
 
@@ -1850,6 +1892,15 @@ def analyze_transcript(
                 item for item in result["manager_errors"]
                 if not isinstance(item, dict) or str(item.get("criterion") or "") not in inapplicable_codes
             ]
+    evidence_calibrated, evidence_notes = calibrate_unsupported_deductions(
+        result.get("criteria"), call_meta.get("duration_sec")
+    )
+    if evidence_calibrated:
+        result["criteria"] = evidence_calibrated
+    if evidence_notes:
+        result["score_calibration_notes"] = [
+            *(result.get("score_calibration_notes") or []), *evidence_notes
+        ]
     rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
     if rubric_score is None:
         criteria_contract = "\n".join(
