@@ -17,6 +17,7 @@ from claude_analyzer import (  # noqa: E402
     build_deal_context,
     calibrate_client_controlled_followup,
     calibrate_unsupported_deductions,
+    compact_transcript_for_live_analysis,
     complete_missing_criteria_neutrally,
     decode_json_response,
     detect_call_type,
@@ -315,7 +316,21 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         )
 
         self.assertEqual(missing, ["next_step", "communication"])
-        self.assertEqual([item["score"] for item in criteria], [8, 5.0, 5.0])
+        self.assertEqual([item["score"] for item in criteria], [8, 8.0, 8.0])
+
+    def test_live_transcript_compaction_keeps_timecoded_opening_middle_and_closing(self):
+        transcript = "\n".join(
+            f"[{index // 60:02d}:{index % 60:02d}] Реплика номер {index}: " + "важный текст " * 16
+            for index in range(180)
+        )
+
+        compact = compact_transcript_for_live_analysis(transcript, char_limit=4_000)
+
+        self.assertLessEqual(len(compact), 4_000)
+        self.assertIn("[00:00]", compact)
+        self.assertRegex(compact, r"\[01:[0-5][0-9]\]")
+        self.assertIn("[02:59]", compact)
+        self.assertIn("Полная стенограмма сохранена", compact)
 
     def test_json_decoder_accepts_a_fenced_object(self):
         self.assertEqual(decode_json_response('```json\n{"ok": true}\n```'), {"ok": True})

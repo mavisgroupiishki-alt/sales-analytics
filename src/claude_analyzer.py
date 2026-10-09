@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_CLAUDE = os.environ.get("VIBE_CHAT_MODEL", "bitrix/bitrixgpt-5.5")
 MIN_DURATION_FOR_ANALYSIS = 30  # звонки короче этого порога только транскрибируются, без ИИ-анализа
+LIVE_ANALYSIS_TRANSCRIPT_CHAR_LIMIT = 9_000
 MODEL_WHISPER = "base"
 VIBE_AI_URL = "https://vibecode.bitrix24.tech/v1/ai/chat/completions"
 
@@ -641,9 +642,9 @@ def manager_errors_from_analysis(analysis: Dict[str, Any]) -> List[Dict[str, Any
 def complete_missing_criteria_neutrally(call_type_key: str, observations: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Fill unsupported rubric observations with a visible neutral value.
 
-    The neutral value prevents missing model output from becoming an invented
-    low score.  Missing codes remain explicit for the ROP and lower the
-    analysis confidence.
+    The neutral baseline prevents missing model output from becoming an
+    invented low score. Missing codes remain explicit for the ROP and lower
+    the analysis confidence.
     """
     applicable = applicable_criteria(call_type_key)
     source = observations if isinstance(observations, list) else []
@@ -665,7 +666,7 @@ def complete_missing_criteria_neutrally(call_type_key: str, observations: Any) -
             item = {
                 "code": code,
                 "applicable": True,
-                "score": 5.0,
+                "score": 8.0,
                 "finding": "Недостаточно надёжных данных для оценки критерия",
                 "time": "",
                 "quote": "",
@@ -977,6 +978,59 @@ def transcription_from_store(record: Dict[str, Any], fallback_duration: Any = 0)
         "segments": normalized_segments,
         "duration_sec": duration_sec,
     }
+
+
+def compact_transcript_for_live_analysis(
+    transcript_with_timecodes: str,
+    *,
+    char_limit: int = LIVE_ANALYSIS_TRANSCRIPT_CHAR_LIMIT,
+) -> str:
+    """Bound a live model request without hiding where every excerpt came from.
+
+    The complete transcript is retained in storage and the call card. For a
+    lengthy recording, retain the opening, the closing and evenly spaced
+    timecoded fragments from the middle. The model must not infer an error
+    merely because a phrase is absent from the excerpt.
+    """
+    transcript = str(transcript_with_timecodes or "").strip()
+    if len(transcript) <= char_limit:
+        return transcript
+
+    lines = [line.strip() for line in transcript.splitlines() if line.strip()]
+    if len(lines) < 3:
+        return transcript[:char_limit]
+
+    # One Whisper segment is normally a short sentence. Capping each retained
+    # line also handles malformed source data with one giant segment.
+    line_limit = min(360, max(40, (char_limit - 250) // 72))
+    capped_lines = [line[:line_limit] for line in lines]
+    head_count, tail_count = 12, 16
+    selected = set(range(min(head_count, len(capped_lines))))
+    selected.update(range(max(0, len(capped_lines) - tail_count), len(capped_lines)))
+
+    # Preserve representative evidence from throughout the call rather than
+    # sending only its start and accidentally judging a late agreement.
+    middle_start = min(head_count, len(capped_lines))
+    middle_end = max(middle_start, len(capped_lines) - tail_count)
+    middle_slots = 36
+    if middle_end > middle_start:
+        span = middle_end - middle_start
+        for slot in range(middle_slots):
+            selected.add(middle_start + (slot * max(span - 1, 0)) // max(middle_slots - 1, 1))
+
+    kept = [capped_lines[index] for index in sorted(selected)]
+    prefix = (
+        "[Для быстрой оценки показаны фрагменты всей записи с таймкодами. "
+        "Полная стенограмма сохранена в карточке; не считай отсутствие фразы в фрагментах ошибкой.]"
+    )
+    result_lines = [prefix]
+    used = len(prefix) + 1
+    for line in kept:
+        if used + len(line) + 1 > char_limit:
+            break
+        result_lines.append(line)
+        used += len(line) + 1
+    return "\n".join(result_lines)
 
 
 
@@ -1364,26 +1418,17 @@ def build_analysis_prompt(
 {transcript_with_timecodes}
 ---
 
-Ответь только валидным компактным JSON. Текстовые поля — до 1–2 коротких предложений; цитаты — короткие. Не пересказывай стенограмму: `transcript_split` оставь пустым.
+Ответь только валидным компактным JSON. Текстовые поля — до 1–2 коротких предложений; цитаты — короткие. Не пересказывай стенограмму. Верни только поля ниже.
 {{
   "call_type": {{"key":"{call_type_key}","label":"{call_type['label']}","confirmed":true}},
-  "transcript_split": [],
-  "call_goal":"...",
   "summary":"...",
   "outcome":"...",
-  "key_quotes":[{{"speaker":"client","time":"MM:SS","text":"..."}}],
   "overall_score":8.0,
   "score_explanation":"...",
   "criteria":[{{"code":"one_of_the_listed_codes","applicable":true,"score":8.0,"finding":"факт","time":"MM:SS","quote":"цитата"}}],
   "manager_errors":[{{"criterion":"one_of_the_listed_codes","text":"доказанная ошибка","time":"MM:SS","quote":"цитата"}}],
-  "strengths":[{{"text":"...","time":"MM:SS"}}],
-  "improvements":[{{"text":"...","quote":"...","time":"MM:SS"}}],
   "recommendation":"...",
-  "next_contact":{{"date_or_period":null,"time":null,"initiator":null,"context":null}},
-  "flags":{{"critical":false,"critical_reason":null,"critical_rule_id":null,"critical_evidence":{{"time":null,"quote":null}},"missed_deal":false,"no_next_step":false,"poor_audio":false,"poor_audio_reason":null,"not_sales":false,"not_sales_reason":null}},
-  "key_moments":[{{"type":"positive|negative|neutral","time":"MM:SS","text":"...","detail":"..."}}],
-  "scripts_used":{json.dumps([name for name, _ in scripts], ensure_ascii=False)},
-  "scripts_alignment":[{{"stage":"...","status":"full|partial|miss","evidence":"...","time":"MM:SS"}}]
+  "flags":{{"critical":false,"critical_reason":null,"critical_rule_id":null,"critical_evidence":{{"time":null,"quote":null}},"not_sales":false,"not_sales_reason":null}}
 }}"""
 
     prompt = f"""Ты — Игорь, лучший тренер по продажам в СНГ с 15-летним опытом в B2B.
@@ -1853,7 +1898,13 @@ def analyze_transcript(
     logger.info(f"   Тип: {CALL_TYPES[call_type_key]['label']}")
 
     # Шаг 2: полный анализ с учётом типа
-    prompt = build_analysis_prompt(transcript_tc, call_meta, relevant_scripts, call_type_key, deal_context)
+    compact_live_request = os.environ.get("JARVIS_COMPACT_ANALYSIS_PROMPT") == "1"
+    transcript_for_prompt = (
+        compact_transcript_for_live_analysis(transcript_tc)
+        if compact_live_request
+        else transcript_tc
+    )
+    prompt = build_analysis_prompt(transcript_for_prompt, call_meta, relevant_scripts, call_type_key, deal_context)
     result = None
     meta: Dict[str, Any] = {}
     expected_codes = ", ".join(applicable_criteria(call_type_key))
@@ -1871,7 +1922,11 @@ def analyze_transcript(
             # per-call budget generating an unnecessarily long payload; 1.8k
             # leaves room for every rubric observation while keeping a live
             # review below the one-minute target together with type detection.
-            text, meta = call_claude_api(request_prompt, max_tokens=1800, timeout_seconds=40)
+            text, meta = call_claude_api(
+                request_prompt,
+                max_tokens=1200 if compact_live_request else 1800,
+                timeout_seconds=40,
+            )
             candidate = decode_json_response(text)
         except requests.RequestException as exc:
             logger.warning("ИИ не ответил в допустимое время; звонок сохранён для ручной проверки")
@@ -1887,7 +1942,7 @@ def analyze_transcript(
             result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
             return result
         except (json.JSONDecodeError, ValueError):
-            if attempt == 1:
+            if attempt == 1 and not compact_live_request:
                 continue
             logger.warning("ИИ дважды вернул некорректный JSON; звонок сохранён для ручной проверки")
             result = _manual_review_analysis(
@@ -1899,7 +1954,12 @@ def analyze_transcript(
             result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
             return result
         candidate_is_not_sales = bool((candidate.get("flags") or {}).get("not_sales"))
-        if not candidate_is_not_sales and compute_applicable_score(call_type_key, candidate.get("criteria")) is None and attempt == 1:
+        if (
+            not compact_live_request
+            and not candidate_is_not_sales
+            and compute_applicable_score(call_type_key, candidate.get("criteria")) is None
+            and attempt == 1
+        ):
             continue
         result = candidate
         meta["attempts"] = attempt
@@ -1984,7 +2044,7 @@ def analyze_transcript(
             *(result.get("score_calibration_notes") or []), *evidence_notes
         ]
     rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
-    if rubric_score is None:
+    if rubric_score is None and not compact_live_request:
         criteria_contract = "\n".join(
             f'- {code}: {RUBRIC_CRITERIA[code][0]}' for code in applicable_criteria(call_type_key)
         )
@@ -2016,7 +2076,7 @@ def analyze_transcript(
         result["analysis_confidence"] = 0.35
         explanation = str(result.get("score_explanation") or "").strip()
         result["score_explanation"] = (
-            explanation + " Недостающие AI-наблюдения учтены нейтрально как 5/10."
+            explanation + " Недостающие AI-наблюдения учтены нейтрально как 8/10."
         ).strip()
         rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
     if rubric_score is None:
