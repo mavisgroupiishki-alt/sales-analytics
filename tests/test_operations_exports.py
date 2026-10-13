@@ -24,17 +24,40 @@ class OperationsExportsTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/integrations/operations/crm-audit").status_code, 401)
         self.assertEqual(self.client.get("/api/integrations/operations/reactivation-recommendations").status_code, 401)
 
-    @patch.object(jarvis_app, "_operations_reactivation_payload")
-    def test_reactivation_export_keeps_explainable_queue_behind_token(self, payload):
-        payload.return_value = {"ok": True, "summary": {"recommended": 1}, "recommendations": [{"dealId": "42"}]}
-
-        response = self.client.get(
-            "/api/integrations/operations/reactivation-recommendations",
-            headers={"Authorization": "Bearer shared-secret"},
-        )
+    def test_reactivation_export_keeps_cached_explainable_queue_behind_token(self):
+        previous = dict(jarvis_app._REACTIVATION_QUEUE_CACHE)
+        try:
+            jarvis_app._REACTIVATION_QUEUE_CACHE.update({
+                "at": time.monotonic(),
+                "value": {"ok": True, "summary": {"recommended": 1}, "recommendations": [{"dealId": "42"}]},
+            })
+            response = self.client.get(
+                "/api/integrations/operations/reactivation-recommendations",
+                headers={"Authorization": "Bearer shared-secret"},
+            )
+        finally:
+            jarvis_app._REACTIVATION_QUEUE_CACHE.clear()
+            jarvis_app._REACTIVATION_QUEUE_CACHE.update(previous)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["recommendations"][0]["dealId"], "42")
+
+    @patch.object(jarvis_app, "_schedule_reactivation_queue_refresh")
+    def test_reactivation_export_starts_background_refresh_without_blocking(self, schedule):
+        previous = dict(jarvis_app._REACTIVATION_QUEUE_CACHE)
+        try:
+            jarvis_app._REACTIVATION_QUEUE_CACHE.update({"at": 0.0, "value": None})
+            response = self.client.get(
+                "/api/integrations/operations/reactivation-recommendations",
+                headers={"Authorization": "Bearer shared-secret"},
+            )
+        finally:
+            jarvis_app._REACTIVATION_QUEUE_CACHE.clear()
+            jarvis_app._REACTIVATION_QUEUE_CACHE.update(previous)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"ok": True, "status": "refreshing"})
+        schedule.assert_called_once_with()
 
     @patch.object(jarvis_app, "_reactivate_recommendation")
     def test_reactivation_action_requires_token_and_passes_explicit_actor(self, action):

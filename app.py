@@ -10,6 +10,7 @@ import hmac
 import sys
 import math
 import time
+import threading
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
@@ -26,6 +27,8 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
 _SALES_SNAPSHOT_CACHE = {"at": None, "value": None}
 _REACTIVATION_QUEUE_CACHE = {"at": 0.0, "value": None}
 REACTIVATION_QUEUE_REFRESH_SECONDS = 60 * 60
+_REACTIVATION_QUEUE_BUILD_LOCK = threading.Lock()
+_REACTIVATION_QUEUE_BUILDING = False
 
 
 def load_operational_sales_snapshot():
@@ -1384,6 +1387,28 @@ def _operations_reactivation_payload(*, force: bool = False):
     return payload
 
 
+def _schedule_reactivation_queue_refresh() -> bool:
+    """Refresh the expensive CRM queue without holding an HTTP request open."""
+    global _REACTIVATION_QUEUE_BUILDING
+    with _REACTIVATION_QUEUE_BUILD_LOCK:
+        if _REACTIVATION_QUEUE_BUILDING:
+            return False
+        _REACTIVATION_QUEUE_BUILDING = True
+
+    def refresh() -> None:
+        global _REACTIVATION_QUEUE_BUILDING
+        try:
+            _operations_reactivation_payload(force=True)
+        except Exception:
+            app.logger.exception("Reactivation queue background refresh failed")
+        finally:
+            with _REACTIVATION_QUEUE_BUILD_LOCK:
+                _REACTIVATION_QUEUE_BUILDING = False
+
+    threading.Thread(target=refresh, daemon=True, name="reactivation-queue-refresh").start()
+    return True
+
+
 def _record_reactivation_action(payload, *, status: str, error: str = ""):
     database_url = os.environ.get("JARVIS_DATABASE_URL", "").strip()
     if not database_url:
@@ -2020,7 +2045,14 @@ def operations_marketing():
 def operations_reactivation_recommendations():
     try:
         _require_operations_dashboard_token()
-        return jsonify(_operations_reactivation_payload())
+        cached = _REACTIVATION_QUEUE_CACHE.get("value")
+        stale = time.monotonic() - float(_REACTIVATION_QUEUE_CACHE.get("at") or 0) >= REACTIVATION_QUEUE_REFRESH_SECONDS
+        if cached:
+            if stale:
+                _schedule_reactivation_queue_refresh()
+            return jsonify(cached)
+        _schedule_reactivation_queue_refresh()
+        return jsonify({"ok": True, "status": "refreshing"})
     except PermissionError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 401
     except RuntimeError as exc:
