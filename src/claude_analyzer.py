@@ -401,9 +401,8 @@ _CALL_TYPE_CRITERIA = {
     "payment_push": ("opening", "need", "expertise", "objection", "closing", "next_step", "communication"),
     "successful_payment": ("opening", "expertise", "next_step", "communication"),
     "upsell": _FULL_SALES_RUBRIC,
-    # Even when the exact commercial scenario cannot be proven, every real
-    # conversation can be scored on these three universal facts. This keeps a
-    # 1–10 operational score without inventing a client type or sales stage.
+    # The scenario itself still needs ROP confirmation, but these three facts
+    # can be assessed when they are actually evidenced in the recording.
     "unknown": ("expertise", "next_step", "communication"),
 }
 EXPECTED_RUBRIC_CODE = "jarvis_rop"
@@ -597,24 +596,13 @@ def calibrate_client_controlled_followup(
 
 
 def manager_errors_from_analysis(analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Return concrete, evidenced deductions for the call detail card."""
-    supplied = analysis.get("manager_errors")
-    if isinstance(supplied, list):
-        errors = []
-        for item in supplied:
-            if not isinstance(item, dict):
-                continue
-            text = str(item.get("text") or "").strip()
-            if text:
-                errors.append({
-                    "criterion": str(item.get("criterion") or ""),
-                    "text": text,
-                    "time": str(item.get("time") or ""),
-                    "quote": str(item.get("quote") or ""),
-                })
-        if errors:
-            return errors[:3]
+    """Return every evidenced deduction from the canonical rubric.
 
+    The free-form ``manager_errors`` field is helpful prose, but it must never
+    be the source of truth: otherwise a model can lower a criterion and omit
+    the matching error from the manager's card.  A visible deduction is always
+    derived from the same rubric observation that affected the total score.
+    """
     errors = []
     for item in analysis.get("criteria") or []:
         if not isinstance(item, dict) or item.get("applicable") is not True:
@@ -626,25 +614,27 @@ def manager_errors_from_analysis(analysis: Dict[str, Any]) -> List[Dict[str, Any
         if score >= 10:
             continue
         finding = str(item.get("finding") or "").strip()
-        if not finding or finding.startswith("Недостаточно надёжных данных"):
+        quote = str(item.get("quote") or "").strip()
+        time = str(item.get("time") or "").strip()
+        if not finding or len(quote) < 8 or not valid_timecode(time):
             continue
         code = str(item.get("code") or "")
         errors.append({
             "criterion": code,
             "title": RUBRIC_CRITERIA.get(code, (code or "Критерий", 0))[0],
             "text": finding,
-            "time": str(item.get("time") or ""),
-            "quote": str(item.get("quote") or ""),
+            "time": time,
+            "quote": quote,
         })
-    return errors[:3]
+    return errors
 
 
 def complete_missing_criteria_neutrally(call_type_key: str, observations: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """Fill unsupported rubric observations with a visible neutral value.
+    """Keep an omitted rubric item out of the score without inventing a gap.
 
-    The neutral baseline prevents missing model output from becoming an
-    invented low score. Missing codes remain explicit for the ROP and lower
-    the analysis confidence.
+    A particular criterion may be irrelevant to the narrowly defined purpose
+    of one call.  An omitted model observation is therefore never rendered as
+    "insufficient data" for a manager and never becomes an invented 8/10.
     """
     applicable = applicable_criteria(call_type_key)
     source = observations if isinstance(observations, list) else []
@@ -665,14 +655,30 @@ def complete_missing_criteria_neutrally(call_type_key: str, observations: Any) -
             missing.append(code)
             item = {
                 "code": code,
-                "applicable": True,
-                "score": 8.0,
-                "finding": "Недостаточно надёжных данных для оценки критерия",
+                "applicable": False,
+                "score": None,
+                "finding": "Критерий не относится к цели данного звонка.",
                 "time": "",
                 "quote": "",
             }
         completed.append(item)
     return completed, missing
+
+
+def omitted_rubric_codes(call_type_key: str, observations: Any) -> List[str]:
+    """Return expected criteria that the model omitted entirely.
+
+    An explicit ``applicable:false`` is a valid decision for a focused call.
+    Silently absent criteria are not: they trigger one focused rubric retry
+    before an analysis is stored.
+    """
+    source = observations if isinstance(observations, list) else []
+    observed = {
+        str(item.get("code") or "")
+        for item in source
+        if isinstance(item, dict)
+    }
+    return [code for code in applicable_criteria(call_type_key) if code not in observed]
 
 
 def valid_timecode(value: str, duration_seconds: Any = None) -> bool:
@@ -693,9 +699,9 @@ def calibrate_unsupported_deductions(
     """Do not let an unexplained low criterion pull a manager KPI down.
 
     Every deduction in the rubric must cite the recording and name a timecode.
-    A generic model conclusion cannot be audited by the ROP, so values below
-    7 without both pieces of evidence return to the standard 8/10 baseline.
-    A documented 7/10 remains a normal moderate deduction.
+    A generic model conclusion cannot be audited by the ROP, so no value below
+    10 is allowed without both pieces of evidence.  A documented 8/10 remains
+    a normal moderate deduction and appears in the manager-error block.
     """
     if not isinstance(criteria, list):
         return [], []
@@ -715,18 +721,39 @@ def calibrate_unsupported_deductions(
         quote = str(item.get("quote") or "").strip()
         time = str(item.get("time") or "").strip()
         has_evidence = len(quote) >= 8 and valid_timecode(time, duration_seconds)
-        if score < 7 and not has_evidence:
+        if score < 10 and not has_evidence:
             item.update({
-                "score": 8.0,
-                "finding": "Снижение не учтено: в ответе ИИ нет проверяемой цитаты и таймкода из звонка.",
+                "score": 10.0,
+                "finding": "Снижение не учтено: нет проверяемой цитаты и таймкода из звонка.",
                 "time": "",
                 "quote": "",
             })
             notes.append(
-                f"Критерий {item.get('code') or 'без кода'} ниже 7 не учтён без цитаты и таймкода."
+                f"Снижение по критерию {item.get('code') or 'без кода'} не учтено без цитаты и таймкода."
             )
         calibrated.append(item)
     return calibrated, notes
+
+
+def recommendation_from_analysis(analysis: Dict[str, Any]) -> str:
+    """Guarantee one actionable manager recommendation for every call card."""
+    existing = str(analysis.get("recommended_action") or analysis.get("recommendation") or "").strip()
+    if existing:
+        return existing
+    errors = manager_errors_from_analysis(analysis)
+    if not errors:
+        return "Ошибок, подтверждённых записью, не найдено. Закрепите удачный сценарий и сохраните договорённости в CRM."
+    first = errors[0]
+    templates = {
+        "next_step": "В следующем разговоре до завершения согласуйте дату, время и инициатора следующего контакта.",
+        "objection": "Сначала уточните причину возражения, затем свяжите ответ с задачей и выгодой клиента.",
+        "presentation": "Свяжите предложение с конкретной задачей клиента и проверьте, что ценность понятна.",
+        "need": "Задайте уточняющий вопрос о сроках, планах или ограничениях клиента, прежде чем предлагать решение.",
+        "closing": "После обсуждения предложите один конкретный следующий шаг и проверьте согласие клиента.",
+        "expertise": "Уточните недостающий факт и дайте проверяемый, точный ответ по ситуации клиента.",
+        "communication": "Сформулируйте мысль короче и проверьте, что клиент правильно понял договорённость.",
+    }
+    return templates.get(str(first.get("criterion") or ""), "Исправьте зафиксированный момент и подтвердите следующий шаг с клиентом.")
 
 
 def evaluate_triage(analysis: Dict[str, Any]) -> Tuple[str, str, str]:
@@ -1231,24 +1258,19 @@ def build_deal_context(
     source_calls.extend(("contact", candidate, "") for candidate in contact_calls)
     source_calls.extend(("company", candidate, "") for candidate in company_calls)
 
-    if not same_deal:
-        prior_deals: Dict[str, List[Dict[str, Any]]] = {}
-        for candidate in candidates:
-            candidate_crm = candidate.get("crm") or {}
-            candidate_deal_id = str(candidate_crm.get("owner_id") or "")
-            candidate_category_id = str(candidate_crm.get("category_id") or "").strip()
-            if str(candidate_crm.get("owner_type") or "") != "deal" or not candidate_deal_id or candidate_deal_id == owner_id:
-                continue
-            if target_category_id and candidate_category_id and candidate_category_id != target_category_id:
-                continue
-            if same_client(candidate_crm):
-                prior_deals.setdefault(candidate_deal_id, []).append(candidate)
-        if prior_deals:
-            previous_deal_id, previous_deal_calls = max(
-                prior_deals.items(),
-                key=lambda item: max((str(call.get("created") or ""), str(call.get("activity_id") or "")) for call in item[1]),
-            )
-            source_calls.extend(("previous_sales_deal", candidate, previous_deal_id) for candidate in previous_deal_calls)
+    # A company can have several concurrent or completed sales deals.  Direct
+    # history remains the strongest relation, but it must not hide proven calls
+    # from other deals of the same sales funnel, contact or company.
+    for candidate in candidates:
+        candidate_crm = candidate.get("crm") or {}
+        candidate_deal_id = str(candidate_crm.get("owner_id") or "")
+        candidate_category_id = str(candidate_crm.get("category_id") or "").strip()
+        if str(candidate_crm.get("owner_type") or "") != "deal" or not candidate_deal_id or candidate_deal_id == owner_id:
+            continue
+        if target_category_id and candidate_category_id and candidate_category_id != target_category_id:
+            continue
+        if same_client(candidate_crm):
+            source_calls.append(("previous_sales_deal", candidate, candidate_deal_id))
 
     source_order = {"current_deal": 0, "contact": 1, "company": 2, "previous_sales_deal": 3}
     previous = []
@@ -1400,7 +1422,8 @@ def build_analysis_prompt(
         return f"""Ты — тренер B2B-продаж Mavis Group. Оцени конкретный звонок честно и компактно.
 
 ПРАВИЛА:
-- Корректный узкий звонок начинается с 8/10. Снижай балл только за доказанную ошибку менеджера.
+- Не снижай критерий без конкретной ошибки менеджера, цитаты и точного таймкода: неподтверждённый критерий отмечай `applicable:false`, без балла.
+- Корректно выполненное действие без доказанной ошибки оценивай в 10/10; снижение 1–2 балла допустимо только при доказанной умеренной зоне роста.
 - Вежливый отказ клиента, перенос решения, задержка клиента или отсутствие новой презентации не являются ошибкой сами по себе.
 - Одна неиспользованная допродажа или один незафиксированный следующий шаг снижают максимум на 1–2 балла.
 - Любая ошибка и снижение требуют цитату и таймкод. Если факта нет — не выдумывай ошибку.
@@ -1443,8 +1466,8 @@ def build_analysis_prompt(
 - "Уточнил способ связи", "представился" — это НЕ достижения, это базовый минимум. Не хвали за это.
 - Хвали только за реальные продажные действия: выявил боль клиента, отработал возражение, закрыл на конкретный шаг
 - Критикуй конкретно: не "мог лучше работать с возражениями", а "клиент сказал 'дорого' [01:23] — менеджер не спросил с чем сравнивает и не обосновал цену"
-- ШКАЛА: 8–9 — корректно проведённый уместный разговор без существенной ошибки; 7 — рабочий разговор с одной умеренной, доказанной зоной роста; 5–6 — есть одна или несколько существенных доказанных ошибок; 1–4 — явный серьёзный провал или упущенная готовая возможность. Не ставь 5–6 только потому, что звонок не закрыл продажу.
-- Исходная оценка для корректно выполненного узкого звонка — 8, а не 5. Снижай только за доказанные ошибки менеджера, а не за действия, которые в этом разговоре не требовались.
+- ШКАЛА: 9–10 — корректно проведённый уместный разговор без существенной ошибки; 7–8 — рабочий разговор с одной умеренной, доказанной зоной роста; 5–6 — есть одна или несколько существенных доказанных ошибок; 1–4 — явный серьёзный провал или упущенная готовая возможность. Не ставь 5–6 только потому, что звонок не закрыл продажу.
+- Исходная оценка для корректно выполненного узкого звонка — 10. Снижай только за доказанные ошибки менеджера с точной цитатой и таймкодом, а не за действия, которые в этом разговоре не требовались. Если надёжных данных для критерия нет — `applicable:false`, без балла и без ошибки.
 - НЕ снижай за отсутствие этапов скрипта если цель звонка была узкой (уточнение, перенос)
 - СНИЖАЙ за: нет конкретного следующего шага, не отработано возражение когда клиент был готов, звонок завершился в никуда
 - Если собеседник не ЛПР, только переадресовал к ЛПР или дал другой контакт, это не продажный разговор: поставь `not_sales: true`, объясни «переадресовал к ЛПР» и не учитывай его в оценке менеджера.
@@ -2044,7 +2067,8 @@ def analyze_transcript(
             *(result.get("score_calibration_notes") or []), *evidence_notes
         ]
     rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
-    if rubric_score is None and not compact_live_request:
+    missing_before_retry = omitted_rubric_codes(call_type_key, result.get("criteria"))
+    if (rubric_score is None or missing_before_retry) and not compact_live_request:
         criteria_contract = "\n".join(
             f'- {code}: {RUBRIC_CRITERIA[code][0]}' for code in applicable_criteria(call_type_key)
         )
@@ -2065,24 +2089,26 @@ def analyze_transcript(
         rubric_text, _ = call_claude_api(rubric_prompt, max_tokens=3000)
         rubric_payload = decode_json_response(rubric_text)
         result["criteria"] = rubric_payload.get("criteria")
+        result["criteria"], focused_evidence_notes = calibrate_unsupported_deductions(
+            result.get("criteria"), call_meta.get("duration_sec")
+        )
+        if focused_evidence_notes:
+            result["score_calibration_notes"] = [
+                *(result.get("score_calibration_notes") or []), *focused_evidence_notes
+            ]
         rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
         meta["attempts"] = int(meta.get("attempts") or 2) + 1
-    if rubric_score is None:
+    missing_codes = omitted_rubric_codes(call_type_key, result.get("criteria"))
+    if rubric_score is None or missing_codes:
         completed_criteria, missing_codes = complete_missing_criteria_neutrally(
             call_type_key, result.get("criteria")
         )
         result["criteria"] = completed_criteria
         result["rubric_missing_codes"] = missing_codes
         result["analysis_confidence"] = 0.35
-        explanation = str(result.get("score_explanation") or "").strip()
-        result["score_explanation"] = (
-            explanation + " Недостающие AI-наблюдения учтены нейтрально как 8/10."
-        ).strip()
         rubric_score = compute_applicable_score(call_type_key, result.get("criteria"))
-    if rubric_score is None:
-        raise RuntimeError("Rubric score could not be calculated")
     result["overall_score"] = rubric_score
-    result["overall_score_method"] = "applicable_rubric_v2" if rubric_score is not None else "not_scored"
+    result["overall_score_method"] = "applicable_rubric_v2"
 
     flags = result.get("flags", {}) or {}
 
@@ -2125,6 +2151,7 @@ def analyze_transcript(
 
     result["context_snapshot"] = deal_context or {"crm": {}, "previous_calls": []}
     result["manager_errors"] = manager_errors_from_analysis(result)
+    result["recommended_action"] = recommendation_from_analysis(result)
     result["_meta"] = meta
     return result
 

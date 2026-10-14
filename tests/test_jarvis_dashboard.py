@@ -60,7 +60,7 @@ class DashboardModelTests(unittest.TestCase):
         self.assertEqual(manager["scored"], 1)
         self.assertEqual(manager["excluded"], 2)
 
-    def test_missing_analysis_is_not_claimed_to_be_waiting_for_ai(self):
+    def test_missing_analysis_is_shown_as_pending_not_a_rop_review(self):
         calls = [{"activity_id": "1", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}}]
 
         overview = render_dashboard(calls, {}, {"role": "rop", "name": "РОП"})
@@ -68,9 +68,9 @@ class DashboardModelTests(unittest.TestCase):
 
         self.assertIn("Без разбора", overview)
         self.assertIn("нет пригодной записи или анализ ещё идёт", overview)
-        self.assertIn("Нет разбора", journal)
+        self.assertIn("Ожидает анализа", journal)
 
-    def test_missing_or_unconfirmed_analysis_appears_in_rop_decision_queue(self):
+    def test_only_unconfirmed_analysis_appears_in_rop_decision_queue(self):
         calls = [
             {"activity_id": "missing", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}},
             {"activity_id": "type", "created": "2026-09-08T13:00:00+03:00", "manager": {"name": "Анна"}},
@@ -85,9 +85,35 @@ class DashboardModelTests(unittest.TestCase):
         model = dashboard_model(calls, analyses)
         overview = render_dashboard(calls, analyses, {"role": "rop", "name": "РОП"})
 
-        self.assertEqual(len(model["review"]), 2)
+        self.assertEqual(len(model["review"]), 1)
+        self.assertEqual(model["pending_analysis"], 1)
         self.assertIn("Нужно решение РОПа", overview)
-        self.assertIn("Неподтверждённый тип", overview)
+        self.assertIn("тип звонка не подтверждён", overview)
+
+    def test_missing_analysis_is_pending_not_a_rop_review(self):
+        call = {"activity_id": "missing", "created": "2026-09-08T12:00:00+03:00", "manager": {"name": "Анна"}}
+
+        model = dashboard_model([call], {})
+        overview = render_dashboard([call], {}, {"role": "rop", "name": "РОП"})
+
+        self.assertEqual(model["pending_analysis"], 1)
+        self.assertEqual(model["review"], [])
+        self.assertIn("Очередь проверки пуста", overview)
+
+    def test_confirmed_ai_type_is_not_presented_as_requiring_manual_review(self):
+        call = {"activity_id": "confirmed", "manager": {"name": "Анна"}}
+        stored = {"analysis": {
+            "overall_score": 8.0,
+            "overall_score_method": "applicable_rubric_v2",
+            "flags": {},
+            "call_type": {"key": "payment_push", "label": "Дожим оплаты", "confirmed": True},
+        }}
+
+        detail = render_call_detail(call, stored, {"role": "rop", "name": "РОП"})
+
+        self.assertIn("Определён ИИ", detail)
+        self.assertNotIn("<span>Нужна проверка</span>", detail)
+        self.assertIn("Исправить тип", detail)
 
     def test_unconfirmed_type_does_not_lower_manager_average_or_show_a_draft_score(self):
         calls = [
@@ -266,7 +292,7 @@ class DashboardModelTests(unittest.TestCase):
 
         self.assertIn("Проверка типа звонка", html)
         self.assertIn("Почему ИИ ошибся", html)
-        self.assertIn("использовано 1 из 8 предыдущих звонков", html)
+        self.assertIn("память компании — 18 фактов; показано 1 последних", html)
         self.assertIn("Постоянная память компании:</b> 18 фактов", html)
         self.assertIn("Обсудили срок", html)
 
@@ -298,7 +324,11 @@ class DashboardModelTests(unittest.TestCase):
         }
         stored = {"analysis": {
             "overall_score": 7.8,
-            "manager_errors": [{"criterion": "next_step", "text": "Не зафиксировал дату следующего контакта", "time": "01:20", "quote": "Созвонимся потом"}],
+            "criteria": [{
+                "code": "next_step", "applicable": True, "score": 7.8,
+                "finding": "Не зафиксировал дату следующего контакта",
+                "time": "01:20", "quote": "Созвонимся потом",
+            }],
         }}
 
         html = render_call_detail(call, stored, {"role": "rop", "name": "РОП"}, return_to="/calls?manager=7&status=normal")
@@ -308,6 +338,41 @@ class DashboardModelTests(unittest.TestCase):
         self.assertIn("Ошибки менеджера и снижение оценки", html)
         self.assertIn("Не зафиксировал дату следующего контакта", html)
         self.assertIn('href="/calls?manager=7&amp;status=normal"', html)
+
+    def test_call_card_hides_inapplicable_criteria_without_claiming_insufficient_data(self):
+        call = {"activity_id": "42", "manager": {"name": "Роман"}}
+        stored = {"analysis": {
+            "criteria": [{
+                "code": "expertise", "applicable": False,
+                "score": None, "finding": "Критерий не относится к цели данного звонка.",
+            }],
+        }}
+
+        html = render_call_detail(call, stored, {"role": "rop", "name": "РОП"})
+
+        self.assertNotIn("Критерий не относится к цели данного звонка.", html)
+        self.assertNotIn("Недостаточно", html)
+
+    def test_legacy_missing_evidence_score_is_hidden_and_removed_from_manager_kpi(self):
+        call = {"activity_id": "42", "manager": {"id": 7, "name": "Роман"}}
+        stored = {"analysis": {
+            "overall_score": 8.0,
+            "call_type": {"key": "kp_feedback", "confirmed": True},
+            "criteria": [{
+                "code": "expertise", "applicable": True, "score": 8.0,
+                "finding": "Недостаточно надёжных данных для оценки критерия",
+            }],
+        }}
+
+        model = dashboard_model([call], {"42": stored})
+        html = render_call_detail(call, stored, {"role": "rop", "name": "РОП"})
+
+        self.assertEqual(model["managers"][0]["scored"], 0)
+        self.assertEqual(len(model["reanalysis"]), 1)
+        self.assertIn("Нужна переоценка", html)
+        self.assertIn("Старая оценка будет заменена", html)
+        self.assertNotIn("Недостаточно", html)
+        self.assertNotIn("8.0</strong>", html)
 
     def test_context_card_names_sources_instead_of_calling_everything_current_deal(self):
         call = {"activity_id": "42", "manager": {"name": "Роман"}}

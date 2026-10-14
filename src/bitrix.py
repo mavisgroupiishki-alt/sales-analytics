@@ -244,10 +244,11 @@ def select_previous_deal_recordings(
 def select_related_context_recordings(
     targets: List[Dict[str, Any]], candidates: List[Dict[str, Any]], *, limit: int = 8,
 ) -> List[Dict[str, Any]]:
-    """Select context from explicit CRM relations, with a previous-deal fallback only.
+    """Select context from every explicit CRM relation in the same funnel.
 
-    Contact and company calls supplement direct deal history.  Calls of another
-    sales deal are eligible only when the target has no earlier direct calls.
+    Calls from related sales deals supplement (rather than replace) the current
+    deal, contact and company history.  This preserves the commercial context
+    of a client who has moved through several deals in one sales funnel.
     """
     selected: Dict[str, Dict[str, Any]] = {}
     for target in targets:
@@ -278,15 +279,14 @@ def select_related_context_recordings(
         ) or (
             company_id and str((candidate.get("crm") or {}).get("owner_type") or "") == "company" and str((candidate.get("crm") or {}).get("owner_id") or "") == company_id
         )]
-        chosen = direct + related
-        if not direct:
-            chosen.extend(
-                candidate for candidate in possible
-                if str((candidate.get("crm") or {}).get("owner_type") or "") == "deal"
-                and str((candidate.get("crm") or {}).get("owner_id") or "") != owner_id
-                and (not category_id or not (candidate.get("crm") or {}).get("category_id") or str((candidate.get("crm") or {}).get("category_id")) == category_id)
-                and ((contact_ids and set(str(item) for item in ((candidate.get("crm") or {}).get("contact_ids") or [])).intersection(contact_ids)) or (company_id and str((candidate.get("crm") or {}).get("company_id") or "") == company_id))
-            )
+        related_deals = [
+            candidate for candidate in possible
+            if str((candidate.get("crm") or {}).get("owner_type") or "") == "deal"
+            and str((candidate.get("crm") or {}).get("owner_id") or "") != owner_id
+            and (not category_id or not (candidate.get("crm") or {}).get("category_id") or str((candidate.get("crm") or {}).get("category_id")) == category_id)
+            and ((contact_ids and set(str(item) for item in ((candidate.get("crm") or {}).get("contact_ids") or [])).intersection(contact_ids)) or (company_id and str((candidate.get("crm") or {}).get("company_id") or "") == company_id))
+        ]
+        chosen = direct + related + related_deals
         deduped = {str(candidate.get("activity_id")): candidate for candidate in chosen}
         ordered = sorted(deduped.values(), key=lambda call: (str(call.get("created") or ""), str(call.get("activity_id") or "")))[-limit:]
         selected.update({str(candidate["activity_id"]): candidate for candidate in ordered})

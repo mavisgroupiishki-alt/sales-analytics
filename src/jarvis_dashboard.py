@@ -7,7 +7,13 @@ from html import escape
 from typing import Any, Dict, Iterable, List
 from urllib.parse import urlencode, urlparse
 
-from claude_analyzer import RUBRIC_CRITERIA, evaluate_triage, format_timecode
+from claude_analyzer import (
+    RUBRIC_CRITERIA,
+    evaluate_triage,
+    format_timecode,
+    manager_errors_from_analysis,
+    recommendation_from_analysis,
+)
 
 
 _AQUA_CSS = r'''
@@ -129,6 +135,24 @@ def has_confirmed_call_type(analysis: Dict[str, Any]) -> bool:
     )
 
 
+def has_legacy_unassessed_criteria(analysis: Dict[str, Any]) -> bool:
+    """Detect the retired 8/10 fallback in immutable, already saved analyses.
+
+    Earlier versions represented absent evidence as an applicable criterion with
+    an 8/10 score.  It must not keep lowering KPI until the call is re-analysed
+    with the evidence-only rubric.
+    """
+    for item in analysis.get("criteria") or []:
+        if not isinstance(item, dict) or item.get("applicable") is not True:
+            continue
+        finding = str(item.get("finding") or "").strip().lower()
+        has_old_fallback_message = "недостаточно надёжных данных" in finding
+        lacks_evidence = not str(item.get("quote") or "").strip() and not str(item.get("time") or "").strip()
+        if has_old_fallback_message and lacks_evidence:
+            return True
+    return False
+
+
 def recording_is_unavailable(call: Dict[str, Any]) -> bool:
     """Return true when Bitrix supplied only an empty/non-playable recording."""
     audio = call.get("audio") or {}
@@ -157,6 +181,12 @@ def pending_analysis_count_label(count: int) -> str:
 
 def triage_for(analysis: Dict[str, Any]) -> tuple[str, str, str]:
     """Keep hard incidents strict while making low scores visible to the ROP."""
+    if has_legacy_unassessed_criteria(analysis):
+        return (
+            "requires_reanalysis",
+            "Старая оценка содержит критерии без подтверждённых данных — нужен повторный анализ.",
+            "legacy_unassessed_criteria",
+        )
     status, reason, rule_id = evaluate_triage(analysis or {})
     if status == "normal":
         try:
@@ -245,7 +275,7 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
         manager_id = int(manager.get("id") or 0)
         entry = by_manager.setdefault(
             manager_id,
-            {"manager": manager, "calls": 0, "analyzed": 0, "scored": 0, "excluded": 0, "critical": 0, "attention": 0, "review": 0, "reanalysis": 0, "scores": []},
+            {"manager": manager, "calls": 0, "analyzed": 0, "scored": 0, "excluded": 0, "pending": 0, "critical": 0, "attention": 0, "review": 0, "reanalysis": 0, "scores": []},
         )
         entry["calls"] += 1
         excluded = is_operationally_excluded(call, analysis or None)
@@ -257,13 +287,7 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
                 continue
             else:
                 pending_analysis += 1
-                review.append({
-                    "call": call,
-                    "analysis": {},
-                    "reason": "Нужна проверка РОПом: разбор звонка отсутствует",
-                    "rule_id": "analysis_missing",
-                })
-                entry["review"] += 1
+                entry["pending"] += 1
             continue
         analyzed.append(call)
         entry["analyzed"] += 1
@@ -273,7 +297,11 @@ def dashboard_model(calls: List[Dict[str, Any]], analyses: Dict[str, Any]) -> Di
             entry["excluded"] += 1
             continue
         score = analysis.get("overall_score")
-        if isinstance(score, (int, float)) and has_confirmed_call_type(analysis):
+        if (
+            isinstance(score, (int, float))
+            and has_confirmed_call_type(analysis)
+            and not has_legacy_unassessed_criteria(analysis)
+        ):
             entry["scores"].append(float(score))
             entry["scored"] += 1
         status, reason, rule_id = triage_for(analysis)
@@ -439,7 +467,7 @@ def render_dashboard(
 <section class="jd-panel jd-team"><div class="jd-panel-head"><div><h2>Команда</h2><p>Кого открыть первым</p></div><a href="{managers_href}">Все менеджеры →</a></div><div class="jd-manager-list">{managers}</div></section>
 <section class="jd-panel jd-feed-panel"><div class="jd-panel-head"><div><h2>Последние звонки</h2><p>Первичные записи в хронологическом порядке</p></div><a href="{calls_href}">Открыть журнал →</a></div>{feed}</section></section>
 <section class="jd-panel jd-funnel"><div class="jd-panel-head"><div><h2>Воронка по связанным сделкам</h2><p>Текущие стадии сделок, которые Bitrix связал со звонками выборки</p></div><a href="{funnel_href}">Вся воронка →</a></div><div class="jd-funnel-list">{funnel_links}</div></section>
-<section class="jd-panel jd-review-panel"><div class="jd-panel-head"><div><h2>Нужно решение РОПа</h2><p>Неподтверждённый тип, низкая уверенность или отсутствующий разбор</p></div><span>{len(model['review'])} звонков</span></div>{reviews}</section>
+<section class="jd-panel jd-review-panel"><div class="jd-panel-head"><div><h2>Нужно решение РОПа</h2><p>Только неподтверждённый тип или низкая уверенность. Звонки без разбора обрабатываются отдельно.</p></div><span>{len(model['review'])} звонков</span></div>{reviews}</section>
 <section class="jd-limits"><b>Граница данных</b><span>Воронка отражает только связанные со звонками сделки и их текущую стадию в Bitrix24. План, деньги и конверсию Джарвис не выдумывает.</span></section></main></body></html>'''
 
 
@@ -467,7 +495,7 @@ def _status_label(status: str, analysis: Dict[str, Any] | None = None) -> str:
             return "Не продажный"
         if analysis.get("poor_audio"):
             return "Плохая запись"
-    return {"critical": "Срочно к РОПу", "low_score": "Низкая оценка", "needs_review": "Нужна проверка", "requires_reanalysis": "Требует обновления", "normal": "Без риска", "excluded": "Исключён", "audio_unavailable": "Пустая запись", "pending": "Нет разбора"}.get(status, "Нет разбора")
+    return {"critical": "Срочно к РОПу", "low_score": "Низкая оценка", "needs_review": "Нужна проверка", "requires_reanalysis": "Нужна переоценка", "normal": "Без риска", "excluded": "Исключён", "audio_unavailable": "Пустая запись", "pending": "Ожидает анализа"}.get(status, "Нет разбора")
 
 
 def is_operationally_excluded(call: Dict[str, Any], analysis: Dict[str, Any] | None) -> bool:
@@ -644,10 +672,19 @@ def render_call_detail(
     manager = (call.get("manager") or {}).get("name") or "Менеджер не определён"
     crm = call.get("crm") or {}
     confirmed_type = has_confirmed_call_type(analysis)
-    score = analysis.get("overall_score") if analysis.get("overall_score") is not None and confirmed_type else "—"
+    legacy_unassessed = has_legacy_unassessed_criteria(analysis)
+    score = (
+        analysis.get("overall_score")
+        if analysis.get("overall_score") is not None and confirmed_type and not legacy_unassessed
+        else "—"
+    )
     score_heading = (
         "Не оценивается" if non_sales_call or unavailable_recording
-        else ("Требует подтверждения типа" if analysis and not confirmed_type else f"{score}/10")
+        else (
+            "Нужна переоценка"
+            if legacy_unassessed
+            else ("Требует подтверждения типа" if analysis and not confirmed_type else f"{score}/10")
+        )
     )
     duration = call.get("duration_sec") or transcription.get("duration_sec")
     try:
@@ -686,7 +723,13 @@ def render_call_detail(
         review_saved = f'<p class="jc-review-saved">Подтвердил(а): <b>{_text(manual_review.get("reviewer_name") or "Руководитель")}</b> · {_text(str(manual_review.get("reviewed_at") or "")[:16].replace("T", " "))}<br><span>{_text(manual_review.get("reason") or "")}</span></p>'
     review_html = ""
     if can_review:
-        review_html = f'''<section class="jc-panel-section jc-type-review"><div class="jc-section-head"><div><h2>Проверка типа звонка</h2><p>ИИ: {_text(ai_call_type.get("label") or "Тип не подтверждён")}. Ручное решение имеет приоритет в отчётах и следующих разборах.</p></div><span>{"Подтверждено вручную" if manual_review else "Нужна проверка"}</span></div>{review_saved}<form id="callTypeReview"><label for="reviewCallType">Правильный тип</label><select id="reviewCallType" required>{type_options}</select><label for="reviewReason">Почему ИИ ошибся</label><textarea id="reviewReason" required minlength="3" maxlength="1200" placeholder="Например: это был дожим после обещанной оплаты, а не первичный звонок.">{_text(manual_review.get("reason") or "")}</textarea><div class="jc-review-actions"><button type="submit" data-reanalysis="0">Сохранить тип</button><button type="submit" data-reanalysis="1" class="secondary">Сохранить и переоценить</button><span id="reviewCallResult" role="status"></span></div></form></section>'''
+        type_form = f'''<form id="callTypeReview"><label for="reviewCallType">Правильный тип</label><select id="reviewCallType" required>{type_options}</select><label for="reviewReason">Почему ИИ ошибся</label><textarea id="reviewReason" required minlength="3" maxlength="1200" placeholder="Например: это был дожим после обещанной оплаты, а не первичный звонок.">{_text(manual_review.get("reason") or "")}</textarea><div class="jc-review-actions"><button type="submit" data-reanalysis="0">Сохранить тип</button><button type="submit" data-reanalysis="1" class="secondary">Сохранить и переоценить</button><span id="reviewCallResult" role="status"></span></div></form>'''
+        if manual_review:
+            review_html = f'''<section class="jc-panel-section jc-type-review"><div class="jc-section-head"><div><h2>Тип звонка</h2><p>ИИ: {_text(ai_call_type.get("label") or "Тип не подтверждён")}. Ручное решение имеет приоритет в отчётах и следующих разборах.</p></div><span>Подтверждено вручную</span></div>{review_saved}{type_form}</section>'''
+        elif confirmed_type:
+            review_html = f'''<section class="jc-panel-section jc-type-review"><div class="jc-section-head"><div><h2>Тип звонка</h2><p>ИИ определил: {_text(ai_call_type.get("label") or "Тип звонка")}. При необходимости его можно исправить.</p></div><span>Определён ИИ</span></div><details class="jc-type-correction"><summary>Исправить тип</summary><p>Укажите другой тип только если ИИ ошибся. Ручное решение будет приоритетным в следующих разборах.</p>{type_form}</details></section>'''
+        else:
+            review_html = f'''<section class="jc-panel-section jc-type-review"><div class="jc-section-head"><div><h2>Проверка типа звонка</h2><p>ИИ: {_text(ai_call_type.get("label") or "Тип не подтверждён")}. Ручное решение имеет приоритет в отчётах и следующих разборах.</p></div><span>Нужна проверка</span></div>{type_form}</section>'''
         review_html += f'''<section class="jc-panel-section jc-manual-review"><div><h2>Ручная обработка</h2><p>Отметьте после прослушивания: это отделяет уже проверенные примеры для обучения от очереди.</p></div><label class="jc-manual-checkbox"><input id="manualReviewed" type="checkbox"{" checked" if manual_view.get("reviewed") else ""}> <span>Просмотрено вручную</span></label><small id="manualReviewResult">{_text((manual_view.get("reviewer_name") or "") if manual_view.get("reviewed") else "")}</small></section>'''
     context_snapshot = analysis.get("context_snapshot") or {}
     context_calls = context_snapshot.get("previous_calls") if isinstance(context_snapshot, dict) else []
@@ -702,7 +745,11 @@ def render_call_detail(
         f'<li><b>{_text(item.get("date") or "")}</b><span>{_text(item.get("call_type") or "Тип не указан")}</span><em>{_text(_context_source_label(item))}</em><p>{_text(item.get("summary") or "Нет резюме")}</p><p><b>Возражения:</b> {_text(item.get("objections") or "не выделены")}<br><b>Договорённости:</b> {_text(item.get("agreements") or "не выделены")}<br><b>Следующий шаг:</b> {_text(item.get("next_step") or "не указан")}</p></li>'
         for item in context_calls if isinstance(item, dict)
     )
-    context_html = f'''<details class="jc-context"><summary>Контекст для анализа: использовано {len(context_calls)} из 8 предыдущих звонков</summary><p>ИИ учитывал краткие факты текущей сделки, связанных контакта и компании в той же воронке. Источник показан у каждого разговора.</p>{memory_note}<ol>{context_rows or '<li>Предыдущих связанных звонков в контексте не было.</li>'}</ol></details>'''
+    if memory_count:
+        context_heading = f"Контекст для анализа: память {memory_scope_label} — {memory_count} фактов; показано {len(context_calls)} последних"
+    else:
+        context_heading = f"Контекст для анализа: использовано {len(context_calls)} связанных звонков"
+    context_html = f'''<details class="jc-context"><summary>{_text(context_heading)}</summary><p>ИИ учитывал текущую сделку, связанные контакт и компанию, а также все подтверждённо связанные сделки той же воронки. Источник показан у каждого разговора.</p>{memory_note}<ol>{context_rows or '<li>Связанных разобранных звонков пока нет в памяти. При следующем обновлении они будут подтянуты из Bitrix по сделкам, контакту и компании.</li>'}</ol></details>'''
     audio = call.get("audio") or {}
     if (audio.get("file_id") or audio.get("url") or audio.get("public_path")) and not unavailable_recording:
         direction_label = {"incoming": "Входящий", "outgoing": "Исходящий"}.get(str(call.get("direction")), "Направление не определено")
@@ -735,10 +782,20 @@ def render_call_detail(
 
     criteria_rows = ""
     for item in analysis.get("criteria") or []:
-        if not isinstance(item, dict) or item.get("applicable") is not True:
+        if not isinstance(item, dict):
             continue
         code = str(item.get("code") or "")
         title = RUBRIC_CRITERIA.get(code, (code or "Критерий", 0))[0]
+        legacy_unassessed_item = (
+            item.get("applicable") is True
+            and "недостаточно надёжных данных" in str(item.get("finding") or "").lower()
+            and not str(item.get("quote") or "").strip()
+            and not str(item.get("time") or "").strip()
+        )
+        if item.get("applicable") is not True or legacy_unassessed_item:
+            if legacy_unassessed_item:
+                criteria_rows += f'''<div class="jc-criterion jc-criterion-unassessed"><div><b>{_text(title)}</b><span>Старая оценка будет заменена после повторного разбора по текущей методике.</span></div><strong>Переоценка</strong></div>'''
+            continue
         value = item.get("score")
         try:
             numeric = max(0.0, min(10.0, float(value)))
@@ -752,7 +809,7 @@ def render_call_detail(
     if not criteria_rows:
         criteria_rows = '<div class="jc-section-empty">Оценки по критериям появятся после завершения обработки.</div>'
 
-    manager_errors = analysis.get("manager_errors") or []
+    manager_errors = manager_errors_from_analysis(analysis)
     manager_error_rows = ""
     for item in manager_errors:
         if not isinstance(item, dict):
@@ -763,7 +820,7 @@ def render_call_detail(
         time_button = f'<button type="button" class="jc-timecode" data-timecode="{_text(timecode)}" onclick="seekCallAudio(this.dataset.timecode)">{_text(timecode)}</button>' if timecode else ""
         manager_error_rows += f'<li><b>{_text(criterion_name)}</b><p>{_text(item.get("text") or "Нет пояснения")}</p><small>{time_button} {_text(item.get("quote") or "")}</small></li>'
     if not manager_error_rows and analysis and not non_sales_call and not unavailable_recording:
-        manager_error_rows = '<li class="jc-section-empty">Конкретных ошибок, из-за которых снижен балл, Джарвис не выделил.</li>'
+        manager_error_rows = '<li class="jc-section-empty">Конкретных ошибок с доказательством в записи нет. Неподтверждённые снижения не учитываются в новой методике.</li>'
     manager_errors_html = ""
     if manager_error_rows:
         manager_errors_html = f'''<section class="jc-panel-section jc-manager-errors"><div class="jc-section-head"><div><h2>Ошибки менеджера и снижение оценки</h2><p>Только конкретные моменты, которые повлияли на балл. У каждого — критерий и подтверждение из разговора.</p></div></div><ul>{manager_error_rows}</ul></section>'''
@@ -805,7 +862,7 @@ def render_call_detail(
         transcript_rows = '<div class="jc-section-empty">Транскрипт формируется. Запись уже можно прослушать выше.</div>'
 
     summary = analysis.get("summary") or reason or "Джарвис ещё обрабатывает этот разговор."
-    recommendation = analysis.get("recommended_action") or analysis.get("recommendation") or ("Продажные критерии, скрипт и балл к этому звонку не применяются." if non_sales_call else ("Запросить корректную запись в Bitrix, если разговор нужно проверить." if unavailable_recording else "Рекомендация появится после завершения анализа."))
+    recommendation = analysis.get("recommended_action") or analysis.get("recommendation") or ("Продажные критерии, скрипт и балл к этому звонку не применяются." if non_sales_call else ("Запросить корректную запись в Bitrix, если разговор нужно проверить." if unavailable_recording else recommendation_from_analysis(analysis)))
     if unavailable_recording:
         evaluation_html = '''<section class="jc-panel-section"><div class="jc-section-head"><div><h2>Пустая запись не анализируется</h2><p>Bitrix передал файл нулевой длительности.</p></div></div><div class="jc-section-empty">Оценка, проверка скрипта и транскрипт для этого звонка не создаются.</div></section>'''
         transcript_html = ""
@@ -821,7 +878,7 @@ def render_call_detail(
 {review_html}
 {context_html}
 {audio_html}
-<section class="jc-detail-grid"><article><h2>Вывод Джарвиса</h2><p>{_text(summary)}</p>{quote}<h3>Рекомендованное действие</h3><p>{_text(recommendation)}</p></article><article><h2>Ключевые моменты</h2><ul class="jc-moments">{moment_rows}</ul></article></section>
+<section class="jc-detail-grid"><article><h2>Вывод Джарвиса</h2><p>{_text(summary)}</p>{quote}<h3>Рекомендация менеджеру</h3><p>{_text(recommendation)}</p></article><article><h2>Ключевые моменты</h2><ul class="jc-moments">{moment_rows}</ul></article></section>
 {manager_errors_html}
 {evaluation_html}
 {transcript_html}

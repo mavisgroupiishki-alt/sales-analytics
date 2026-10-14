@@ -26,6 +26,8 @@ from claude_analyzer import (  # noqa: E402
     detect_service_document_delivery,
     detect_service_nps_feedback,
     main as analyzer_main,
+    manager_errors_from_analysis,
+    recommendation_from_analysis,
     transcription_from_store,
     _context_prompt_block,
 )
@@ -182,7 +184,7 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
 
         self.assertEqual([call["activity_id"] for call in selected], [str(number) for number in range(2, 10)])
 
-    def test_related_context_backfill_adds_contact_and_company_and_uses_prior_deal_only_as_fallback(self):
+    def test_related_context_backfill_adds_contact_company_and_other_sales_deals(self):
         target = {
             "activity_id": "current", "created": "2026-10-05T10:00:00+03:00",
             "crm": {"owner_type": "deal", "owner_id": "42", "contact_ids": ["9"], "company_id": "5", "category_id": "0"},
@@ -198,7 +200,7 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertEqual([call["activity_id"] for call in selected], ["contact", "company", "previous"])
         candidates.append({"activity_id": "current-deal", "created": "2026-10-04T10:00:00+03:00", "crm": {"owner_type": "deal", "owner_id": "42"}, "audio": {"file_id": 4}})
         selected = select_related_context_recordings([target], candidates)
-        self.assertEqual([call["activity_id"] for call in selected], ["contact", "company", "current-deal"])
+        self.assertEqual([call["activity_id"] for call in selected], ["contact", "company", "previous", "current-deal"])
 
     def test_deal_context_uses_only_eight_earlier_calls_from_same_deal(self):
         calls = []
@@ -271,7 +273,7 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertEqual(context["previous_calls"][2]["source"], "company")
         self.assertEqual(context["sources"]["previous_sales_deal"]["deal_id"], "38")
 
-    def test_current_deal_calls_prevent_previous_deal_fallback_but_keep_contact_and_company_context(self):
+    def test_current_deal_calls_keep_context_from_other_related_sales_deals(self):
         calls = [
             {"activity_id": "same", "created": "2026-10-01T10:00:00+03:00", "crm": {"owner_type": "deal", "owner_id": "42", "contact_ids": ["9"], "company_id": "5"}},
             {"activity_id": "previous", "created": "2026-09-01T10:00:00+03:00", "crm": {"owner_type": "deal", "owner_id": "38", "contact_ids": ["9"], "company_id": "5"}},
@@ -282,8 +284,8 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
 
         context = build_deal_context(calls, analyses, current)
 
-        self.assertEqual({item["activity_id"] for item in context["previous_calls"]}, {"same", "contact"})
-        self.assertNotIn("previous_sales_deal", context["sources"])
+        self.assertEqual({item["activity_id"] for item in context["previous_calls"]}, {"same", "previous", "contact"})
+        self.assertEqual(context["sources"]["previous_sales_deal"]["count"], 1)
 
     def test_analysis_prompt_contains_calibration_rules_from_manual_reviews(self):
         prompt = build_analysis_prompt("[00:00] тест", {"crm": {}}, [], "unknown")
@@ -309,14 +311,16 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
         self.assertEqual(analysis["call_type"]["key"], "payment_push")
         self.assertTrue(analysis["call_type"]["confirmed"])
 
-    def test_missing_criteria_are_neutral_and_visible(self):
+    def test_missing_criteria_are_not_scored_or_reported_as_lack_of_data(self):
         criteria, missing = complete_missing_criteria_neutrally(
             "unknown",
             [{"code": "expertise", "applicable": True, "score": 8}],
         )
 
         self.assertEqual(missing, ["next_step", "communication"])
-        self.assertEqual([item["score"] for item in criteria], [8, 8.0, 8.0])
+        self.assertEqual([item["score"] for item in criteria], [8, None, None])
+        self.assertTrue(all(item.get("applicable") is False for item in criteria[1:]))
+        self.assertTrue(all("недостаточно" not in item["finding"].lower() for item in criteria[1:]))
 
     def test_live_transcript_compaction_keeps_timecoded_opening_middle_and_closing(self):
         transcript = "\n".join(
@@ -364,7 +368,7 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
             "payment_push",
         )
 
-        self.assertIn("Исходная оценка для корректно выполненного узкого звонка — 8", prompt)
+        self.assertIn("Исходная оценка для корректно выполненного узкого звонка — 10", prompt)
         self.assertIn("applicable:false", prompt)
         self.assertIn("Не ставь 5–6 только потому, что звонок не закрыл продажу", prompt)
 
@@ -435,7 +439,7 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
                     {"code": "presentation", "applicable": False, "score": 0},
                     {"code": "expertise", "applicable": False, "score": 0},
                     {"code": "objection", "applicable": True, "score": 2},
-                    {"code": "next_step", "applicable": True, "score": 0},
+                    {"code": "next_step", "applicable": True, "score": 7, "finding": "Не зафиксирован точный слот", "time": "00:10", "quote": "Вы мне в любом случае наберите"},
                     {"code": "communication", "applicable": True, "score": 8},
                 ],
                 "manager_errors": [
@@ -458,7 +462,7 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
                 {},
             )
 
-        self.assertEqual(result["overall_score"], 8.0)
+        self.assertEqual(result["overall_score"], 8.9)
         self.assertEqual([item["criterion"] for item in result["manager_errors"]], ["next_step"])
 
     def test_analysis_retries_malformed_json_and_requires_complete_rubric(self):
@@ -485,7 +489,7 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
 
         self.assertEqual(api.call_count, 3)
         self.assertEqual(result["_meta"]["attempts"], 2)
-        self.assertEqual(result["overall_score"], 7.5)
+        self.assertEqual(result["overall_score"], 10.0)
 
     def test_unsupported_low_criterion_does_not_reduce_score(self):
         criteria, notes = calibrate_unsupported_deductions(
@@ -496,9 +500,22 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
             duration_seconds=90,
         )
 
-        self.assertEqual(criteria[0]["score"], 8.0)
+        self.assertEqual(criteria[0]["score"], 10.0)
         self.assertEqual(criteria[1]["score"], 6)
         self.assertEqual(len(notes), 1)
+
+    def test_every_evidenced_deduction_is_rendered_as_an_error_and_has_a_recommendation(self):
+        analysis = {
+            "criteria": [
+                {"code": "next_step", "applicable": True, "score": 8, "finding": "Не назначен точный слот", "time": "01:54", "quote": "Когда завтра набрать?"},
+                {"code": "communication", "applicable": True, "score": 10, "finding": "Общение корректное"},
+            ]
+        }
+
+        errors = manager_errors_from_analysis(analysis)
+
+        self.assertEqual([item["criterion"] for item in errors], ["next_step"])
+        self.assertIn("дату, время и инициатора", recommendation_from_analysis(analysis))
 
     def test_analysis_keeps_call_visible_when_both_json_responses_are_malformed(self):
         call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
@@ -540,7 +557,31 @@ class ClaudeAnalyzerPromptTests(unittest.TestCase):
 
         self.assertEqual(api.call_count, 4)
         self.assertEqual(result["_meta"]["attempts"], 3)
-        self.assertEqual(result["overall_score"], 6.1)
+        self.assertEqual(result["overall_score"], 10.0)
+
+    def test_partial_rubric_also_triggers_focused_retry(self):
+        call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
+        partial = json.dumps({
+            "overall_score": 9,
+            "criteria": [{"code": "expertise", "applicable": True, "score": 10, "finding": "Ответ по сути", "time": "00:00", "quote": "Точный ответ менеджера"}],
+            "flags": {},
+        })
+        full_rubric = json.dumps({"criteria": [
+            {"code": "expertise", "applicable": True, "score": 10, "finding": "Ответ по сути", "time": "00:00", "quote": "Точный ответ менеджера"},
+            {"code": "next_step", "applicable": False},
+            {"code": "communication", "applicable": True, "score": 10, "finding": "Речь корректна", "time": "00:00", "quote": "Точный ответ менеджера"},
+        ]})
+
+        with patch("claude_analyzer.call_claude_api", side_effect=[(call_type, {}), (partial, {}), (full_rubric, {})]) as api:
+            result = analyze_transcript(
+                {"text": "Достаточно длинный транскрипт разговора", "text_with_timecodes": "[00:00] Точный ответ менеджера"},
+                {"direction": "incoming", "duration_sec": 60, "crm": {}},
+                {},
+            )
+
+        self.assertEqual(api.call_count, 3)
+        self.assertNotIn("rubric_missing_codes", result)
+        self.assertEqual(result["overall_score"], 10.0)
 
     def test_ai_audio_warning_does_not_exclude_a_complete_transcript(self):
         call_type = '{"call_type_key":"unknown","confirmed":false,"evidence":"нет достаточных оснований"}'
