@@ -76,17 +76,17 @@ class OperationsExportsTests(unittest.TestCase):
         self.assertEqual(self.client.get("/dashboard-embed").status_code, 403)
         old = int(time.time()) - 61
         stale_signature = hmac.new(
-            b"shared-secret", f"mavis-dashboard-embed:{old}".encode(), hashlib.sha256
+            b"shared-secret", f"mavis-dashboard-embed:{old}:dashboard:".encode(), hashlib.sha256
         ).hexdigest()
-        self.assertEqual(self.client.get("/dashboard-embed", query_string={"ts": old, "sig": stale_signature}).status_code, 403)
+        self.assertEqual(self.client.get("/dashboard-embed", query_string={"ts": old, "sig": stale_signature, "role": "dashboard"}).status_code, 403)
 
     def test_dashboard_embed_creates_read_only_session_only_for_valid_short_lived_signature(self):
         issued_at = int(time.time())
         signature = hmac.new(
-            b"shared-secret", f"mavis-dashboard-embed:{issued_at}".encode(), hashlib.sha256
+            b"shared-secret", f"mavis-dashboard-embed:{issued_at}:dashboard:".encode(), hashlib.sha256
         ).hexdigest()
 
-        response = self.client.get("/dashboard-embed", query_string={"ts": issued_at, "sig": signature})
+        response = self.client.get("/dashboard-embed", query_string={"ts": issued_at, "sig": signature, "role": "dashboard"})
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/")
@@ -97,6 +97,22 @@ class OperationsExportsTests(unittest.TestCase):
         # access its work tabs, while unsigned callers still cannot mint it.
         self.assertEqual(self.client.get("/rop").status_code, 200)
         self.assertEqual(self.client.get("/scripts").status_code, 200)
+
+    def test_manager_embed_binds_the_session_to_the_signed_bitrix_user_id(self):
+        issued_at = int(time.time())
+        signature = hmac.new(
+            b"shared-secret", f"mavis-dashboard-embed:{issued_at}:manager:2110".encode(), hashlib.sha256
+        ).hexdigest()
+
+        response = self.client.get(
+            "/dashboard-embed",
+            query_string={"ts": issued_at, "sig": signature, "role": "manager", "user_id": "2110"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        with self.client.session_transaction() as session:
+            self.assertEqual(session["role"], "manager")
+            self.assertEqual(session["manager_id"], 2110)
 
     @patch.object(jarvis_app, "get_data")
     def test_sales_calls_export_returns_source_backed_summary(self, get_data):

@@ -987,8 +987,8 @@ def current_user():
     return {"username": session.get("username",""), "role": session.get("role",""),
             "name": session.get("name",""), "manager_id": session.get("manager_id")}
 
-def _dashboard_embed_is_valid(timestamp: str, signature: str) -> bool:
-    """Validate the one-minute dashboard handoff without exposing its secret."""
+def _dashboard_embed_is_valid(timestamp: str, signature: str, *, role: str, manager_id: str) -> bool:
+    """Validate a one-minute, role-bound dashboard handoff without exposing its secret."""
     shared_secret = (os.environ.get("OPERATIONS_DASHBOARD_TOKEN") or "").strip()
     try:
         issued_at = int(timestamp)
@@ -996,9 +996,16 @@ def _dashboard_embed_is_valid(timestamp: str, signature: str) -> bool:
         return False
     if not shared_secret or abs(int(time.time()) - issued_at) > 60:
         return False
+    if role not in {"dashboard", "director", "manager"}:
+        return False
+    if role == "manager":
+        if not str(manager_id).isdigit():
+            return False
+    elif manager_id:
+        return False
     expected = hmac.new(
         shared_secret.encode("utf-8"),
-        f"mavis-dashboard-embed:{issued_at}".encode("utf-8"),
+        f"mavis-dashboard-embed:{issued_at}:{role}:{manager_id}".encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(signature or "", expected)
@@ -1616,11 +1623,20 @@ def logout():
 
 @app.route("/dashboard-embed")
 def dashboard_embed():
-    """Create a short-lived read-only dashboard session from a signed handoff."""
-    if not _dashboard_embed_is_valid(request.args.get("ts", ""), request.args.get("sig", "")):
+    """Create a short-lived, role-bound read-only session from a signed handoff."""
+    role = str(request.args.get("role") or "dashboard")
+    manager_id = str(request.args.get("user_id") or "")
+    if not _dashboard_embed_is_valid(
+        request.args.get("ts", ""), request.args.get("sig", ""), role=role, manager_id=manager_id
+    ):
         abort(403)
     session.clear()
-    session.update({"username": "operations-dashboard", "role": "dashboard", "name": "Операционный дашборд", "manager_id": None})
+    session.update({
+        "username": "operations-dashboard" if role == "dashboard" else f"operations-dashboard-{role}",
+        "role": role,
+        "name": "Операционный дашборд" if role == "dashboard" else ("Руководитель" if role == "director" else "Менеджер"),
+        "manager_id": int(manager_id) if role == "manager" else None,
+    })
     return redirect("/")
 
 # ============================================================
